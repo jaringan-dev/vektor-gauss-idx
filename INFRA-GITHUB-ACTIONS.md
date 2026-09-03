@@ -23,6 +23,13 @@ does the monthly KSEI pull on day ≤5, the weekly eval on Mondays, then the dig
 Only the residential-IP box reaches `www.idx.co.id`. KSEI is not blocked, but the
 box also holds Postgres, so the whole sequence runs there.
 
+## Status
+
+Runner **registered and online**: `vg-wsl-bogor` (labels `self-hosted, vektor-gauss`),
+systemd service `actions.runner.jaringan-bot-vektor-gauss.vg-wsl-bogor` (enabled +
+running, starts with the distro). Remaining: trigger `eod.yml` once to confirm it
+lands a digest, run a week alongside Task Scheduler, then disable the task.
+
 ## One-time setup (on the WSL box)
 
 1. **Register the runner** — GitHub repo → Settings → Actions → Runners → *New
