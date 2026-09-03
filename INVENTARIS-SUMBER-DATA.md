@@ -3,7 +3,7 @@
 **Status:** Inventaris. **Tidak ada kode / scraper dibuat.** Endpoint dicantumkan sebagai fakta referensi, bukan instruksi eksekusi.
 **Metode:** Pengecekan langsung via browser ke `idx.co.id`, `web.ksei.co.id` (3 Sep 2026) + pencarian web. Semua yang ditandai **[verified]** dilihat langsung sesi ini; **[perlu konfirmasi]** = belum dipastikan, hubungi sumber.
 
-Baca bersama [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) — inventaris ini mengonfirmasi temuan C1 & C2 di sana.
+Baca bersama [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) — inventaris ini mengonfirmasi temuan C1 & C2 di sana. Ringkasan per-tier + peran tiap sumber dalam ekosistem aplikasi: [RENCANA-FASE-2.md](RENCANA-FASE-2.md) §2.
 
 ---
 

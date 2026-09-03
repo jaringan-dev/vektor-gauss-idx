@@ -96,6 +96,11 @@ foreign-behaviour signals. `CROSSING-TINGGI`: +0.28% avg edge but hit-rate 38%
   Then CR3, institution-vs-retail, NeoBDM-style participant tags become possible
   — as new probation signals, forward-tested the same way.
 
+This decision point is the **gate** for everything in `RENCANA-FASE-2.md` (product
+concept, GitHub/Cloudflare infra, web architecture). None of it is built until a
+tag clears here. `FLOAT-ASING-PADAT` / `TIKET-BESAR-AKUM` are the current candidates
+(see "First `vg eval` read" above).
+
 ## Migrating to an Indonesian ISP VPS (when ready)
 
 The stack was built Postgres-from-the-start for this. On the VPS: install the
