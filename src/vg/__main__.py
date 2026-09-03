@@ -7,8 +7,9 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from . import collect, engine
+from . import collect, digest, engine
 from .db import connect, run_sql_file
+from .telegram import TelegramSender
 
 _SCHEMA = Path(__file__).resolve().parents[2] / "db" / "schema.sql"
 
@@ -70,6 +71,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
     sub.add_parser("eval", help="per-tag forward-return stats (the Phase 1 payoff)")
+
+    dg = sub.add_parser("digest", help="build the Telegram EOD digest (or --weekly eval)")
+    dg.add_argument("--date", metavar="YYYY-MM-DD", help="digest for a specific trading day")
+    dg.add_argument("--weekly", action="store_true", help="the weekly eval message instead")
+    dg.add_argument("--dry-run", action="store_true", help="print, don't send")
 
     args = p.parse_args(argv)
 
@@ -169,6 +175,23 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "backfill-outcomes":
         print(f"signal_log rows updated: {engine.backfill_outcomes()}")
+        return 0
+
+    if args.cmd == "digest":
+        text = (
+            digest.build_weekly_eval() if args.weekly
+            else digest.build_daily(_d(args.date) if args.date else None)
+        )
+        if args.dry_run:
+            print(text)
+            return 0
+        sender = TelegramSender()
+        if not sender.configured:
+            print("VG_TELEGRAM_BOT_TOKEN / VG_TELEGRAM_CHAT_ID not set. Preview:\n")
+            print(text)
+            return 1
+        n = sender.send(text)
+        print(f"sent ({n} message{'s' if n > 1 else ''})")
         return 0
 
     if args.cmd == "eval":

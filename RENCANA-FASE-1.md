@@ -95,6 +95,24 @@ Cukup untuk MVP, dan mungkin tidak sekehilangan yang dikira:
 
 Window pakai **hari bursa**. Tidak ada skor komposit di v0. Sistem hanya menghitung komponen + memberi **tag deskriptif**, lalu forward-test-nya sendiri.
 
+### Kategori pelaku: NeoBDM punya, kita (Fase 1) tidak
+
+NeoBDM: Market Maker · Foreign · Non-Retail · Sultan · Zombie · Top Retail Jualan. Semua ini butuh **broker summary per emiten** (siapa broker, beli/jual per broker) — yang **tidak ada di Fase 1** (kita hanya IDX Stock Summary + KSEI).
+
+| Kategori NeoBDM | Butuh | Fase 1? |
+|---|---|---|
+| **Foreign** | broker asing / flag D/F | **Ada — beda cara.** Kita pakai split `ForeignBuy`/`ForeignSell` resmi IDX (berbasis domisili rekening, "un-paintable"), bukan tebakan kode broker |
+| Non-Retail / Market Maker | klasifikasi broker × flow per broker | ❌ tidak ada broker summary |
+| Sultan | broker + blok tunggal besar + ukuran order | ❌ (order size hilang sejak 2021, lihat C3) |
+| Zombie | riwayat aktivitas per broker | ❌ tidak ada broker summary |
+| Top Retail Jualan | broker retail (YP/PD/CC…) net jual | ❌ butuh broker summary + mapping |
+
+**Yang kita punya sebagai proksi pelaku:**
+- **Asing vs bukan-Asing** — harian, dari split resmi IDX (`nff_*`).
+- **Institusi vs Ritel vs Asing (level kepemilikan)** — **bulanan**, dari 9 kategori investor KSEI (`ownership_monthly.detail`: asuransi, korporat, dapen, lembaga keuangan, individu, reksadana, sekuritas, yayasan, lainnya × lokal/asing). Ini *posisi ter-settle*, bukan *flow harian*.
+
+Kategori NeoBDM baru tersedia di **Fase 1.5** kalau beli broker summary — Sectors bahkan sudah punya `cohort` (institutional/retail/mixed) bawaan. "Sultan/Zombi/Top Retail" tetap = heuristik buatan sendiri yang harus dikalibrasi + di-forward-test (bukan diberi bobot begitu saja). Ingat: IDXAlpha yang punya semua ini mengakui IC sinyal broker-level cuma 0,02–0,09 — belum tentu menambah edge.
+
 ### Komponen yang dihitung (dari data gratis)
 
 | Komponen | Definisi | "un-paintable"? |

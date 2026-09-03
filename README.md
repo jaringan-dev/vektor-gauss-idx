@@ -37,9 +37,14 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
   `MARKUP`, `MARKDOWN`, `CROSSING-TINGGI`, `KSEI-KONFIRM`/`KSEI-DIVERGEN`) into
   `signal_log` — **weight 0**. `backfill-outcomes` fills their H+1/3/5/10 returns;
   `eval` reports whether any tag actually precedes a move. No composite score.
+- **Telegram digest** (`telegram.py` + `digest.py`): `vg digest` sends an EOD
+  digest to your own chat — watchlist lines (price, NFF D0/W1, foreign
+  consistency, quadrant, tag, ⚠ data-quality flags), a RADAR list of new
+  `AKUM-ASING` names, freshness warnings. `vg digest --weekly` sends the `eval`
+  table. No target / stop-loss / BUY-SELL.
 - `src/vg/collect.py` + `vg` CLI — fetch → raw artifact (+sha256) → upsert → `run_log`.
 
-Not yet: the Telegram digest + weekly eval message.
+Phase 1 code is complete. Remaining: run it on a VPS for ~2 months, read `vg eval`.
 
 ## Setup (on the VPS)
 
@@ -78,6 +83,10 @@ vg compute --latest                                      # engine v0 -> signal_c
 vg compute --backfill 2024-01-02 2026-09-02
 vg backfill-outcomes                                     # fill forward returns on resolved tags
 vg eval                                                  # per-tag forward-return stats — the Phase 1 payoff
+
+vg digest --dry-run                                      # preview the Telegram digest
+vg digest                                                # send it (needs VG_TELEGRAM_* in .env)
+vg digest --weekly                                       # the eval table
 ```
 
 ### Daily EOD sequence (cron ~19:00 WIB)
@@ -88,8 +97,9 @@ vg collect-index --latest
 vg detect-ca                # cheap; catches splits since yesterday
 vg compute --latest
 vg backfill-outcomes
+vg digest
 # (monthly, early in the month) vg collect-ownership --latest ; vg collect-corpactions --year <this year>
-# (weekly) vg eval  -> Telegram
+# (weekly, e.g. Mon)            vg digest --weekly
 ```
 
 `collect-ownership` downloads `web.ksei.co.id/Download/BalanceposEfek<YYYYMMDD>.zip`
