@@ -118,14 +118,19 @@ Run tests (offline, no DB): `pytest`
 
 ## Cloudflare note
 
-`www.idx.co.id` sits behind Cloudflare. From a datacenter IP the JSON endpoint
-may return `403` or an HTML challenge. Mitigations (personal scale):
+`www.idx.co.id` sits behind Cloudflare. Tested 2026-09-03 from AWS (Singapore +
+Jakarta) and Oracle Cloud (Singapore): **every datacenter/cloud ASN is
+blocked** — HTTP 1020 "you have been blocked", which no client or headless
+browser clears. KSEI is unaffected.
 
-1. Prefer an **Indonesian VPS** (Biznet Gio, IDCloudHost, Dewaweb) — least friction.
-2. Keep the rate low (default `VG_REQUEST_DELAY_SECONDS=4`; you only fetch once/day).
-3. If still blocked: `pip install -e ".[cffi]"` and (TODO) wire the `curl_cffi`
-   fallback into `IdxStockSummarySource._get`.
+What works: run the collector from an **Indonesian residential connection**. Even
+there, a plain `httpx` request to the `/primary/` JSON endpoint draws a "Just a
+moment..." challenge — so `idx.py` uses **`curl_cffi` impersonating Chrome**
+(matching TLS/JA3), fetches the trading-summary HTML page first to bank the
+`__cf_bm` cookie, then calls the JSON endpoint on the same session, with retry.
+`curl-cffi` is a core dependency; one warmed session is reused across a backfill.
 
+Keep the rate low (`VG_REQUEST_DELAY_SECONDS`, default 4; you fetch once/day).
 Do **not** add proxy rotation / challenge-solving. If a source blocks you, change
 source — see [PRINSIP-DATA.md](PRINSIP-DATA.md).
 

@@ -18,6 +18,7 @@ UNVERIFIED, flag before trusting:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import random
 import time
@@ -25,6 +26,11 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 import httpx
+
+try:  # optional but strongly recommended — see _idx_get
+    from curl_cffi import requests as curl_requests
+except ImportError:  # pragma: no cover
+    curl_requests = None
 
 from ..config import CONFIG
 from .base import (
@@ -39,6 +45,20 @@ from .base import (
 _STOCK_PATH = "/primary/TradingSummary/GetStockSummary"
 _INDEX_PATH = "/primary/TradingSummary/GetIndexSummary"
 _REFERER = "/en/market-data/trading-summary/"
+
+# Cloudflare sits in front of www.idx.co.id. A plain httpx/OpenSSL request to the
+# /primary/ JSON endpoint draws a "Just a moment..." challenge that never clears.
+# What works, from an Indonesian *residential* IP: curl_cffi impersonating Chrome
+# (matching TLS/JA3 fingerprint) — fetch the HTML page first to bank the __cf_bm
+# cookie, then the JSON endpoint on the same session. A datacenter/VPS IP is
+# hard-blocked (HTTP 1020) no matter the client; run the collector from home.
+# Without curl_cffi installed we fall back to httpx priming (works only if the IP
+# is already warm) and otherwise raise IdxAccessBlocked.
+_WARMUP_PATHS = {
+    _STOCK_PATH: "/en/market-data/trading-summary/stock-summary",
+    _INDEX_PATH: "/en/market-data/trading-summary/index-summary",
+}
+_IMPERSONATE = "chrome"
 
 # IDX response field -> PriceBar attribute
 FIELD_MAP: dict[str, str] = {
@@ -90,41 +110,87 @@ def _parse_date(v: str | None) -> date | None:
         return None
 
 
+def _is_json_ok(status: int, content_type: str, body: bytes) -> bool:
+    """True if this is the JSON API response, not a Cloudflare challenge/block."""
+    if status != 200:
+        return False
+    if "json" in content_type.lower():
+        return True
+    return b"<html" not in body[:2048].lower()
+
+
+_PAGE_HEADERS = {
+    "User-Agent": CONFIG.http_user_agent,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+# One curl_cffi session reused across every _idx_get in the process: warm the
+# __cf_bm cookie once, not once per backfilled day (halves the load on IDX).
+_cffi_session = None
+_cffi_warm = False
+
+
+def _fetch_curl_cffi(warmup_url: str, api_url: str, params: dict[str, str],
+                     api_headers: dict[str, str], *, warm: bool) -> tuple[int, str, bytes]:
+    global _cffi_session, _cffi_warm
+    if _cffi_session is None:
+        _cffi_session = curl_requests.Session(impersonate=_IMPERSONATE, timeout=CONFIG.http_timeout)
+    if warm or not _cffi_warm:
+        with contextlib.suppress(Exception):  # warmup is best-effort
+            _cffi_session.get(warmup_url, headers=_PAGE_HEADERS)
+        _cffi_warm = True
+        time.sleep(1.0 + random.uniform(0, 0.5))
+    resp = _cffi_session.get(api_url, params=params, headers=api_headers)
+    return resp.status_code, resp.headers.get("content-type", ""), resp.content
+
+
+def _fetch_httpx(warmup_url: str, api_url: str, params: dict[str, str],
+                 api_headers: dict[str, str], *, warm: bool) -> tuple[int, str, bytes]:
+    with httpx.Client(timeout=CONFIG.http_timeout, follow_redirects=True) as client:
+        with contextlib.suppress(httpx.TransportError):
+            client.get(warmup_url, headers=_PAGE_HEADERS)
+        time.sleep(1.0 + random.uniform(0, 0.5))
+        resp = client.get(api_url, params=params, headers=api_headers)
+    return resp.status_code, resp.headers.get("content-type", ""), resp.content
+
+
 def _idx_get(base_url: str, path: str, params: dict[str, str], *, max_retries: int = 3) -> bytes:
-    url = f"{base_url}{path}"
-    headers = {
+    global _cffi_warm
+    api_url = f"{base_url}{path}"
+    warmup_url = f"{base_url}{_WARMUP_PATHS.get(path, _REFERER)}"
+    api_headers = {
         "User-Agent": CONFIG.http_user_agent,
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
-        "Referer": f"{base_url}{_REFERER}",
+        "Referer": warmup_url,
         "X-Requested-With": "XMLHttpRequest",
     }
-    last_exc: Exception | None = None
+    fetch = _fetch_curl_cffi if curl_requests is not None else _fetch_httpx
+    last_detail = "no attempts made"
     for attempt in range(max_retries):
         try:
-            with httpx.Client(timeout=CONFIG.http_timeout, headers=headers) as client:
-                resp = client.get(url, params=params)
-            if resp.status_code == 403:
-                raise IdxAccessBlocked(
-                    f"IDX returned 403 for {resp.url}. Likely a Cloudflare block on this IP. "
-                    "Try an Indonesian VPS, or the curl-cffi fallback (see README)."
-                )
-            if resp.status_code in (429, 500, 502, 503, 504):
-                raise httpx.HTTPStatusError(
-                    f"retryable {resp.status_code}", request=resp.request, response=resp
-                )
-            resp.raise_for_status()
-            body = resp.content
-            if "json" not in resp.headers.get("content-type", "") and b"<html" in body[:2048].lower():
-                raise IdxAccessBlocked(
-                    f"IDX returned HTML (not JSON) for {resp.url} — Cloudflare challenge?"
-                )
-            return body
-        except (httpx.TransportError, httpx.HTTPStatusError) as exc:
-            last_exc = exc
-            if attempt < max_retries - 1:
-                time.sleep(2**attempt + random.uniform(0, 1))
-    raise RuntimeError(f"IDX request failed after {max_retries} attempts: {last_exc}")
+            status, content_type, body = fetch(
+                warmup_url, api_url, params, api_headers, warm=attempt > 0
+            )
+        except Exception as exc:  # noqa: BLE001 — transport errors vary by backend
+            last_detail = f"{type(exc).__name__}: {exc}"
+        else:
+            if _is_json_ok(status, content_type, body):
+                return body
+            last_detail = f"HTTP {status}, content-type {content_type!r} (Cloudflare challenge/block)"
+        _cffi_warm = False  # force a re-warm on the next attempt
+        if attempt < max_retries - 1:
+            time.sleep(2**attempt + random.uniform(0, 1))
+
+    hint = (
+        "IDX's Cloudflare hard-blocks datacenter/VPS IPs; run from an Indonesian "
+        "residential connection."
+    )
+    if curl_requests is None:
+        hint += " Also: curl_cffi is not installed (pip install 'vektor-gauss[cffi]')."
+    raise IdxAccessBlocked(f"IDX {path} unreachable after {max_retries} attempts: {last_detail}. {hint}")
 
 
 class IdxStockSummarySource(PriceSource):
