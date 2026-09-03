@@ -266,3 +266,10 @@ CREATE INDEX IF NOT EXISTS idx_run_log_phase_date ON run_log (phase, batch_date 
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_foreign_d3m NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_inst_d3m    NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_indiv_d3m   NUMERIC;
+
+-- Phase 1.25 — signals from price_bars fields the engine didn't use before.
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS avg_ticket        NUMERIC;  -- value / frequency (IDR per trade)
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS avg_ticket_z      NUMERIC;  -- z vs own trailing ~20d
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bid_offer_imb     NUMERIC;  -- (bidvol - offervol) / (bidvol + offervol) at close
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS float_ratio       NUMERIC;  -- tradable_shares / listed_shares
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS foreign_float_5d  NUMERIC;  -- 5d foreign net shares / tradable_shares

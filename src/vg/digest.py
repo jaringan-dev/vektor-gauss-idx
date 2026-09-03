@@ -166,7 +166,7 @@ def build_daily(session_date: date | None = None) -> str:
                 """
                 SELECT pb.ticker, pb.close, pb.prev, sc.atr14, sc.nff_d0, sc.nff_w1,
                        sc.foreign_consistency_10d, sc.quadrant, sc.ksei_foreign_trend_3m,
-                       sc.data_flags
+                       sc.avg_ticket_z, sc.data_flags
                 FROM price_bars pb
                 LEFT JOIN signal_components sc
                        ON sc.session_date = pb.session_date AND sc.ticker = pb.ticker
@@ -181,7 +181,7 @@ def build_daily(session_date: date | None = None) -> str:
                 if r is None:
                     L.append(f"{t}  — tidak diperdagangkan")
                     continue
-                _, close, prv, atr, nff0, nff1, cons, quad, kf, flags = r
+                _, close, prv, atr, nff0, nff1, cons, quad, kf, atz, flags = r
                 chg1 = (float(close) / float(prv) - 1) if (close and prv) else None
                 tset = tags_today.get(t, set())
                 prim = _primary(tset)
@@ -201,6 +201,8 @@ def build_daily(session_date: date | None = None) -> str:
                 if quad:
                     bits.append(quad.lower())
                 bits.append(f"KSEI %asing {_TREND.get(kf, '?')}")
+                if atz is not None and abs(float(atz)) >= 1.0:
+                    bits.append(f"tiket z{float(atz):+.1f}".replace(".", ","))
                 if prim:
                     bits.append(f"<b>{prim}</b>" + (" ⚡" if changed else ""))
                 for a in sorted(ann):
@@ -208,7 +210,10 @@ def build_daily(session_date: date | None = None) -> str:
                 for fl in (flags or []):
                     if fl not in ann and fl != "CROSSING-TINGGI":
                         bits.append("⚠ " + fl)
-                L.append("   " + " · ".join(html.escape(b, quote=False) for b in bits))
+                # bits hold only internal tag/quadrant/flag strings + a literal <b>…</b>
+                # for the primary tag — no user data, so don't html.escape (that was
+                # turning the bold into &lt;b&gt;).
+                L.append("   " + " · ".join(bits))
 
                 tl = _trade_line(_f(close), _f(atr), prim, tset, t in held)
                 if tl:

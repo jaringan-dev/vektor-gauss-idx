@@ -36,6 +36,12 @@ _LOOKBACK_TD = 26            # trading days of history to load per ticker
 _FWD_HORIZONS = (1, 3, 5, 10)
 LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval breakdown
 
+# Phase 1.25 tunables (guesses — the forward test decides)
+TICKET_Z_HIGH = 1.5          # avg-ticket z >= this => unusually large trades (institutional footprint)
+TICKET_Z_LOW = -1.0          # avg-ticket z <= this => unusually small trades (retail churn)
+FLOAT_ACCUM_BAND = 0.01      # 5d foreign net shares / free float >= this => meaningful foreign take
+_MIN_FREQ_FOR_TICKET = 20    # skip avg-ticket z below this many trades (too noisy)
+
 
 @dataclass(slots=True)
 class _Bar:
@@ -49,6 +55,18 @@ class _Bar:
     fbuy: float | None
     fsell: float | None
     nonreg_value: float | None
+    frequency: float | None = None
+    bid_volume: float | None = None
+    offer_volume: float | None = None
+    tradable_shares: float | None = None
+    listed_shares: float | None = None
+
+    @property
+    def avg_ticket(self) -> float | None:
+        """Rupiah per trade — the institutional-footprint proxy."""
+        if not self.value or not self.frequency:
+            return None
+        return self.value / self.frequency
 
     @property
     def nff_idr(self) -> float:
@@ -81,6 +99,11 @@ class Components:
     rs_ihsg_10d: float | None = None
     rs_ihsg_20d: float | None = None
     nonreg_ratio: float | None = None
+    avg_ticket: float | None = None          # value / frequency today (IDR/trade)
+    avg_ticket_z: float | None = None        # z vs own trailing ~20d
+    bid_offer_imb: float | None = None       # (bidvol - offervol) / (bidvol + offervol) at close
+    float_ratio: float | None = None         # tradable_shares / listed_shares
+    foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
     ksei_foreign_trend_3m: str = "nodata"
     ksei_retail_trend_3m: str = "nodata"
     ksei_foreign_pct: float | None = None      # level, transient (not persisted)
@@ -136,20 +159,23 @@ def _bars(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> dict[date, _Bar]
     cur.execute(
         """
         SELECT session_date, close, prev, high, low, volume, value,
-               foreign_buy_vol, foreign_sell_vol, nonreg_value
+               foreign_buy_vol, foreign_sell_vol, nonreg_value,
+               frequency, bid_volume, offer_volume, tradable_shares, listed_shares
         FROM price_bars
         WHERE ticker = %s AND session_date = ANY(%s)
         """,
         (ticker, cal),
     )
     out: dict[date, _Bar] = {}
-    for d, c, p, hi, lo, vol, val, fb, fs, nrv in cur.fetchall():
+    for d, c, p, hi, lo, vol, val, fb, fs, nrv, freq, bv, ov, tsh, lsh in cur.fetchall():
         def f(x):
             return float(x) if x is not None else None
 
         out[d] = _Bar(
             d=d, close=f(c), prev=f(p), high=f(hi), low=f(lo), volume=f(vol),
             value=f(val), fbuy=f(fb), fsell=f(fs), nonreg_value=f(nrv),
+            frequency=f(freq), bid_volume=f(bv), offer_volume=f(ov),
+            tradable_shares=f(tsh), listed_shares=f(lsh),
         )
     return out
 
@@ -321,6 +347,35 @@ def _components(
         if pr is not None and ir is not None:
             setattr(c, attr, pr - ir)
 
+    # Phase 1.25 — signals from price_bars fields not used above.
+    c.avg_ticket = b0.avg_ticket
+    if b0.frequency and b0.frequency >= _MIN_FREQ_FOR_TICKET:
+        hist = [
+            bk.avg_ticket
+            for bk in (back(k) for k in range(1, 21))
+            if bk and bk.frequency and bk.frequency >= _MIN_FREQ_FOR_TICKET
+        ]
+        hist = [t for t in hist if t is not None]
+        if len(hist) >= 10 and c.avg_ticket is not None:
+            mean = sum(hist) / len(hist)
+            var = sum((t - mean) ** 2 for t in hist) / len(hist)
+            sd = var**0.5
+            if sd > 0:
+                c.avg_ticket_z = (c.avg_ticket - mean) / sd
+
+    if b0.bid_volume is not None and b0.offer_volume is not None:
+        denom = b0.bid_volume + b0.offer_volume
+        if denom > 0:
+            c.bid_offer_imb = (b0.bid_volume - b0.offer_volume) / denom
+
+    if b0.tradable_shares and b0.listed_shares and b0.listed_shares > 0:
+        c.float_ratio = b0.tradable_shares / b0.listed_shares
+
+    if b0.tradable_shares and b0.tradable_shares > 0:
+        five = [back(k) for k in range(5)]
+        if all(g is not None for g in five):
+            c.foreign_float_5d = sum(g.foreign_net_shares for g in five) / b0.tradable_shares
+
     return c
 
 
@@ -333,8 +388,17 @@ def _classify(c: Components) -> list[str]:
     to c.data_flags. Each tag is forward-tested independently."""
     tags: list[str] = []
 
+    # Signals that do NOT need price direction / weekly NFF — must fire even for a
+    # ticker with < 5 price bars, so they go above the early-return below.
+    if c.ksei_inst_d3m is not None and c.ksei_inst_d3m > KSEI_TREND_BAND:
+        tags.append("KSEI-INST-AKUM")          # local institution % rising 3m
+    if c.ksei_indiv_d3m is not None and c.ksei_indiv_d3m < -KSEI_TREND_BAND:
+        tags.append("KSEI-RITEL-EXIT")         # local individual % falling 3m
+    if c.foreign_float_5d is not None and c.foreign_float_5d > FLOAT_ACCUM_BAND:
+        tags.append("FLOAT-ASING-PADAT")       # foreign net-took a slice of a thin float
+
     if c.price_chg_5d is None or c.nff_w1 is None:
-        return tags  # not enough history
+        return tags  # not enough price history for the rest
 
     direction = (
         "up" if c.price_chg_5d > PRICE_FLAT_BAND
@@ -390,12 +454,13 @@ def _classify(c: Components) -> list[str]:
     if "CROSSING-TINGGI" in c.data_flags:
         tags.append("CROSSING-TINGGI")
 
-    # KSEI monthly, standalone (not gated on a flow tag) — the "un-paintable"
-    # register signal: are institutions accumulating / is the retail base shrinking?
-    if c.ksei_inst_d3m is not None and c.ksei_inst_d3m > KSEI_TREND_BAND:
-        tags.append("KSEI-INST-AKUM")
-    if c.ksei_indiv_d3m is not None and c.ksei_indiv_d3m < -KSEI_TREND_BAND:
-        tags.append("KSEI-RITEL-EXIT")
+    # Phase 1.25 — average ticket size (value / trade count) as an institutional-
+    # footprint proxy. Big/rising ticket into weakness vs small ticket chasing.
+    if c.avg_ticket_z is not None:
+        if c.avg_ticket_z > TICKET_Z_HIGH and direction in ("flat", "down"):
+            tags.append("TIKET-BESAR-AKUM")
+        if c.avg_ticket_z < TICKET_Z_LOW and direction == "up":
+            tags.append("TIKET-KECIL-MARKUP")
 
     return tags
 
@@ -409,6 +474,7 @@ _COMP_COLS = (
     "nff_w2", "nff_w3", "nff_w4", "foreign_consistency_10d", "vol_surge", "rs_ihsg_5d",
     "rs_ihsg_10d", "rs_ihsg_20d", "nonreg_ratio", "ksei_foreign_trend_3m",
     "ksei_retail_trend_3m", "ksei_foreign_d3m", "ksei_inst_d3m", "ksei_indiv_d3m",
+    "avg_ticket", "avg_ticket_z", "bid_offer_imb", "float_ratio", "foreign_float_5d",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -420,6 +486,7 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.nff_w3, c.nff_w4, c.foreign_consistency_10d, c.vol_surge, c.rs_ihsg_5d,
         c.rs_ihsg_10d, c.rs_ihsg_20d, c.nonreg_ratio, c.ksei_foreign_trend_3m,
         c.ksei_retail_trend_3m, c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m,
+        c.avg_ticket, c.avg_ticket_z, c.bid_offer_imb, c.float_ratio, c.foreign_float_5d,
         c.quadrant, sorted(set(c.data_flags)),
     )
 

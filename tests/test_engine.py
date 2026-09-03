@@ -6,6 +6,9 @@ from datetime import date, timedelta
 
 from vg.engine import (
     CONSISTENCY_ACC,
+    FLOAT_ACCUM_BAND,
+    TICKET_Z_HIGH,
+    TICKET_Z_LOW,
     Components,
     _Bar,
     _classify,
@@ -15,12 +18,19 @@ from vg.engine import (
 )
 
 
-def _bar(d: date, close: float, fnet: float, volume: float = 1_000_000) -> _Bar:
+def _bar(
+    d: date, close: float, fnet: float, volume: float = 1_000_000,
+    *, frequency: float = 1_000.0, bid_volume: float | None = None,
+    offer_volume: float | None = None, tradable_shares: float | None = None,
+    listed_shares: float | None = None, value: float | None = None,
+) -> _Bar:
     # value chosen so VWAP == close  ->  nff_idr == fnet * close
     return _Bar(
         d=d, close=close, prev=close, high=close * 1.01, low=close * 0.99,
-        volume=volume, value=close * volume,
+        volume=volume, value=close * volume if value is None else value,
         fbuy=max(fnet, 0.0) + 100.0, fsell=max(-fnet, 0.0) + 100.0, nonreg_value=0.0,
+        frequency=frequency, bid_volume=bid_volume, offer_volume=offer_volume,
+        tradable_shares=tradable_shares, listed_shares=listed_shares,
     )
 
 
@@ -80,6 +90,45 @@ def test_components_split_adjusted_return():
     assert c is not None
     # adjusted: pre-split 10000 / 10 == 1000 == today -> ~0% change, not -90%
     assert abs(c.price_chg_5d) < 1e-6
+
+
+def test_bar_avg_ticket():
+    assert _bar(date(2026, 1, 5), 1000.0, 0.0, volume=1_000_000, frequency=2_000).avg_ticket == \
+        1000.0 * 1_000_000 / 2_000
+    assert _bar(date(2026, 1, 5), 1000.0, 0.0, frequency=0).avg_ticket is None
+
+
+def test_components_phase125_fields():
+    cal = _calendar(22, date(2026, 9, 1))
+    d0 = cal[-1]
+    # 21 history days at a steady ~1M avg ticket (small cyclic noise), today a spike.
+    bars = {}
+    for i, d in enumerate(cal[:-1]):
+        freq = 900 + (i % 5) * 50            # 900..1100 -> some variance
+        bars[d] = _bar(d, 1000.0, fnet=1000.0, volume=1_000_000, value=1e9,
+                       frequency=freq, tradable_shares=100_000.0, listed_shares=125_000.0)
+    bars[d0] = _bar(d0, 1000.0, fnet=1000.0, volume=1_000_000, value=1e9,
+                    frequency=200, tradable_shares=100_000.0, listed_shares=125_000.0)
+    c = _components("X", cal, bars, {d: 1.0 for d in cal}, splits=[])
+    assert c is not None
+    assert abs(c.avg_ticket - 1e9 / 200) < 1e-6           # 5M today
+    assert c.avg_ticket_z is not None and c.avg_ticket_z > TICKET_Z_HIGH
+    assert abs(c.float_ratio - 0.8) < 1e-9                 # 100k / 125k
+    assert abs(c.foreign_float_5d - 5 * 1000.0 / 100_000.0) < 1e-9  # 5d fnet / float = 0.05
+
+
+def test_classify_tiket_and_float_tags():
+    # big ticket into weakness
+    c = Components(ticker="X", close=100.0, price_chg_5d=-0.01, nff_w1=0.0,
+                   avg_ticket_z=TICKET_Z_HIGH + 0.5)
+    assert "TIKET-BESAR-AKUM" in _classify(c)
+    # small ticket chasing price up
+    c = Components(ticker="X", close=100.0, price_chg_5d=0.06, nff_w1=0.0,
+                   avg_ticket_z=TICKET_Z_LOW - 0.5)
+    assert "TIKET-KECIL-MARKUP" in _classify(c)
+    # foreign took a slice of thin float — fires with no price history
+    c = Components(ticker="X", foreign_float_5d=FLOAT_ACCUM_BAND + 0.02)
+    assert _classify(c) == ["FLOAT-ASING-PADAT"]
 
 
 def test_classify_akum_asing():
