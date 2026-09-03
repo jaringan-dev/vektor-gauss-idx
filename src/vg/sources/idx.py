@@ -174,7 +174,7 @@ def _idx_get(base_url: str, path: str, params: dict[str, str], *, max_retries: i
             status, content_type, body = fetch(
                 warmup_url, api_url, params, api_headers, warm=attempt > 0
             )
-        except Exception as exc:  # noqa: BLE001 — transport errors vary by backend
+        except Exception as exc:  # transport errors vary by backend
             last_detail = f"{type(exc).__name__}: {exc}"
         else:
             if _is_json_ok(status, content_type, body):
