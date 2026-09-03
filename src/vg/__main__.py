@@ -88,6 +88,14 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("--risk", type=float, metavar="PCT", help="risk %% per trade (default from env)")
     cl.add_argument("--fee", type=float, metavar="PCT", help="round-trip fee %% (default from env)")
 
+    se = sub.add_parser("season", help="day-of-week + monthly seasonality from price history")
+    se.add_argument("ticker", help="ticker, or COMPOSITE / IHSG")
+    se.add_argument("--years", type=int, default=12, help="lookback (our data starts ~2023)")
+
+    ow = sub.add_parser("ownership", help="KSEI monthly ownership history for one ticker")
+    ow.add_argument("ticker")
+    ow.add_argument("--months", type=int, default=12)
+
     args = p.parse_args(argv)
 
     if args.cmd == "init-db":
@@ -255,6 +263,49 @@ def main(argv: list[str] | None = None) -> int:
                 f"{s['n_liquid'] or 0:>6} {pc(s['edge_h5_liquid']):>8} "
                 f"{(s['hit_rate_liquid'] or 0) * 100:>4.0f}%"
             )
+        return 0
+
+    if args.cmd == "season":
+        from . import season
+
+        s = season.seasonality(args.ticker, args.years)
+        if not s["n_days"]:
+            print(f"no price history for {s['ticker']}")
+            return 1
+
+        def _row(r: dict) -> str:
+            up = f"{r['pct_up'] * 100:.0f}%" if r["pct_up"] is not None else "-"
+            mr = f"{r['mean_ret'] * 100:+.2f}%" if r["mean_ret"] is not None else "-"
+            return f"  {r['label']:<5}{r['n']:>5}{up:>7}{mr:>10}"
+
+        print(f"{s['ticker']} seasonality  {s['span'][0]}..{s['span'][1]}  ({s['n_days']} days)\n")
+        print("day-of-week (close-to-close):")
+        print(f"  {'day':<5}{'n':>5}{'up%':>7}{'meanRet':>10}")
+        for r in s["day_of_week"]:
+            print(_row(r))
+        print("\nmonth  (n = years observed — thin, read with care):")
+        print(f"  {'mon':<5}{'n':>5}{'up%':>7}{'meanRet':>10}")
+        for r in s["month"]:
+            print(_row(r))
+        return 0
+
+    if args.cmd == "ownership":
+        rows = engine.ownership_history(args.ticker.upper(), args.months)
+        if not rows:
+            print(f"no KSEI ownership rows for {args.ticker.upper()}")
+            return 1
+
+        def _p(x: float | None) -> str:
+            return f"{x * 100:.2f}%" if x is not None else "  -  "
+
+        print(f"{args.ticker.upper()} — KSEI monthly ownership (% of the scripless base)\n")
+        print(f"  {'month':<10}{'%foreign':>10}{'%locInst':>10}{'%locIndiv':>11}"
+              f"{'scripless':>11}{'holders':>10}")
+        for r in rows:
+            hc = f"{int(r['holders']):,}" if r["holders"] else "-"
+            print(f"  {r['month'].isoformat():<10}{_p(r['foreign_pct']):>10}"
+                  f"{_p(r['inst_pct']):>10}{_p(r['indiv_pct']):>11}"
+                  f"{_p(r['scripless_pct']):>11}{hc:>10}")
         return 0
 
     return 1

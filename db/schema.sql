@@ -187,8 +187,11 @@ CREATE TABLE IF NOT EXISTS signal_components (
     rs_ihsg_10d             NUMERIC,
     rs_ihsg_20d             NUMERIC,
     nonreg_ratio            NUMERIC,
-    ksei_foreign_trend_3m   TEXT,        -- up | down | flat | nodata
-    ksei_retail_trend_3m    TEXT,
+    ksei_foreign_trend_3m   TEXT,        -- up | down | flat | nodata (sign of ksei_foreign_d3m)
+    ksei_retail_trend_3m    TEXT,        -- (sign of ksei_indiv_d3m)
+    ksei_foreign_d3m        NUMERIC,     -- 3-month change in %foreign of the scripless base (fraction)
+    ksei_inst_d3m           NUMERIC,     -- 3-month change in %local-institution
+    ksei_indiv_d3m          NUMERIC,     -- 3-month change in %local-individual (retail)
     quadrant                TEXT,        -- AKUMULASI | MARKUP | DISTRIBUSI | MARKDOWN | NETRAL
     data_flags              TEXT[] NOT NULL DEFAULT '{}',  -- CROSSING-TINGGI, KSEI-DIVERGEN, SHARE_COUNT_CHANGE, RECON_FAIL, ...
     computed_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -254,3 +257,12 @@ CREATE TABLE IF NOT EXISTS run_log (
     finished_at   TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_run_log_phase_date ON run_log (phase, batch_date DESC);
+
+-- ---------------------------------------------------------------------------
+-- Additive migrations — `CREATE TABLE IF NOT EXISTS` above does not alter an
+-- existing table, so new columns on old databases go here. All idempotent.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_foreign_d3m NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_inst_d3m    NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS ksei_indiv_d3m   NUMERIC;

@@ -83,6 +83,12 @@ class Components:
     nonreg_ratio: float | None = None
     ksei_foreign_trend_3m: str = "nodata"
     ksei_retail_trend_3m: str = "nodata"
+    ksei_foreign_pct: float | None = None      # level, transient (not persisted)
+    ksei_inst_pct: float | None = None
+    ksei_indiv_pct: float | None = None
+    ksei_foreign_d3m: float | None = None      # 3-month change (fraction), persisted
+    ksei_inst_d3m: float | None = None
+    ksei_indiv_d3m: float | None = None
     quadrant: str | None = None
     data_flags: list[str] = field(default_factory=list)
 
@@ -178,10 +184,39 @@ def _split_factor(events: list[tuple[date, float]], lo: date, hi: date) -> float
     return factor
 
 
-def _ksei_trend(cur: psycopg.Cursor, ticker: str, session_date: date) -> tuple[str, str]:
+@dataclass(slots=True)
+class _KseiSnap:
+    foreign_pct: float | None = None
+    inst_pct: float | None = None
+    indiv_pct: float | None = None
+    foreign_d3m: float | None = None
+    inst_d3m: float | None = None
+    indiv_d3m: float | None = None
+    foreign_trend: str = "nodata"
+    retail_trend: str = "nodata"
+
+
+def _ksei_shares(detail, li, lin, ft) -> tuple[float, float, float] | None:
+    """(%foreign, %local_institution, %local_individual) of the scripless base.
+    Prefers the 18-way `detail` jsonb; falls back to the 3 aggregate columns."""
+    try:
+        loc, fgn = detail["local"], detail["foreign"]
+        loc_tot, fgn_tot = float(loc["TOTAL"]), float(fgn["TOTAL"])
+        indiv = float(loc.get("ID", 0.0))
+    except (TypeError, KeyError, ValueError):
+        loc_tot = float(lin or 0.0) + float(li or 0.0)
+        fgn_tot = float(ft or 0.0)
+        indiv = float(li or 0.0)
+    base = loc_tot + fgn_tot
+    if base <= 0:
+        return None
+    return fgn_tot / base, (loc_tot - indiv) / base, indiv / base
+
+
+def _ksei_metrics(cur: psycopg.Cursor, ticker: str, session_date: date) -> _KseiSnap:
     cur.execute(
         """
-        SELECT local_individual, local_institution, foreign_total
+        SELECT detail, local_individual, local_institution, foreign_total
         FROM ownership_monthly
         WHERE ticker = %s AND month_end <= %s
         ORDER BY month_end DESC LIMIT 4
@@ -190,25 +225,20 @@ def _ksei_trend(cur: psycopg.Cursor, ticker: str, session_date: date) -> tuple[s
     )
     rows = cur.fetchall()
     if len(rows) < 3:
-        return "nodata", "nodata"
-    latest, older = rows[0], rows[min(3, len(rows) - 1)]
+        return _KseiSnap()
+    now = _ksei_shares(*rows[0])
+    then = _ksei_shares(*rows[min(3, len(rows) - 1)])
+    if now is None or then is None:
+        return _KseiSnap()
 
-    def pct(row, which):
-        li, lin, ft = (float(x) if x is not None else 0.0 for x in row)
-        tot = li + lin + ft
-        if tot <= 0:
-            return None
-        return {"foreign": ft, "retail": li}[which] / tot
-
-    def band(a, b):
-        if a is None or b is None:
-            return "nodata"
-        d = a - b
+    def band(d: float) -> str:
         return "up" if d > KSEI_TREND_BAND else "down" if d < -KSEI_TREND_BAND else "flat"
 
-    return (
-        band(pct(latest, "foreign"), pct(older, "foreign")),
-        band(pct(latest, "retail"), pct(older, "retail")),
+    fd, id_, dd = now[0] - then[0], now[1] - then[1], now[2] - then[2]
+    return _KseiSnap(
+        foreign_pct=now[0], inst_pct=now[1], indiv_pct=now[2],
+        foreign_d3m=fd, inst_d3m=id_, indiv_d3m=dd,
+        foreign_trend=band(fd), retail_trend=band(dd),
     )
 
 
@@ -360,6 +390,13 @@ def _classify(c: Components) -> list[str]:
     if "CROSSING-TINGGI" in c.data_flags:
         tags.append("CROSSING-TINGGI")
 
+    # KSEI monthly, standalone (not gated on a flow tag) — the "un-paintable"
+    # register signal: are institutions accumulating / is the retail base shrinking?
+    if c.ksei_inst_d3m is not None and c.ksei_inst_d3m > KSEI_TREND_BAND:
+        tags.append("KSEI-INST-AKUM")
+    if c.ksei_indiv_d3m is not None and c.ksei_indiv_d3m < -KSEI_TREND_BAND:
+        tags.append("KSEI-RITEL-EXIT")
+
     return tags
 
 
@@ -371,7 +408,8 @@ _COMP_COLS = (
     "session_date", "ticker", "close", "atr14", "price_chg_5d", "nff_d0", "nff_w1",
     "nff_w2", "nff_w3", "nff_w4", "foreign_consistency_10d", "vol_surge", "rs_ihsg_5d",
     "rs_ihsg_10d", "rs_ihsg_20d", "nonreg_ratio", "ksei_foreign_trend_3m",
-    "ksei_retail_trend_3m", "quadrant", "data_flags",
+    "ksei_retail_trend_3m", "ksei_foreign_d3m", "ksei_inst_d3m", "ksei_indiv_d3m",
+    "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
 
@@ -381,7 +419,8 @@ def _comp_row(sd: date, c: Components) -> tuple:
         sd, c.ticker, c.close, c.atr14, c.price_chg_5d, c.nff_d0, c.nff_w1, c.nff_w2,
         c.nff_w3, c.nff_w4, c.foreign_consistency_10d, c.vol_surge, c.rs_ihsg_5d,
         c.rs_ihsg_10d, c.rs_ihsg_20d, c.nonreg_ratio, c.ksei_foreign_trend_3m,
-        c.ksei_retail_trend_3m, c.quadrant, sorted(set(c.data_flags)),
+        c.ksei_retail_trend_3m, c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m,
+        c.quadrant, sorted(set(c.data_flags)),
     )
 
 
@@ -405,7 +444,14 @@ def compute_day(session_date: date) -> ComputeSummary:
             c = _components(t, cal, bars, ihsg, splits, changed)
             if c is None:
                 continue
-            c.ksei_foreign_trend_3m, c.ksei_retail_trend_3m = _ksei_trend(cur, t, session_date)
+            snap = _ksei_metrics(cur, t, session_date)
+            c.ksei_foreign_trend_3m, c.ksei_retail_trend_3m = snap.foreign_trend, snap.retail_trend
+            c.ksei_foreign_pct, c.ksei_inst_pct, c.ksei_indiv_pct = (
+                snap.foreign_pct, snap.inst_pct, snap.indiv_pct
+            )
+            c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m = (
+                snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
+            )
             tags = _classify(c)
             comp_rows.append(_comp_row(session_date, c))
             for tag in tags:
@@ -590,6 +636,42 @@ def _refresh_market_breadth(cur: psycopg.Cursor, cutoff: date) -> int:
         {"cutoff": cutoff, "liq": LIQUID_VALUE_IDR},
     )
     return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# ownership history (display)
+# ---------------------------------------------------------------------------
+
+def ownership_history(ticker: str, months: int = 12) -> list[dict]:
+    """KSEI monthly ownership for one ticker, newest first — %foreign / %local
+    institution / %local individual of the scripless base, + scripless % and
+    holder count when present."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT month_end, detail, local_individual, local_institution,
+                   foreign_total, holders_count
+            FROM ownership_monthly WHERE ticker = %s
+            ORDER BY month_end DESC LIMIT %s
+            """,
+            (ticker, months),
+        )
+        out: list[dict] = []
+        for me, detail, li, lin, ft, hc in cur.fetchall():
+            sh = _ksei_shares(detail, li, lin, ft)
+            try:
+                sp = float(detail["scripless_pct"]) if detail and "scripless_pct" in detail else None
+            except (TypeError, ValueError):
+                sp = None
+            out.append({
+                "month": me,
+                "foreign_pct": sh[0] if sh else None,
+                "inst_pct": sh[1] if sh else None,
+                "indiv_pct": sh[2] if sh else None,
+                "scripless_pct": sp,
+                "holders": float(hc) if hc is not None else None,
+            })
+    return out
 
 
 # ---------------------------------------------------------------------------

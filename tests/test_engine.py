@@ -10,6 +10,7 @@ from vg.engine import (
     _Bar,
     _classify,
     _components,
+    _ksei_shares,
     _split_factor,
 )
 
@@ -107,6 +108,32 @@ def test_classify_distribusi_with_ksei_divergen():
 
 def test_classify_needs_history():
     assert _classify(Components(ticker="X")) == []          # no price_chg_5d / nff_w1
+
+
+def test_ksei_shares_from_detail():
+    detail = {"local": {"ID": 20.0, "TOTAL": 50.0}, "foreign": {"TOTAL": 50.0}}
+    fgn, inst, indiv = _ksei_shares(detail, None, None, None)
+    assert abs(fgn - 0.5) < 1e-9
+    assert abs(indiv - 0.2) < 1e-9          # 20 / 100
+    assert abs(inst - 0.3) < 1e-9           # (50 - 20) / 100
+
+
+def test_ksei_shares_fallback_to_columns():
+    fgn, inst, indiv = _ksei_shares(None, 30.0, 20.0, 50.0)   # li, lin, ft
+    assert abs(fgn - 0.5) < 1e-9
+    assert abs(indiv - 0.3) < 1e-9
+    assert abs(inst - 0.2) < 1e-9                             # (50 - 30) / 100
+    assert _ksei_shares(None, 0, 0, 0) is None
+
+
+def test_classify_ksei_standalone_tags():
+    c = Components(
+        ticker="X", close=100.0, price_chg_5d=0.0, nff_w1=0.0,
+        ksei_inst_d3m=0.02, ksei_indiv_d3m=-0.03,
+    )
+    tags = _classify(c)
+    assert "KSEI-INST-AKUM" in tags
+    assert "KSEI-RITEL-EXIT" in tags
 
 
 def test_comp_columns_align():

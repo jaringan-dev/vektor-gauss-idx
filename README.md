@@ -93,6 +93,9 @@ vg digest                                                # send it (needs VG_TEL
 vg digest --weekly                                       # the eval table
 
 vg calc --entry 3390 --sl 3180 --target-r 2.5 --balance 100000000 --risk 1.0
+
+vg season COMPOSITE --years 5      # day-of-week + monthly seasonality (thin n — read `n`)
+vg ownership BBRI --months 12      # KSEI monthly %foreign / %local-inst / %local-indiv + scripless %
 ```
 
 ### Daily EOD sequence (cron ~19:00 WIB)
