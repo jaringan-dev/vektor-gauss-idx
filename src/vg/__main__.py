@@ -234,13 +234,26 @@ def main(argv: list[str] | None = None) -> int:
         if not stats:
             print("no resolved signal_log rows yet (need ~2 weeks of data + backfill-outcomes)")
             return 0
-        print(f"{'tag':<18} {'n':>5} {'avgH5':>8} {'vsIHSG':>8} {'hit':>6} {'avgH1':>8} {'avgH10':>8}")
+
+        def pc(x: float | None) -> str:
+            return f"{x * 100:+.2f}%" if x is not None else "   -  "
+
+        print(
+            "edge = tag return minus equal-weight universe on the same day. "
+            "hit/uHit = % positive for tag vs universe. "
+            f"liquid = signals on names > Rp{engine.LIQUID_VALUE_IDR/1e9:g}B traded that day.\n"
+        )
+        print(
+            f"{'tag':<17}{'n':>7} {'avgH5':>8} {'edgeH1':>8} {'edgeH5':>8} {'edgeH10':>8} "
+            f"{'hit':>5} {'uHit':>5}  | {'nLiq':>6} {'edgeH5L':>8} {'hitL':>5}"
+        )
         for s in stats:
-            def pc(x):
-                return f"{x * 100:+.2f}%" if x is not None else "   —  "
             print(
-                f"{s['tag']:<18} {s['n']:>5} {pc(s['avg_h5']):>8} {pc(s['avg_vs_ihsg_h5']):>8} "
-                f"{(s['hit_rate'] or 0) * 100:>5.0f}% {pc(s['avg_h1']):>8} {pc(s['avg_h10']):>8}"
+                f"{s['tag']:<17}{s['n']:>7} {pc(s['avg_h5']):>8} {pc(s['edge_h1']):>8} "
+                f"{pc(s['edge_h5']):>8} {pc(s['edge_h10']):>8} "
+                f"{(s['hit_rate'] or 0) * 100:>4.0f}% {(s['univ_hit_rate'] or 0) * 100:>4.0f}%  | "
+                f"{s['n_liquid'] or 0:>6} {pc(s['edge_h5_liquid']):>8} "
+                f"{(s['hit_rate_liquid'] or 0) * 100:>4.0f}%"
             )
         return 0
 

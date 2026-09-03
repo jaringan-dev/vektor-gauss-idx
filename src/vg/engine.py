@@ -34,6 +34,7 @@ NONREG_HIGH = 0.20            # negotiated value / total value > 20% -> CROSSING
 KSEI_TREND_BAND = 0.005      # +/- 0.5pp month-over-3-months
 _LOOKBACK_TD = 26            # trading days of history to load per ticker
 _FWD_HORIZONS = (1, 3, 5, 10)
+LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval breakdown
 
 
 @dataclass(slots=True)
@@ -534,8 +535,61 @@ def backfill_outcomes(as_of: date | None = None) -> int:
                 )
                 updated += 1
 
+        if len(cal) > max(_FWD_HORIZONS):
+            _refresh_market_breadth(cur, cal[-1 - max(_FWD_HORIZONS)])
         _log(cur, "backfill_outcomes", as_of, "ok", updated, None)
     return updated
+
+
+def _refresh_market_breadth(cur: psycopg.Cursor, cutoff: date) -> int:
+    """Equal-weight universe forward returns per trading day, up to `cutoff` (the
+    last day whose H+10 window has closed). Incremental — skips dates already
+    stored. Raw closes: splits are ~0.02% of ticker-days, negligible in a
+    cross-sectional mean. This is the benchmark eval_tags() measures edge against."""
+    cur.execute(
+        """
+        INSERT INTO market_breadth (
+            session_date, n_all, ret_h1_all, ret_h3_all, ret_h5_all, ret_h10_all,
+            hit_h5_all, n_liquid, ret_h5_liquid, hit_h5_liquid
+        )
+        WITH cal AS (
+            SELECT session_date, row_number() OVER (ORDER BY session_date) AS rn
+            FROM trading_calendar
+        ),
+        px AS (
+            SELECT p.ticker, p.close::float AS c, p.value::float AS val,
+                   cal.rn, cal.session_date
+            FROM price_bars p JOIN cal USING (session_date)
+            WHERE p.close > 0 AND COALESCE(p.volume, 0) > 0
+        ),
+        fr AS (
+            SELECT a.session_date, a.val,
+                   b1.c  / a.c - 1 AS r1,
+                   b3.c  / a.c - 1 AS r3,
+                   b5.c  / a.c - 1 AS r5,
+                   b10.c / a.c - 1 AS r10
+            FROM px a
+            LEFT JOIN px b1  ON b1.ticker  = a.ticker AND b1.rn  = a.rn + 1
+            LEFT JOIN px b3  ON b3.ticker  = a.ticker AND b3.rn  = a.rn + 3
+            LEFT JOIN px b5  ON b5.ticker  = a.ticker AND b5.rn  = a.rn + 5
+            LEFT JOIN px b10 ON b10.ticker = a.ticker AND b10.rn = a.rn + 10
+            WHERE a.session_date <= %(cutoff)s
+              AND a.session_date NOT IN (SELECT session_date FROM market_breadth)
+        )
+        SELECT session_date,
+               count(*) FILTER (WHERE r5 IS NOT NULL),
+               avg(r1), avg(r3), avg(r5), avg(r10),
+               avg((r5 > 0)::int)::float,
+               count(*) FILTER (WHERE r5 IS NOT NULL AND val > %(liq)s),
+               avg(r5) FILTER (WHERE val > %(liq)s),
+               (avg((r5 > 0)::int) FILTER (WHERE val > %(liq)s))::float
+        FROM fr
+        GROUP BY session_date
+        ON CONFLICT (session_date) DO NOTHING
+        """,
+        {"cutoff": cutoff, "liq": LIQUID_VALUE_IDR},
+    )
+    return cur.rowcount
 
 
 # ---------------------------------------------------------------------------
@@ -543,21 +597,37 @@ def backfill_outcomes(as_of: date | None = None) -> int:
 # ---------------------------------------------------------------------------
 
 def eval_tags() -> list[dict]:
-    """Per-tag forward-return stats over all resolved signal_log rows."""
+    """Per-tag forward returns vs the equal-weight universe, date-matched.
+
+    `edge_h5` is the number that matters: avg(tag ret_h5 - universe ret_h5 on the
+    same day). IHSG is large-cap-weighted and not the tradeable universe, so
+    comparing to it flatters everything. `*_liquid` restricts to signals on names
+    that traded > LIQUID_VALUE_IDR that day, vs the liquid-universe benchmark.
+    Needs market_breadth populated (run `vg backfill-outcomes`)."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            SELECT tag,
-                   count(*)                                        AS n,
-                   avg(ret_h5)                                     AS avg_h5,
-                   avg(ret_vs_ihsg_h5)                             AS avg_vs_ihsg_h5,
-                   avg((ret_h5 > 0)::int)::float                   AS hit_rate,
-                   avg(ret_h1) AS avg_h1, avg(ret_h10) AS avg_h10
-            FROM signal_log
-            WHERE ret_h5 IS NOT NULL
-            GROUP BY tag
+            SELECT s.tag,
+                   count(*)                                       AS n,
+                   avg(s.ret_h5)                                  AS avg_h5,
+                   avg(s.ret_h1  - m.ret_h1_all)                  AS edge_h1,
+                   avg(s.ret_h5  - m.ret_h5_all)                  AS edge_h5,
+                   avg(s.ret_h10 - m.ret_h10_all)                 AS edge_h10,
+                   avg((s.ret_h5 > 0)::int)::float                AS hit_rate,
+                   avg(m.hit_h5_all)                              AS univ_hit_rate,
+                   count(*) FILTER (WHERE p.value > %(liq)s)      AS n_liquid,
+                   avg(s.ret_h5 - m.ret_h5_liquid)
+                       FILTER (WHERE p.value > %(liq)s)           AS edge_h5_liquid,
+                   (avg((s.ret_h5 > 0)::int)
+                       FILTER (WHERE p.value > %(liq)s))::float   AS hit_rate_liquid
+            FROM signal_log s
+            JOIN market_breadth m USING (session_date)
+            JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
+            WHERE s.ret_h5 IS NOT NULL
+            GROUP BY s.tag
             ORDER BY n DESC
-            """
+            """,
+            {"liq": LIQUID_VALUE_IDR},
         )
         cols = [d[0] for d in cur.description]
         return [

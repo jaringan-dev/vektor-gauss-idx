@@ -210,6 +210,24 @@ CREATE TABLE IF NOT EXISTS signal_log (
     PRIMARY KEY (session_date, ticker, tag)
 );
 
+-- Equal-weight universe forward returns per trading day — the benchmark a tag's
+-- edge is measured against (IHSG is large-cap-weighted, not the tradeable
+-- universe). Filled by `vg backfill-outcomes`. `*_liquid` = restricted to names
+-- that traded > LIQUID_VALUE_IDR that day.
+CREATE TABLE IF NOT EXISTS market_breadth (
+    session_date    DATE PRIMARY KEY,
+    n_all           INT,
+    ret_h1_all      NUMERIC,
+    ret_h3_all      NUMERIC,
+    ret_h5_all      NUMERIC,
+    ret_h10_all     NUMERIC,
+    hit_h5_all      NUMERIC,
+    n_liquid        INT,
+    ret_h5_liquid   NUMERIC,
+    hit_h5_liquid   NUMERIC,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ---------------------------------------------------------------------------
 -- Operational
 -- ---------------------------------------------------------------------------

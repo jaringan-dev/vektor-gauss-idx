@@ -85,8 +85,8 @@ vg detect-ca                                             # splits from listed_sh
 
 vg compute --latest                                      # engine v0 -> signal_components + probation tags
 vg compute --backfill 2024-01-02 2026-09-02
-vg backfill-outcomes                                     # fill forward returns on resolved tags
-vg eval                                                  # per-tag forward-return stats — the Phase 1 payoff
+vg backfill-outcomes                                     # forward returns on resolved tags + refresh market_breadth
+vg eval                                                  # per-tag edge vs the equal-weight universe (date-matched) — the Phase 1 payoff
 
 vg digest --dry-run                                      # preview the Telegram digest
 vg digest                                                # send it (needs VG_TELEGRAM_* in .env)
