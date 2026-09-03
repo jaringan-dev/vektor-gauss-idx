@@ -68,6 +68,46 @@ class PriceSource(ABC):
         ...
 
 
+# Investor-category codes used by KSEI (both Local and Foreign):
+#   IS insurance · CP corporate · PF pension fund · IB financial institution/bank
+#   ID individual · MF mutual fund · SC securities company · FD foundation · OT other
+KSEI_CATEGORIES = ("IS", "CP", "PF", "IB", "ID", "MF", "SC", "FD", "OT")
+
+
+@dataclass(slots=True)
+class OwnershipSnapshot:
+    """One EQUITY row from a KSEI month-end balance-position file (share counts)."""
+
+    ticker: str
+    price: Num = None          # month-end close, as recorded by KSEI
+    sec_num: Num = None        # total registered shares
+    local: dict[str, Num] = field(default_factory=dict)    # keys: KSEI_CATEGORIES + "TOTAL"
+    foreign: dict[str, Num] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class OwnershipFetchResult:
+    status: FetchStatus
+    month_end: date | None
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    raw_ext: str = "zip"
+    rows: list[OwnershipSnapshot] = field(default_factory=list)
+    detail: str = ""
+
+
+class OwnershipSource(ABC):
+    """Month-end ownership composition by investor category (local/foreign)."""
+
+    name: str
+    tier: int
+
+    @abstractmethod
+    def fetch(self, month: date) -> OwnershipFetchResult:
+        ...
+
+
 class BrokerSummarySource(ABC):
     """Per-ticker per-broker buy/sell. NOT used in Phase 1 — Tier 1 feed only.
     Implement in Phase 1.5 behind this same interface."""

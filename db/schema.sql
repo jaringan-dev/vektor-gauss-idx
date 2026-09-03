@@ -78,7 +78,10 @@ CREATE TABLE IF NOT EXISTS index_bars (
 -- Not populated in Phase 1 scaffold — next collector.
 
 -- ---------------------------------------------------------------------------
--- Ownership (KSEI, Tier 0) — monthly. Not populated in Phase 1 scaffold.
+-- Ownership (KSEI BalanceposEfek month-end file, Tier 0) — monthly.
+-- Share counts. local_institution = local total - local individual.
+-- detail JSONB holds the full 9-category L/F breakdown + price + sec_num +
+-- scripless_pct. holders_count is NOT in this file (NULL until sourced elsewhere).
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS ownership_monthly (
@@ -87,13 +90,14 @@ CREATE TABLE IF NOT EXISTS ownership_monthly (
     local_individual    NUMERIC,
     local_institution   NUMERIC,
     foreign_total       NUMERIC,
-    detail              JSONB,              -- full per-investor-category breakdown
+    detail              JSONB,              -- {price, sec_num, local:{...}, foreign:{...}, scripless_pct}
     holders_count       NUMERIC,
     source              TEXT NOT NULL,
     source_tier         SMALLINT NOT NULL,
     fetched_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (month_end, ticker)
 );
+CREATE INDEX IF NOT EXISTS idx_ownership_ticker ON ownership_monthly (ticker, month_end DESC);
 
 CREATE TABLE IF NOT EXISTS corp_actions (
     ticker      TEXT NOT NULL,

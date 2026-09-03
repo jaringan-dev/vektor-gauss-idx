@@ -15,14 +15,17 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
 | [INVENTARIS-SUMBER-DATA.md](INVENTARIS-SUMBER-DATA.md) | IDX + KSEI data source inventory |
 | [LANSKAP-KOMPETITOR.md](LANSKAP-KOMPETITOR.md) · [IDXALPHA-TEARDOWN.md](IDXALPHA-TEARDOWN.md) · [SECTORS-API.md](SECTORS-API.md) · [PERTANYAAN-IDX-KSEI.md](PERTANYAAN-IDX-KSEI.md) | Landscape research |
 
-## What's built so far (this scaffold)
+## What's built so far
 
-- `db/schema.sql` — full canonical schema (most tables defined but unused in Phase 1).
+- `db/schema.sql` — full canonical schema (12 tables; several unused in Phase 1).
 - `src/vg/sources/idx.py` — **IDX Stock Summary collector** (Tier 0): OHLCV +
-  foreign flow + regular/negotiated split, per ticker per day.
+  foreign flow (volume) + regular/negotiated split, per ticker per day.
+- `src/vg/sources/ksei.py` — **KSEI monthly ownership collector** (Tier 0): the
+  `BalanceposEfek<YYYYMMDD>.zip` month-end file → `ownership_monthly`. Per-ticker
+  share counts by investor category (9 categories × local/foreign) + scripless %.
 - `src/vg/collect.py` + `vg` CLI — fetch → raw artifact (+sha256) → upsert → `run_log`.
 
-Not yet: KSEI collectors, IHSG/index, the engine, Telegram, forward-test.
+Not yet: IHSG/index collector, corp actions, the engine, Telegram, forward-test.
 
 ## Setup (on the VPS)
 
@@ -44,8 +47,18 @@ vg init-db
 # 4. Collect
 vg collect-price --latest
 vg collect-price --date 2026-09-02
-vg collect-price --backfill 2024-01-02 2026-09-02   # ~4s/day, polite
+vg collect-price --backfill 2024-01-02 2026-09-02       # ~4s/day, polite
+
+vg collect-ownership --latest                            # this + last month
+vg collect-ownership --month 2026-08
+vg collect-ownership --backfill 2021-01 2026-08          # KSEI files exist ~2018+
 ```
+
+`collect-ownership` downloads `web.ksei.co.id/Download/BalanceposEfek<YYYYMMDD>.zip`
+for the last trading day of the month (tries the last weekday, walks back up to
+9 days for Eid / year-end holidays). The file's own `Date` column is the
+authoritative `month_end`. `holders_count` is NOT in this file (stays NULL —
+sourced later from Sectors `shareholders-composition` or elsewhere).
 
 Run tests (offline, no DB): `pytest`
 

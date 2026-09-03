@@ -17,6 +17,10 @@ def _d(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
 
+def _m(s: str) -> date:
+    return datetime.strptime(s, "%Y-%m").date()  # day defaults to 1
+
+
 def _print(o: collect.CollectOutcome) -> None:
     line = f"  {o.session_date}  {o.status:<13} rows={o.rows}"
     if o.detail:
@@ -35,6 +39,12 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--date", metavar="YYYY-MM-DD", help="one trading day")
     g.add_argument("--latest", action="store_true", help="most recent published day")
     g.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
+
+    co = sub.add_parser("collect-ownership", help="KSEI month-end balance -> ownership_monthly")
+    go = co.add_mutually_exclusive_group(required=True)
+    go.add_argument("--month", metavar="YYYY-MM", help="one month-end snapshot")
+    go.add_argument("--latest", action="store_true", help="this month + last month")
+    go.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive YYYY-MM range")
 
     args = p.parse_args(argv)
 
@@ -56,6 +66,22 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with data")
+        return 0
+
+    if args.cmd == "collect-ownership":
+        if args.latest:
+            for o in collect.collect_ownership_latest():
+                _print(o)
+        elif args.month:
+            _print(collect.collect_ownership_month(_m(args.month)))
+        else:
+            start, end = _m(args.backfill[0]), _m(args.backfill[1])
+            print(f"backfill {start:%Y-%m} .. {end:%Y-%m}")
+            outs = collect.collect_ownership_range(start, end)
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} months with data")
         return 0
 
     return 1

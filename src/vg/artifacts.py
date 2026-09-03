@@ -12,14 +12,16 @@ import psycopg
 from .config import CONFIG
 
 
-def store(source: str, logical_date: date | None, content: bytes) -> tuple[Path, str, int]:
-    """Write `content` to <artifact_dir>/<source>/<logical_date>.json and return
+def store(
+    source: str, logical_date: date | None, content: bytes, ext: str = "json"
+) -> tuple[Path, str, int]:
+    """Write `content` to <artifact_dir>/<source>/<logical_date>.<ext> and return
     (path, sha256, bytes). Overwrites same-day file (content-addressed by hash in DB)."""
     sha = hashlib.sha256(content).hexdigest()
     subdir = CONFIG.artifact_dir / source
     subdir.mkdir(parents=True, exist_ok=True)
     stem = logical_date.isoformat() if logical_date else sha[:16]
-    path = subdir / f"{stem}.json"
+    path = subdir / f"{stem}.{ext.lstrip('.')}"
     path.write_bytes(content)
     return path, sha, len(content)
 
