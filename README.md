@@ -39,9 +39,13 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
   `eval` reports whether any tag actually precedes a move. No composite score.
 - **Telegram digest** (`telegram.py` + `digest.py`): `vg digest` sends an EOD
   digest to your own chat — watchlist lines (price, NFF D0/W1, foreign
-  consistency, quadrant, tag, ⚠ data-quality flags), a RADAR list of new
-  `AKUM-ASING` names, freshness warnings. `vg digest --weekly` sends the `eval`
-  table. No target / stop-loss / BUY-SELL.
+  consistency, quadrant, tag, ⚠ data flags), **trade calls** (action + ATR
+  stop-loss + R-multiple target + lot size, gated by `VG_DIGEST_TRADE_CALLS`),
+  a RADAR list of new `AKUM-ASING` names, freshness warnings. `--weekly` sends
+  the `eval` table.
+- **`vg calc`** (`src/vg/calc.py`) — position-sizing calculator (the logic behind
+  NeoBDM's calculator; the Phase 2 web version wraps this): entry(ies) + stop-loss
+  → lots for a fixed % account risk, R:R, position value.
 - `src/vg/collect.py` + `vg` CLI — fetch → raw artifact (+sha256) → upsert → `run_log`.
 
 Phase 1 code is complete. Remaining: run it on a VPS for ~2 months, read `vg eval`.
@@ -87,6 +91,8 @@ vg eval                                                  # per-tag forward-retur
 vg digest --dry-run                                      # preview the Telegram digest
 vg digest                                                # send it (needs VG_TELEGRAM_* in .env)
 vg digest --weekly                                       # the eval table
+
+vg calc --entry 3390 --sl 3180 --target-r 2.5 --balance 100000000 --risk 1.0
 ```
 
 ### Daily EOD sequence (cron ~19:00 WIB)

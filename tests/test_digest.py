@@ -54,6 +54,37 @@ def test_weekly_eval_empty(monkeypatch):
     assert "Belum ada" in out
 
 
+def test_action_logic():
+    assert digest._action("AKUM-ASING", set(), held=False) == "BUY"
+    assert digest._action("AKUM-ASING", set(), held=True) == "ADD"
+    assert digest._action("MARKUP", set(), held=True) == "HOLD"
+    assert digest._action("MARKUP", set(), held=False) == "WATCH"
+    assert digest._action("DISTRIBUSI-ASING", set(), held=True) == "REDUCE/SELL"
+    assert digest._action("DISTRIBUSI-ASING", set(), held=False) == "AVOID"
+    assert digest._action(None, {"KSEI-DIVERGEN"}, held=True) == "HATI-HATI"
+    assert digest._action(None, set(), held=False) == "WATCH"
+
+
+def test_trade_line_buy(monkeypatch):
+    monkeypatch.setattr(digest.CONFIG, "digest_trade_calls", True)
+    monkeypatch.setattr(digest.CONFIG, "atr_sl_mult", 2.0)
+    monkeypatch.setattr(digest.CONFIG, "target_r", 2.5)
+    monkeypatch.setattr(digest.CONFIG, "account_balance", 0.0)
+    monkeypatch.setattr(digest.CONFIG, "fee_pct", 0.0)
+    monkeypatch.setattr(digest.CONFIG, "risk_pct", 0.01)
+
+    line = digest._trade_line(3390.0, 105.0, "AKUM-ASING", set(), held=False)
+    assert "aksi <b>BUY</b>" in line
+    assert "SL 3.180" in line             # 3390 - 2*105
+    assert "R:R 2,5" in line
+    assert "mekanis, bukan prediksi" in line
+
+
+def test_trade_line_disabled(monkeypatch):
+    monkeypatch.setattr(digest.CONFIG, "digest_trade_calls", False)
+    assert digest._trade_line(3390.0, 105.0, "AKUM-ASING", set(), held=False) is None
+
+
 def test_weekly_eval_table(monkeypatch):
     monkeypatch.setattr(
         digest.engine, "eval_tags",

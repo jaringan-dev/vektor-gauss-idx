@@ -173,22 +173,27 @@ Ini yang membuat Fase 1 bernilai — bukan tag-nya, tapi bukti apakah tag-nya be
 
 - **1 digest EOD/hari bursa**, ~19:15 WIB, ke chat pribadi Anda.
   ```
-  📊 VEKTOR GAUSS — EOD 2 Sep 2026  (Stock Summary ✓ · KSEI: Agu 2026)
+  📊 VEKTOR GAUSS — EOD 02 Sep 2026
+  harga ✓ · indeks ✓ · KSEI Aug 2026
 
   WATCHLIST
-  BBRI  3.390 (+0,3%)   NFF D0 +45B  W1 +180B  asing 7/10 hari
-        harga sideways · KSEI: %asing ↑ 2 bln → AKUM-ASING (KSEI-KONFIRM)
-  ADRO  2.650 (-4,7%)   NFF D0 -54B  W1 -210B  asing 2/10 hari
-        harga turun · NonReg 41% ⚠ → DISTRIBUSI-ASING
+  📌 BBRI  3.390 (+0,3%)   NFF D0 +45,2B  W1 +180,4B  asing 7/10
+     markdown · KSEI %asing ↑ · AKUM-ASING ⚡ · KSEI-KONFIRM
+     aksi ADD · SL 3.180 (-6,2%) · target 3.915 (+15,5%) · R:R 2,5 · ~48 lot (risiko 1,0% akun)
+     dasar: SL = close − 2×ATR14 (105); target = 2,5R · mekanis, bukan prediksi
+  ADRO  2.650 (-4,7%)   NFF D0 -54,3B  W1 -210,1B  asing 2/10
+     markup · KSEI %asing → · DISTRIBUSI-ASING · ⚠ CROSSING-TINGGI
+     aksi AVOID
 
-  RADAR — baru masuk AKUM-ASING hari ini (IDX250)
-  ANTM · PTBA · LSIP
-
-  ⚠ collector KSEI: file Sep belum terbit (pakai Agu 2026)
+  RADAR — AKUM-ASING hari ini (di luar watchlist)
+  ANTM  3.030 (-1,6%)  W1 +88,0B  · SL 2.850 / tgt 3.480
   ```
-- Alert terpisah hanya kalau **watchlist ticker ganti tag** (mis. AKUM→DISTRIBUSI).
-- Eval mingguan (§6.3).
-- **Tanpa** target/SL/BUY-SELL. Alat baca, bukan sinyal.
+- `📌` = posisi yang Anda pegang (`VG_HOLDINGS`) → aksi jadi ADD/HOLD/REDUCE; sisanya BUY/WATCH/AVOID.
+- `⚡` = tag berubah dari hari bursa sebelumnya.
+- **Target / SL / aksi ADA** (permintaan Anda): aturan **mekanis** — SL = `close − N×ATR14`, target = `R×risiko`, lot size dari `VG_ACCOUNT_BALANCE` + `VG_RISK_PCT`. Bukan prediksi. Logika di `src/vg/calc.py` (dipakai juga oleh kalkulator web Fase 2).
+- Di-gate `VG_DIGEST_TRADE_CALLS` — **wajib dimatikan / ditulis ulang kalau digest dijual** (lihat §11).
+- `vg calc --entry .. --sl .. --target-r ..` — kalkulator posisi mandiri di CLI.
+- Eval mingguan (§6.3) via `vg digest --weekly`.
 
 ---
 
@@ -248,13 +253,15 @@ VPS ($5/bln)
 
 ## 10. Yang DITUNDA ke Fase 2
 
-Broker summary berbayar & CR3 · web dashboard · multi-user · pembayaran · skor 0–100 · Sultan/Zombi · rotation chart · AI narasi · lisensi data resmi · disclaimer/PT/UU PDP · coverage penuh 900 emiten · Redis/Celery.
+Broker summary berbayar & CR3 · **web dashboard** (termasuk **kalkulator posisi** ala `neobdm.tech/calculator/` — logikanya sudah ada di `calc.py`, tinggal UI) · multi-user · pembayaran · skor 0–100 · Sultan/Zombi · rotation chart · AI narasi · lisensi data resmi · disclaimer/PT/UU PDP · coverage penuh 900 emiten · Redis/Celery.
 
 ---
 
 ## 11. Dinding Fase 1 → Fase 2
 
-*(tak berubah dari revisi 1)* Yang jadi wajib saat dijual: lisensi data (broker summary), disclaimer + hindari "target/SL/action", PT + UU PDP, multi-user infra, pembayaran. Keputusan desain sekarang yang memudahkan pivot: **adapter per sumber**, kolom `source` di semua tabel, simpan raw+hash, Postgres dari awal, output tanpa "BUY/SELL", **arsitektur 2-lapis + forward-test** (justru itu yang bikin produk Fase 2 kredibel — bisa tunjukkan bukti, bukan janji).
+Yang jadi wajib saat dijual: lisensi data (broker summary), PT + UU PDP, multi-user infra, pembayaran, **dan penanganan trade calls**. Untuk pemakaian pribadi target/SL/aksi bebas; begitu dijual, "aksi BUY/SELL/HOLD + target harga" bersinggungan dengan aturan OJK (Penasihat Investasi, penindakan influencer/pom-pom). Opsi Fase 2: (a) matikan `VG_DIGEST_TRADE_CALLS`, atau (b) ubah jadi "kalkulator" murni — user masukkan entry/SL sendiri, sistem hanya hitung lot & R:R (tidak menyarankan arah), atau (c) kajian izin. Sudah di-gate satu env var, jadi mudah dimatikan.
+
+Keputusan desain yang memudahkan pivot: **adapter per sumber**, kolom `source`/`source_tier` di semua tabel, simpan raw+hash, Postgres dari awal, trade calls di balik satu toggle, **arsitektur 2-lapis + forward-test** (justru itu yang bikin produk Fase 2 kredibel — tunjukkan bukti, bukan janji).
 
 ---
 

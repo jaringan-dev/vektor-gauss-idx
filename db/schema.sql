@@ -174,6 +174,7 @@ CREATE TABLE IF NOT EXISTS signal_components (
     session_date            DATE NOT NULL,
     ticker                  TEXT NOT NULL,
     close                   NUMERIC,
+    atr14                   NUMERIC,     -- 14-day ATR, for mechanical stop-loss / target
     price_chg_5d            NUMERIC,
     nff_d0                  NUMERIC,
     nff_w1                  NUMERIC,

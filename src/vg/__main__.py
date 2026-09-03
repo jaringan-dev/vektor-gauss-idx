@@ -7,7 +7,8 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from . import collect, digest, engine
+from . import calc, collect, digest, engine
+from .config import CONFIG
 from .db import connect, run_sql_file
 from .telegram import TelegramSender
 
@@ -76,6 +77,16 @@ def main(argv: list[str] | None = None) -> int:
     dg.add_argument("--date", metavar="YYYY-MM-DD", help="digest for a specific trading day")
     dg.add_argument("--weekly", action="store_true", help="the weekly eval message instead")
     dg.add_argument("--dry-run", action="store_true", help="print, don't send")
+
+    cl = sub.add_parser("calc", help="position-sizing / trade-plan calculator")
+    cl.add_argument("--entry", type=float, action="append", required=True,
+                    metavar="PRICE", help="entry price (repeat for averaging)")
+    cl.add_argument("--sl", type=float, required=True, help="stop-loss price")
+    cl.add_argument("--target", type=float, help="target price")
+    cl.add_argument("--target-r", type=float, help="target as R-multiple (default from env)")
+    cl.add_argument("--balance", type=float, help="account balance IDR (default from env)")
+    cl.add_argument("--risk", type=float, metavar="PCT", help="risk %% per trade (default from env)")
+    cl.add_argument("--fee", type=float, metavar="PCT", help="round-trip fee %% (default from env)")
 
     args = p.parse_args(argv)
 
@@ -192,6 +203,30 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         n = sender.send(text)
         print(f"sent ({n} message{'s' if n > 1 else ''})")
+        return 0
+
+    if args.cmd == "calc":
+        tr = None if args.target else (args.target_r or CONFIG.target_r)
+        pl = calc.plan(
+            args.entry, args.sl,
+            target=args.target, target_r=tr,
+            balance=args.balance if args.balance is not None else CONFIG.account_balance,
+            risk_pct=(args.risk / 100.0) if args.risk is not None else CONFIG.risk_pct,
+            fee_pct=(args.fee / 100.0) if args.fee is not None else CONFIG.fee_pct,
+        )
+        print(f"  avg entry   : {pl.avg_entry:,.2f}")
+        print(f"  stop-loss   : {pl.stop_loss:,.2f}  ({pl.stop_loss / pl.avg_entry - 1:+.2%})")
+        if pl.target:
+            print(f"  target      : {pl.target:,.2f}  ({pl.target / pl.avg_entry - 1:+.2%})")
+        if pl.rr:
+            print(f"  R : R       : {pl.rr:.2f}")
+        print(f"  risk/share  : {pl.risk_per_share:,.2f}  (incl. fee)")
+        if pl.lots is not None:
+            print(f"  size        : {pl.lots:,} lots ({pl.shares:,} shares)")
+            print(f"  position    : Rp {pl.position_idr:,.0f}")
+            print(f"  risk        : Rp {pl.risk_idr:,.0f} target, "
+                  f"Rp {pl.shares * pl.risk_per_share:,.0f} actual "
+                  f"({pl.risk_pct_of_balance:+.2%} of balance)")
         return 0
 
     if args.cmd == "eval":

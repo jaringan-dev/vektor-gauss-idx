@@ -17,7 +17,8 @@ from vg.engine import (
 def _bar(d: date, close: float, fnet: float, volume: float = 1_000_000) -> _Bar:
     # value chosen so VWAP == close  ->  nff_idr == fnet * close
     return _Bar(
-        d=d, close=close, prev=close, volume=volume, value=close * volume,
+        d=d, close=close, prev=close, high=close * 1.01, low=close * 0.99,
+        volume=volume, value=close * volume,
         fbuy=max(fnet, 0.0) + 100.0, fsell=max(-fnet, 0.0) + 100.0, nonreg_value=0.0,
     )
 
@@ -62,6 +63,7 @@ def test_components_accumulation_shape():
     assert abs(c.vol_surge - 1.0) < 1e-9
     assert abs(c.price_chg_5d) < 1e-9          # flat
     assert abs(c.rs_ihsg_5d) < 1e-9            # both flat
+    assert abs(c.atr14 - 20.0) < 1e-6          # high/low span 2% of 1000
 
 
 def test_components_split_adjusted_return():

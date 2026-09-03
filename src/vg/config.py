@@ -20,7 +20,7 @@ DEFAULT_UA = (
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class Config:
     database_url: str
     artifact_dir: Path
@@ -31,10 +31,18 @@ class Config:
     telegram_bot_token: str
     telegram_chat_id: str
     watchlist: tuple[str, ...]
+    holdings: tuple[str, ...]
+    digest_trade_calls: bool
+    account_balance: float
+    risk_pct: float
+    fee_pct: float
+    atr_sl_mult: float
+    target_r: float
 
     @staticmethod
     def load() -> "Config":
         wl = os.environ.get("VG_WATCHLIST", "")
+        hd = os.environ.get("VG_HOLDINGS", "")
         return Config(
             database_url=os.environ.get(
                 "VG_DATABASE_URL",
@@ -48,6 +56,14 @@ class Config:
             telegram_bot_token=os.environ.get("VG_TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("VG_TELEGRAM_CHAT_ID", ""),
             watchlist=tuple(t.strip().upper() for t in wl.split(",") if t.strip()),
+            holdings=tuple(t.strip().upper() for t in hd.split(",") if t.strip()),
+            digest_trade_calls=os.environ.get("VG_DIGEST_TRADE_CALLS", "true").lower()
+            in ("1", "true", "yes"),
+            account_balance=float(os.environ.get("VG_ACCOUNT_BALANCE", "0") or "0"),
+            risk_pct=float(os.environ.get("VG_RISK_PCT", "1.0")) / 100.0,
+            fee_pct=float(os.environ.get("VG_FEE_PCT", "0.3")) / 100.0,
+            atr_sl_mult=float(os.environ.get("VG_ATR_SL_MULT", "2.0")),
+            target_r=float(os.environ.get("VG_TARGET_R", "2.5")),
         )
 
 

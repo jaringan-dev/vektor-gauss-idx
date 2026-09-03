@@ -10,7 +10,7 @@ from __future__ import annotations
 import html
 from datetime import date
 
-from . import engine
+from . import calc, engine
 from .config import CONFIG
 from .db import connect
 
@@ -75,6 +75,59 @@ def _primary(tags: set[str]) -> str | None:
     return None
 
 
+def _action(prim: str | None, tags: set[str], held: bool) -> str:
+    if prim == "AKUM-ASING":
+        return "ADD" if held else "BUY"
+    if prim == "MARKUP":
+        return "HOLD" if held else "WATCH"           # already running — don't chase
+    if prim in ("DISTRIBUSI-ASING", "MARKDOWN"):
+        return "REDUCE/SELL" if held else "AVOID"
+    if "KSEI-DIVERGEN" in tags:
+        return "HATI-HATI"
+    return "HOLD" if held else "WATCH"
+
+
+def _trade_line(
+    close: float | None, atr: float | None, prim: str | None, tags: set[str], held: bool
+) -> str | None:
+    """One-line trade call. Config-gated (VG_DIGEST_TRADE_CALLS). ATR-mechanical,
+    not a forecast — MUST be reworked/removed if the digest is ever sold."""
+    if not CONFIG.digest_trade_calls or close is None:
+        return None
+    action = _action(prim, tags, held)
+
+    if action in ("BUY", "ADD") and atr:
+        p = calc.plan(
+            close, calc.atr_stop(close, atr, CONFIG.atr_sl_mult),
+            target_r=CONFIG.target_r, balance=CONFIG.account_balance,
+            risk_pct=CONFIG.risk_pct, fee_pct=CONFIG.fee_pct,
+        )
+        parts = [
+            f"aksi <b>{action}</b>",
+            f"SL {_price(p.stop_loss)} ({_pct(p.stop_loss / close - 1)})",
+        ]
+        if p.target:
+            parts.append(f"target {_price(p.target)} ({_pct(p.target / close - 1)})")
+        if p.rr:
+            parts.append(f"R:R {p.rr:.1f}".replace(".", ","))
+        if p.lots:
+            parts.append(f"~{p.lots} lot (risiko {_pct(p.risk_pct_of_balance)} akun)")
+        basis = (
+            f"\n   dasar: SL = close − {CONFIG.atr_sl_mult:g}×ATR14"
+            f" ({_price(atr)}); target = {CONFIG.target_r:g}R · mekanis, bukan prediksi"
+        )
+        return " · ".join(parts) + basis
+
+    if action == "HOLD" and atr:
+        ts = calc.atr_stop(close, atr, CONFIG.atr_sl_mult)
+        return f"aksi <b>HOLD</b> · trailing SL {_price(ts)} ({_pct(ts / close - 1)})"
+    if action == "REDUCE/SELL":
+        return "aksi <b>REDUCE/SELL</b> · pemicu: asing distribusi / markdown"
+    if action == "HATI-HATI":
+        return "aksi <b>HATI-HATI</b> · flow harian vs kepemilikan KSEI bertentangan"
+    return f"aksi {action}"
+
+
 def build_daily(session_date: date | None = None) -> str:
     wl = list(CONFIG.watchlist)
     with connect() as conn, conn.cursor() as cur:
@@ -107,12 +160,13 @@ def build_daily(session_date: date | None = None) -> str:
         prev = _prev_trading_day(cur, sd)
         tags_prev = _tags_by_ticker(cur, prev, wl) if prev else {}
 
+        held = set(CONFIG.holdings)
         if wl:
             cur.execute(
                 """
-                SELECT pb.ticker, pb.close, pb.prev, sc.price_chg_5d, sc.nff_d0, sc.nff_w1,
-                       sc.nff_w2, sc.foreign_consistency_10d, sc.quadrant,
-                       sc.ksei_foreign_trend_3m, sc.ksei_retail_trend_3m, sc.data_flags
+                SELECT pb.ticker, pb.close, pb.prev, sc.atr14, sc.nff_d0, sc.nff_w1,
+                       sc.foreign_consistency_10d, sc.quadrant, sc.ksei_foreign_trend_3m,
+                       sc.data_flags
                 FROM price_bars pb
                 LEFT JOIN signal_components sc
                        ON sc.session_date = pb.session_date AND sc.ticker = pb.ticker
@@ -127,15 +181,16 @@ def build_daily(session_date: date | None = None) -> str:
                 if r is None:
                     L.append(f"{t}  — tidak diperdagangkan")
                     continue
-                _, close, prv, chg5, nff0, nff1, nff2, cons, quad, kf, kr, flags = r
+                _, close, prv, atr, nff0, nff1, cons, quad, kf, flags = r
                 chg1 = (float(close) / float(prv) - 1) if (close and prv) else None
                 tset = tags_today.get(t, set())
                 prim = _primary(tset)
                 changed = prev and _primary(tags_prev.get(t, set())) != prim
                 ann = [x for x in tset if x not in _FLOW_TAGS]
 
+                mark = "📌 " if t in held else ""
                 line1 = (
-                    f"<b>{t}</b>  {_price(close)} ({_pct(chg1)})   "
+                    f"{mark}<b>{t}</b>  {_price(close)} ({_pct(chg1)})   "
                     f"NFF D0 {_idr(_f(nff0))}  W1 {_idr(_f(nff1))}"
                 )
                 if cons is not None:
@@ -155,10 +210,14 @@ def build_daily(session_date: date | None = None) -> str:
                         bits.append("⚠ " + fl)
                 L.append("   " + " · ".join(html.escape(b, quote=False) for b in bits))
 
+                tl = _trade_line(_f(close), _f(atr), prim, tset, t in held)
+                if tl:
+                    L.append("   " + tl)
+
         # -- radar ------------------------------------------------------
         cur.execute(
             """
-            SELECT sl.ticker, sc.nff_w1, pb.close, pb.prev
+            SELECT sl.ticker, sc.nff_w1, sc.atr14, pb.close, pb.prev
             FROM signal_log sl
             JOIN signal_components sc
               ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
@@ -174,9 +233,15 @@ def build_daily(session_date: date | None = None) -> str:
         radar = cur.fetchall()
         if radar:
             L.append("\n<b>RADAR</b> — AKUM-ASING hari ini (di luar watchlist)")
-            for t, nff1, close, prv in radar:
-                chg1 = (float(close) / float(prv) - 1) if (close and prv) else None
-                L.append(f"{t}  {_price(close)} ({_pct(chg1)})  W1 {_idr(_f(nff1))}")
+            for t, nff1, atr, close, prv in radar:
+                cf, af = _f(close), _f(atr)
+                chg1 = (cf / float(prv) - 1) if (cf and prv) else None
+                line = f"{t}  {_price(close)} ({_pct(chg1)})  W1 {_idr(_f(nff1))}"
+                if CONFIG.digest_trade_calls and cf and af:
+                    p = calc.plan(cf, calc.atr_stop(cf, af, CONFIG.atr_sl_mult),
+                                  target_r=CONFIG.target_r, fee_pct=CONFIG.fee_pct)
+                    line += f"  · SL {_price(p.stop_loss)} / tgt {_price(p.target)}"
+                L.append(line)
 
         # -- totals ---------------------------------------------------
         cur.execute(
@@ -187,10 +252,14 @@ def build_daily(session_date: date | None = None) -> str:
         if counts:
             L.append("\n" + " · ".join(f"{tag}:{n}" for tag, n in counts))
 
-    L.append(
-        "\n<i>Analisis data publik IDX/KSEI. Bukan nasihat / ajakan jual-beli. "
-        "Semua sinyal masih tahap uji (bobot 0).</i>"
+    foot = (
+        "\n<i>Analisis data publik IDX/KSEI untuk pemakaian pribadi. "
+        "Sinyal masih tahap uji (bobot 0)."
     )
+    if CONFIG.digest_trade_calls:
+        foot += " Aksi/SL/target = aturan mekanis (ATR), bukan prediksi — keputusan di tangan Anda."
+    foot += "</i>"
+    L.append(foot)
     return "\n".join(L)
 
 

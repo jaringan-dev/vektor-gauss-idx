@@ -41,6 +41,8 @@ class _Bar:
     d: date
     close: float | None
     prev: float | None
+    high: float | None
+    low: float | None
     volume: float | None
     value: float | None
     fbuy: float | None
@@ -65,6 +67,7 @@ class _Bar:
 class Components:
     ticker: str
     close: float | None = None
+    atr14: float | None = None
     price_chg_5d: float | None = None
     nff_d0: float | None = None
     nff_w1: float | None = None
@@ -125,7 +128,7 @@ def _tickers_on(cur: psycopg.Cursor, session_date: date) -> list[str]:
 def _bars(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> dict[date, _Bar]:
     cur.execute(
         """
-        SELECT session_date, close, prev, volume, value,
+        SELECT session_date, close, prev, high, low, volume, value,
                foreign_buy_vol, foreign_sell_vol, nonreg_value
         FROM price_bars
         WHERE ticker = %s AND session_date = ANY(%s)
@@ -133,17 +136,13 @@ def _bars(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> dict[date, _Bar]
         (ticker, cal),
     )
     out: dict[date, _Bar] = {}
-    for d, c, p, vol, val, fb, fs, nrv in cur.fetchall():
-        f = float
+    for d, c, p, hi, lo, vol, val, fb, fs, nrv in cur.fetchall():
+        def f(x):
+            return float(x) if x is not None else None
+
         out[d] = _Bar(
-            d=d,
-            close=f(c) if c is not None else None,
-            prev=f(p) if p is not None else None,
-            volume=f(vol) if vol is not None else None,
-            value=f(val) if val is not None else None,
-            fbuy=f(fb) if fb is not None else None,
-            fsell=f(fs) if fs is not None else None,
-            nonreg_value=f(nrv) if nrv is not None else None,
+            d=d, close=f(c), prev=f(p), high=f(hi), low=f(lo), volume=f(vol),
+            value=f(val), fbuy=f(fb), fsell=f(fs), nonreg_value=f(nrv),
         )
     return out
 
@@ -253,6 +252,19 @@ def _components(
     if len(vols) >= 10 and b0.volume:
         c.vol_surge = b0.volume / (sum(vols) / len(vols))
 
+    # ATR(14) — for the mechanical stop-loss / target in the digest
+    trs: list[float] = []
+    for k in range(0, 14):
+        bk = back(k)
+        if bk is None or bk.high is None or bk.low is None:
+            break
+        pc = (bk_next.close if (bk_next := back(k + 1)) else None) or bk.prev or bk.close
+        if pc is None:
+            break
+        trs.append(max(bk.high - bk.low, abs(bk.high - pc), abs(bk.low - pc)))
+    if len(trs) >= 10 and "SHARE_COUNT_CHANGE" not in c.data_flags:
+        c.atr14 = sum(trs) / len(trs)  # skip if a split distorts the recent range
+
     if b0.value and b0.nonreg_value is not None:
         c.nonreg_ratio = b0.nonreg_value / b0.value
         if c.nonreg_ratio > NONREG_HIGH:
@@ -355,8 +367,8 @@ def _classify(c: Components) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _COMP_COLS = (
-    "session_date", "ticker", "close", "price_chg_5d", "nff_d0", "nff_w1", "nff_w2",
-    "nff_w3", "nff_w4", "foreign_consistency_10d", "vol_surge", "rs_ihsg_5d",
+    "session_date", "ticker", "close", "atr14", "price_chg_5d", "nff_d0", "nff_w1",
+    "nff_w2", "nff_w3", "nff_w4", "foreign_consistency_10d", "vol_surge", "rs_ihsg_5d",
     "rs_ihsg_10d", "rs_ihsg_20d", "nonreg_ratio", "ksei_foreign_trend_3m",
     "ksei_retail_trend_3m", "quadrant", "data_flags",
 )
@@ -365,10 +377,10 @@ _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"
 
 def _comp_row(sd: date, c: Components) -> tuple:
     return (
-        sd, c.ticker, c.close, c.price_chg_5d, c.nff_d0, c.nff_w1, c.nff_w2, c.nff_w3,
-        c.nff_w4, c.foreign_consistency_10d, c.vol_surge, c.rs_ihsg_5d, c.rs_ihsg_10d,
-        c.rs_ihsg_20d, c.nonreg_ratio, c.ksei_foreign_trend_3m, c.ksei_retail_trend_3m,
-        c.quadrant, sorted(set(c.data_flags)),
+        sd, c.ticker, c.close, c.atr14, c.price_chg_5d, c.nff_d0, c.nff_w1, c.nff_w2,
+        c.nff_w3, c.nff_w4, c.foreign_consistency_10d, c.vol_surge, c.rs_ihsg_5d,
+        c.rs_ihsg_10d, c.rs_ihsg_20d, c.nonreg_ratio, c.ksei_foreign_trend_3m,
+        c.ksei_retail_trend_3m, c.quadrant, sorted(set(c.data_flags)),
     )
 
 
