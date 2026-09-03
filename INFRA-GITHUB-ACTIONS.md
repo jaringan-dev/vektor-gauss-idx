@@ -23,12 +23,18 @@ does the monthly KSEI pull on day ≤5, the weekly eval on Mondays, then the dig
 Only the residential-IP box reaches `www.idx.co.id`. KSEI is not blocked, but the
 box also holds Postgres, so the whole sequence runs there.
 
-## Status
+## Status — cutover complete (2026-09-04)
 
-Runner **registered and online**: `vg-wsl-bogor` (labels `self-hosted, vektor-gauss`),
-systemd service `actions.runner.jaringan-bot-vektor-gauss.vg-wsl-bogor` (enabled +
-running, starts with the distro). Remaining: trigger `eod.yml` once to confirm it
-lands a digest, run a week alongside Task Scheduler, then disable the task.
+- Runner `vg-wsl-bogor` (labels `self-hosted, vektor-gauss`) registered and online;
+  systemd service `actions.runner.jaringan-bot-vektor-gauss.vg-wsl-bogor` (enabled
+  + running, starts with the distro).
+- `scripts/eod.sh` validated end-to-end on the box (collect → compute →
+  backfill-outcomes → digest `sent (1 message)`).
+- **Task Scheduler `VektorGauss-EOD` is DISABLED.** `eod.yml` (cron 19:15 WIB
+  Mon–Fri) is now the only EOD driver. First live proof = the next scheduled run —
+  check GitHub → Actions.
+- Rollback if `eod.yml` misbehaves: `powershell.exe -Command "Enable-ScheduledTask
+  -TaskName VektorGauss-EOD"` (the rolling 5-day window self-heals the gap).
 
 ## One-time setup (on the WSL box)
 

@@ -39,9 +39,10 @@ ever sold — OJK).
    `vg eval` / the weekly digest into an in-sample and a forward-only block, the
    actual instrument for the gate. (`VG_RADAR_TAGS` defaults to the two live
    candidates now; override only to change them.)
-3. **Confirm the first cron run** (19:15 WIB) lands a digest in Telegram. Then
-   migrate the cron to GitHub Actions — see `INFRA-GITHUB-ACTIONS.md` (register
-   the self-hosted runner, run both in parallel a week, disable Task Scheduler).
+3. ~~Confirm the first cron run; migrate to GitHub Actions.~~ Done (2026-09-04) —
+   self-hosted runner `vg-wsl-bogor` live, `eod.yml` (19:15 WIB Mon–Fri) is the
+   EOD driver, Task Scheduler disabled. `INFRA-GITHUB-ACTIONS.md`. Still: eyeball
+   the first live scheduled run on GitHub → Actions.
 4. **Leave it running ~2 months.** Paper-trade the surviving candidates
    (`FLOAT-ASING-PADAT`, `TIKET-BESAR-AKUM`; `TIKET-KECIL-MARKUP` as an avoid) on
    the watchlist in parallel, keep a manual spreadsheet. Read `vg digest
