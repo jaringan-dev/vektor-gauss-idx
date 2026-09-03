@@ -11,7 +11,7 @@ try:  # optional
     from dotenv import load_dotenv
 
     load_dotenv()
-except Exception:  # pragma: no cover
+except Exception:  # noqa: S110  # pragma: no cover -- dotenv is optional
     pass
 
 
@@ -57,7 +57,7 @@ class Config:
     target_r: float
 
     @staticmethod
-    def load() -> "Config":
+    def load() -> Config:
         wl = os.environ.get("VG_WATCHLIST", "")
         hd = os.environ.get("VG_HOLDINGS", "")
         rt = os.environ.get("VG_RADAR_TAGS", "").strip()

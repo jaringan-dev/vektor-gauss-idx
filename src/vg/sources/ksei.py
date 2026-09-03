@@ -119,7 +119,7 @@ class _KseiCaTableParser(HTMLParser):
         self._row: list[str] = []
         self.rows: list[list[str]] = []
 
-    def handle_starttag(self, tag: str, attrs):  # noqa: ANN001
+    def handle_starttag(self, tag: str, attrs):
         if tag == "tr" and dict(attrs).get("id") == "isi":
             self._in_row, self._row = True, []
         elif tag in ("td", "th") and self._in_row:

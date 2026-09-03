@@ -51,12 +51,12 @@ def test_parse_values(zip_bytes):
     _, rows = KseiOwnershipSource._parse(zip_bytes)
     bbri = next(r for r in rows if r.ticker == "BBRI")
 
-    assert bbri.sec_num == Decimal("151559001604")
-    assert bbri.price == Decimal("3250")
-    assert bbri.local["ID"] == Decimal("15918400350")      # local individual
-    assert bbri.local["TOTAL"] == Decimal("31173026233")
-    assert bbri.foreign["TOTAL"] == Decimal("39766741039")
-    assert bbri.foreign["MF"] == Decimal("20743718258")
+    assert bbri.sec_num == Decimal(151559001604)
+    assert bbri.price == Decimal(3250)
+    assert bbri.local["ID"] == Decimal(15918400350)      # local individual
+    assert bbri.local["TOTAL"] == Decimal(31173026233)
+    assert bbri.foreign["TOTAL"] == Decimal(39766741039)
+    assert bbri.foreign["MF"] == Decimal(20743718258)
 
     # scripless_pct sanity: (31.17B + 39.77B) / 151.56B ≈ 0.468
     scripless = float((bbri.local["TOTAL"] + bbri.foreign["TOTAL"]) / bbri.sec_num)
@@ -91,9 +91,9 @@ def test_collect_row_mapping(zip_bytes):
 
     assert len(row) == len(_OWN_COLS)
     m = dict(zip(_OWN_COLS, row))
-    assert m["local_individual"] == Decimal("15918400350")
-    assert m["local_institution"] == Decimal("31173026233") - Decimal("15918400350")
-    assert m["foreign_total"] == Decimal("39766741039")
+    assert m["local_individual"] == Decimal(15918400350)
+    assert m["local_institution"] == Decimal(31173026233) - Decimal(15918400350)
+    assert m["foreign_total"] == Decimal(39766741039)
     assert m["holders_count"] is None
     assert m["source_tier"] == 0
     # detail is a psycopg Jsonb wrapper around a plain dict

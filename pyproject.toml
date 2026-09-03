@@ -34,5 +34,19 @@ packages = ["src/vg"]
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.lint]
+# Keep Ruff's default rule set; only carve out rules that clash with a
+# deliberate, project-wide choice. Everything else stays enforced.
+ignore = [
+    # Collectors are unattended: every fetch/parse/persist path catches broadly,
+    # logs to run_log, and returns an "error" outcome so one bad ticker or day
+    # never aborts the nightly batch. Narrowing these would defeat the point.
+    "BLE001",   # blind-except
+    # This tool runs on one box in one timezone (WIB). "today" and CLI date
+    # args are intentionally naive local dates, not tz-aware instants.
+    "DTZ007",   # naive datetime.strptime
+    "DTZ011",   # naive date.today
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

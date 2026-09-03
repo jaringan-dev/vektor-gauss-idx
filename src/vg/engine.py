@@ -301,7 +301,7 @@ def _components(
 
     c.nff_w1, c.nff_w2, c.nff_w3, c.nff_w4 = wsum(1, 5), wsum(6, 10), wsum(11, 15), wsum(16, 20)
 
-    last10 = [back(k) for k in range(0, 10)]
+    last10 = [back(k) for k in range(10)]
     if all(g is not None for g in last10):
         c.foreign_consistency_10d = sum(1 for g in last10 if g.foreign_net_shares > 0)
 
@@ -311,7 +311,7 @@ def _components(
 
     # ATR(14) — for the mechanical stop-loss / target in the digest
     trs: list[float] = []
-    for k in range(0, 14):
+    for k in range(14):
         bk = back(k)
         if bk is None or bk.high is None or bk.low is None:
             break

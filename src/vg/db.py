@@ -28,9 +28,8 @@ def connect() -> Iterator[psycopg.Connection]:
 
 def run_sql_file(path: str | Path) -> None:
     sql = Path(path).read_text(encoding="utf-8")
-    with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(sql)
 
 
 def upsert_many(

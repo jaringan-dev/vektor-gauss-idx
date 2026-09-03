@@ -110,8 +110,8 @@ def _log_error(sd: date, exc: BaseException) -> None:
     try:
         with connect() as conn, conn.cursor() as cur:
             _log(cur, sd, "error", 0, f"{type(exc).__name__}: {exc}")
-    except Exception:
-        pass  # last resort — don't mask the original error
+    except Exception:  # noqa: S110 -- last resort, must not mask the original error
+        pass
 
 
 def _collect(res: PriceFetchResult) -> CollectOutcome:
