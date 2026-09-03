@@ -166,25 +166,30 @@ CREATE TABLE IF NOT EXISTS broker_affiliation_groups (
 );
 
 -- ---------------------------------------------------------------------------
--- Engine output (Phase 1 §5–6). Not populated in Phase 1 scaffold.
+-- Engine output (Phase 1 §5–6). NFF is in IDR (split-robust). All windows are
+-- trading days. price_chg_5d / rs are computed on split-adjusted closes.
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS signal_components (
     session_date            DATE NOT NULL,
     ticker                  TEXT NOT NULL,
+    close                   NUMERIC,
+    price_chg_5d            NUMERIC,
     nff_d0                  NUMERIC,
     nff_w1                  NUMERIC,
     nff_w2                  NUMERIC,
+    nff_w3                  NUMERIC,
     nff_w4                  NUMERIC,
     foreign_consistency_10d SMALLINT,
     vol_surge               NUMERIC,
     rs_ihsg_5d              NUMERIC,
+    rs_ihsg_10d             NUMERIC,
     rs_ihsg_20d             NUMERIC,
     nonreg_ratio            NUMERIC,
-    ksei_foreign_trend_3m   TEXT,
-    ksei_inst_trend_3m      TEXT,
-    quadrant                TEXT,
-    data_flags              TEXT[] NOT NULL DEFAULT '{}',  -- RECON_FAIL, CROSSING-TINGGI, KSEI-DIVERGEN, SOURCE_CONFLICT, SUSPECT_WASH
+    ksei_foreign_trend_3m   TEXT,        -- up | down | flat | nodata
+    ksei_retail_trend_3m    TEXT,
+    quadrant                TEXT,        -- AKUMULASI | MARKUP | DISTRIBUSI | MARKDOWN | NETRAL
+    data_flags              TEXT[] NOT NULL DEFAULT '{}',  -- CROSSING-TINGGI, KSEI-DIVERGEN, SHARE_COUNT_CHANGE, RECON_FAIL, ...
     computed_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (session_date, ticker)
 );

@@ -7,8 +7,8 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from . import collect
-from .db import run_sql_file
+from . import collect, engine
+from .db import connect, run_sql_file
 
 _SCHEMA = Path(__file__).resolve().parents[2] / "db" / "schema.sql"
 
@@ -61,6 +61,15 @@ def main(argv: list[str] | None = None) -> int:
         "detect-ca",
         help="derive share_count_change events from price_bars.listed_shares jumps",
     )
+
+    cm = sub.add_parser("compute", help="engine v0: components + probation tags -> signal_*")
+    gm = cm.add_mutually_exclusive_group(required=True)
+    gm.add_argument("--date", metavar="YYYY-MM-DD", help="one trading day")
+    gm.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
+    gm.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
+
+    sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
+    sub.add_parser("eval", help="per-tag forward-return stats (the Phase 1 payoff)")
 
     args = p.parse_args(argv)
 
@@ -127,6 +136,54 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "detect-ca":
         n = collect.detect_share_count_changes()
         print(f"share_count_change events written/updated: {n}")
+        return 0
+
+    if args.cmd == "compute":
+        def _cs(s: engine.ComputeSummary) -> None:
+            line = f"  {s.session_date}  {s.status:<8} tickers={s.tickers} tags={s.signal_rows}"
+            print(line + (f"  ({s.detail})" if s.detail else ""))
+
+        if args.latest:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT max(session_date) FROM trading_calendar")
+                latest = cur.fetchone()[0]
+            if latest is None:
+                print("no trading_calendar rows — run collect-price first")
+                return 1
+            _cs(engine.compute_day(latest))
+        elif args.date:
+            _cs(engine.compute_day(_d(args.date)))
+        else:
+            start, end = _d(args.backfill[0]), _d(args.backfill[1])
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT session_date FROM trading_calendar "
+                    "WHERE session_date BETWEEN %s AND %s ORDER BY session_date",
+                    (start, end),
+                )
+                days = [r[0] for r in cur.fetchall()]
+            for d in days:
+                _cs(engine.compute_day(d))
+            print(f"computed {len(days)} trading days")
+        return 0
+
+    if args.cmd == "backfill-outcomes":
+        print(f"signal_log rows updated: {engine.backfill_outcomes()}")
+        return 0
+
+    if args.cmd == "eval":
+        stats = engine.eval_tags()
+        if not stats:
+            print("no resolved signal_log rows yet (need ~2 weeks of data + backfill-outcomes)")
+            return 0
+        print(f"{'tag':<18} {'n':>5} {'avgH5':>8} {'vsIHSG':>8} {'hit':>6} {'avgH1':>8} {'avgH10':>8}")
+        for s in stats:
+            def pc(x):
+                return f"{x * 100:+.2f}%" if x is not None else "   —  "
+            print(
+                f"{s['tag']:<18} {s['n']:>5} {pc(s['avg_h5']):>8} {pc(s['avg_vs_ihsg_h5']):>8} "
+                f"{(s['hit_rate'] or 0) * 100:>5.0f}% {pc(s['avg_h1']):>8} {pc(s['avg_h10']):>8}"
+            )
         return 0
 
     return 1

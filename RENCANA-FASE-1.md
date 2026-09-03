@@ -240,18 +240,21 @@ Broker summary berbayar & CR3 · web dashboard · multi-user · pembayaran · sk
 
 ---
 
-## 12. Urutan eksekusi (saat Anda bilang "mulai")
+## 12. Urutan eksekusi
 
-1. **Uji dulu (5 menit, tanpa repo):** dari calon VPS, `curl` endpoint IDX Stock Summary + coba unduh 1 file KSEI. Pastikan tidak kena Cloudflare block. Kalau block → ganti region/provider.
-2. Scaffold repo + `docker-compose.yml` (postgres) + skema §8 + `trading_calendar`.
-3. `PriceSource` adapter + collector Stock Summary + Index Summary → backfill 1–2 tahun (loop tanggal, sopan) → `price_bars`, `index_bars`.
-4. `OwnershipSource` + parser XLSX KSEI → `ownership_monthly` (unduh arsip bulanan yang ada).
-5. `corp_actions` importer.
-6. `engine.compute()` — komponen §5 + tag → `signal_components`, `signal_log(probation)`.
-7. `engine.backfill_outcomes()` — isi `ret_*`.
-8. Telegram: digest harian + eval mingguan.
-9. cron di VPS. Jalankan.
-10. **Diamkan 2 bulan.** Baca eval mingguan. Paper-trade paralel. Lalu putuskan: sinyal naik ke lapis berbobot? lanjut Fase 1.5 (beli broker summary)? atau berhenti?
+| # | Langkah | Status |
+|---|---|---|
+| 1 | Uji `curl` IDX + KSEI dari VPS (Cloudflare check) — `scripts/check_idx_access.sh` | ⬜ butuh VPS |
+| 2 | Scaffold repo + docker-compose (postgres) + skema + `trading_calendar` | ✅ `6aa70c8` |
+| 3 | Collector IDX Stock Summary → `price_bars` | ✅ `6aa70c8` |
+| 4 | Collector IDX Index Summary → `index_bars` (IHSG) | ✅ `8a2d7a2` |
+| 5 | Collector KSEI kepemilikan bulanan → `ownership_monthly` | ✅ `e75a82a` |
+| 6 | Collector corp actions (KSEI schedule + split detector) → `corp_actions` | ✅ `8a2d7a2` |
+| 7 | `engine.compute()` — komponen §5 + probation tags → `signal_components` / `signal_log` | ✅ (this commit) |
+| 8 | `engine.backfill_outcomes()` + `vg eval` | ✅ (this commit) |
+| 9 | **Telegram: digest harian + eval mingguan** | ⬜ next |
+| 10 | cron di VPS, jalankan, **diamkan 2 bulan**, baca `vg eval`, paper-trade paralel | ⬜ |
+| 11 | Putuskan: sinyal naik ke lapis berbobot? Fase 1.5 (beli broker summary)? berhenti? | ⬜ |
 
 ---
 

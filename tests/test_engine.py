@@ -1,0 +1,119 @@
+"""Offline tests for the v0 engine — pure functions only (no DB)."""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+from vg.engine import (
+    CONSISTENCY_ACC,
+    Components,
+    _Bar,
+    _classify,
+    _components,
+    _split_factor,
+)
+
+
+def _bar(d: date, close: float, fnet: float, volume: float = 1_000_000) -> _Bar:
+    # value chosen so VWAP == close  ->  nff_idr == fnet * close
+    return _Bar(
+        d=d, close=close, prev=close, volume=volume, value=close * volume,
+        fbuy=max(fnet, 0.0) + 100.0, fsell=max(-fnet, 0.0) + 100.0, nonreg_value=0.0,
+    )
+
+
+def test_bar_nff_idr():
+    b = _bar(date(2026, 1, 5), close=1000.0, fnet=5000.0)
+    assert b.nff_idr == 5000.0 * 1000.0
+    assert b.foreign_net_shares == 5000.0
+
+
+def test_split_factor():
+    ev = [(date(2026, 3, 10), 10.0), (date(2026, 6, 1), 0.5)]
+    assert _split_factor(ev, date(2026, 1, 1), date(2026, 12, 31)) == 5.0
+    assert _split_factor(ev, date(2026, 3, 10), date(2026, 5, 1)) == 1.0  # exclusive lo
+    assert _split_factor(ev, date(2026, 2, 1), date(2026, 4, 1)) == 10.0
+
+
+def _calendar(n: int, end: date) -> list[date]:
+    # n consecutive weekdays ending at `end`
+    days: list[date] = []
+    d = end
+    while len(days) < n:
+        if d.weekday() < 5:
+            days.append(d)
+        d -= timedelta(days=1)
+    return days[::-1]
+
+
+def test_components_accumulation_shape():
+    cal = _calendar(21, date(2026, 9, 1))
+    d0 = cal[-1]
+    # price flat (~1000 throughout), foreign net-buying every day
+    bars = {d: _bar(d, close=1000.0, fnet=4000.0) for d in cal}
+    ihsg = {d: 100.0 for d in cal}
+
+    c = _components("BBRI", cal, bars, ihsg, splits=[])
+    assert c is not None
+    assert c.nff_d0 == 4000.0 * 1000.0
+    assert c.nff_w1 == 5 * 4000.0 * 1000.0
+    assert c.nff_w4 == 5 * 4000.0 * 1000.0
+    assert c.foreign_consistency_10d == 10
+    assert abs(c.vol_surge - 1.0) < 1e-9
+    assert abs(c.price_chg_5d) < 1e-9          # flat
+    assert abs(c.rs_ihsg_5d) < 1e-9            # both flat
+
+
+def test_components_split_adjusted_return():
+    cal = _calendar(10, date(2026, 9, 1))
+    d0, d5 = cal[-1], cal[-6]
+    bars = {d: _bar(d, close=1000.0, fnet=0.0) for d in cal}
+    # a 10:1 split with ex_date between d5 and d0 halves... no, /10 the raw price
+    for d in cal:
+        if d <= d5:
+            bars[d] = _bar(d, close=10000.0, fnet=0.0)   # pre-split price 10x
+    ex = d5 + timedelta(days=1)
+    c = _components("X", cal, bars, {d: 1.0 for d in cal}, splits=[(ex, 10.0)])
+    assert c is not None
+    # adjusted: pre-split 10000 / 10 == 1000 == today -> ~0% change, not -90%
+    assert abs(c.price_chg_5d) < 1e-6
+
+
+def test_classify_akum_asing():
+    c = Components(
+        ticker="BBRI", close=1000.0, price_chg_5d=-0.01,   # down/flat
+        nff_w1=1e9, nff_w2=1e9, foreign_consistency_10d=CONSISTENCY_ACC,
+        ksei_foreign_trend_3m="up",
+    )
+    tags = _classify(c)
+    assert "AKUM-ASING" in tags
+    assert "KSEI-KONFIRM" in tags
+    assert c.quadrant == "MARKDOWN" or c.quadrant == "AKUMULASI"
+
+
+def test_classify_distribusi_with_ksei_divergen():
+    c = Components(
+        ticker="ADRO", close=2000.0, price_chg_5d=0.06,     # up
+        nff_w1=-5e8, foreign_consistency_10d=2,
+        ksei_foreign_trend_3m="up",                          # foreign ownership rising -> divergent
+    )
+    tags = _classify(c)
+    assert "DISTRIBUSI-ASING" in tags
+    assert "KSEI-DIVERGEN" in tags
+    assert "KSEI-DIVERGEN" in c.data_flags
+
+
+def test_classify_needs_history():
+    assert _classify(Components(ticker="X")) == []          # no price_chg_5d / nff_w1
+
+
+def test_comp_columns_align():
+    from dataclasses import fields
+
+    from vg.engine import _COMP_COLS
+
+    attrs = {f.name for f in fields(Components)}
+    for col in _COMP_COLS:
+        if col in ("session_date",):
+            continue
+        assert col in attrs, f"signal_components column {col!r} missing on Components"

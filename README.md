@@ -29,9 +29,17 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
   KSEI `schedule_ca_keseluruhan` (dividends / rights / stock dividends / mergers)
   **plus** a `derived_from_price_bars` detector for splits/bonus (KSEI omits splits)
   → `corp_actions`.
+- **Engine v0** (`src/vg/engine.py`) — RENCANA-FASE-1 §5-6, PRINSIP-DATA §C.
+  Per trading day, per ticker: NFF (net foreign flow, **in IDR**, split-robust)
+  D0 + rolling W1-W4 on trading days, foreign-buy consistency, vol surge, RS vs
+  IHSG (split-adjusted), negotiated-board ratio, KSEI monthly trend cross-check →
+  `signal_components`. Fires **probation tags** (`AKUM-ASING`, `DISTRIBUSI-ASING`,
+  `MARKUP`, `MARKDOWN`, `CROSSING-TINGGI`, `KSEI-KONFIRM`/`KSEI-DIVERGEN`) into
+  `signal_log` — **weight 0**. `backfill-outcomes` fills their H+1/3/5/10 returns;
+  `eval` reports whether any tag actually precedes a move. No composite score.
 - `src/vg/collect.py` + `vg` CLI — fetch → raw artifact (+sha256) → upsert → `run_log`.
 
-Not yet: the engine (methodology), Telegram, forward-test.
+Not yet: the Telegram digest + weekly eval message.
 
 ## Setup (on the VPS)
 
@@ -65,6 +73,23 @@ vg collect-index --backfill 2024-01-02 2026-09-02
 vg collect-corpactions --year 2026                       # KSEI CA schedule
 vg collect-corpactions --backfill 2021 2026
 vg detect-ca                                             # splits from listed_shares jumps (needs price_bars first)
+
+vg compute --latest                                      # engine v0 -> signal_components + probation tags
+vg compute --backfill 2024-01-02 2026-09-02
+vg backfill-outcomes                                     # fill forward returns on resolved tags
+vg eval                                                  # per-tag forward-return stats — the Phase 1 payoff
+```
+
+### Daily EOD sequence (cron ~19:00 WIB)
+
+```
+vg collect-price --latest
+vg collect-index --latest
+vg detect-ca                # cheap; catches splits since yesterday
+vg compute --latest
+vg backfill-outcomes
+# (monthly, early in the month) vg collect-ownership --latest ; vg collect-corpactions --year <this year>
+# (weekly) vg eval  -> Telegram
 ```
 
 `collect-ownership` downloads `web.ksei.co.id/Download/BalanceposEfek<YYYYMMDD>.zip`
