@@ -270,18 +270,20 @@ def build_weekly_eval() -> str:
             "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>\n"
             "Belum ada baris signal_log yang matang (butuh ~2 minggu data + backfill-outcomes)."
         )
-    rows = [f"{'tag':<17}{'n':>4}{'avgH5':>9}{'vsIHSG':>9}{'hit':>6}{'avgH10':>9}"]
+    rows = [f"{'tag':<17}{'n':>7}{'edgeH5':>9}{'hit':>5}{'uHit':>5}{'nLiq':>7}{'edgeH5L':>9}"]
     for s in stats:
         rows.append(
-            f"{s['tag']:<17}{s['n']:>4}"
-            f"{_pct(s['avg_h5'], 2):>9}{_pct(s['avg_vs_ihsg_h5'], 2):>9}"
-            f"{(s['hit_rate'] or 0) * 100:>5.0f}%{_pct(s['avg_h10'], 2):>9}"
+            f"{s['tag']:<17}{s['n']:>7}"
+            f"{_pct(s['edge_h5'], 2):>9}"
+            f"{(s['hit_rate'] or 0) * 100:>4.0f}%{(s['univ_hit_rate'] or 0) * 100:>4.0f}%"
+            f"{s['n_liquid'] or 0:>7}{_pct(s['edge_h5_liquid'], 2):>9}"
         )
     body = html.escape("\n".join(rows), quote=False)
     return (
         "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>\n"
         f"<pre>{body}</pre>\n"
-        "<i>avgH5 = rata-rata return 5 hari bursa sejak tag muncul. "
-        "vsIHSG = relatif IHSG. Sinyal 'lulus' ke lapis berbobot butuh "
-        "n≥50, ≥2 bulan, dan edge yang jelas setelah biaya.</i>"
+        "<i>edgeH5 = return 5 hari tag minus rata-rata universe hari yang sama. "
+        "hit/uHit = % positif tag vs universe. nLiq/edgeH5L = idem untuk saham "
+        "&gt;Rp5B/hari. 'Lulus' ke lapis berbobot butuh n≥50, ≥2 bulan, edge jelas "
+        "setelah biaya (~150-190bp).</i>"
     )

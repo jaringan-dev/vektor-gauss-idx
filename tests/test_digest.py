@@ -89,8 +89,9 @@ def test_weekly_eval_table(monkeypatch):
     monkeypatch.setattr(
         digest.engine, "eval_tags",
         lambda: [
-            {"tag": "AKUM-ASING", "n": 63, "avg_h5": 0.018, "avg_vs_ihsg_h5": 0.007,
-             "hit_rate": 0.58, "avg_h1": 0.003, "avg_h10": 0.024},
+            {"tag": "AKUM-ASING", "n": 63, "avg_h5": 0.018, "edge_h1": 0.001,
+             "edge_h5": 0.007, "edge_h10": 0.011, "hit_rate": 0.58, "univ_hit_rate": 0.40,
+             "n_liquid": 40, "edge_h5_liquid": 0.009, "hit_rate_liquid": 0.55},
         ],
     )
     out = digest.build_weekly_eval()
