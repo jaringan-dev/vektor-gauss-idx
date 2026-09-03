@@ -31,14 +31,59 @@ ever sold — OJK).
 
 ## What's left
 
-1. **Let the backfill finish**, then read `vg eval` — a first look at whether any
-   tag (`AKUM-ASING`, `DISTRIBUSI-ASING`, …) precedes a move over ~3.5 years.
-   This is in-sample; the real test is still the forward run.
+1. ~~Let the backfill finish, then read `vg eval`.~~ Done — see
+   **First `vg eval` read** below. Real test is still the forward run.
 2. **Tune `.env`**: real watchlist, `VG_HOLDINGS` (drives HOLD/REDUCE vs BUY),
    `VG_ACCOUNT_BALANCE` + `VG_RISK_PCT` for lot sizing in the digest.
 3. **Confirm the first cron run** (19:15 WIB) lands a digest in Telegram.
-4. **Leave it running ~2 months.** Paper-trade `AKUM-ASING` on the watchlist in
-   parallel, keep a manual spreadsheet. Read `vg digest --weekly` / `vg eval`.
+4. **Leave it running ~2 months.** Paper-trade the surviving candidates
+   (`FLOAT-ASING-PADAT`, `TIKET-BESAR-AKUM`; `TIKET-KECIL-MARKUP` as an avoid) on
+   the watchlist in parallel, keep a manual spreadsheet. Read `vg digest
+   --weekly` / `vg eval`. Watch whether the forward edge survives out-of-sample.
+
+## First `vg eval` read (2026-09-03, in-sample)
+
+Full 2023-02 → 2026-09 history recomputed after Phase 1.25, so **there is no
+genuine forward window yet** — every number here is in-sample. `edge` = tag's H5
+return minus the equal-weight universe that day; `hit`/`uHit` = % positive for
+tag vs universe; `L` = subset on names trading > Rp5B that day.
+
+**The flagship tag still has no edge.** `AKUM-ASING`: edgeH5 −0.07%, edgeH10
+−0.12%, hit 43% vs uHit 40%, liquid subset only +0.15%. Same verdict as the 3.5y
+research pass — free foreign-flow accumulation is not tradeable.
+
+**Phase 1.25 earned its keep — 2 of its 3 new tags are the best in the table:**
+
+| tag | n | edgeH1 | edgeH5 | edgeH10 | hit/uHit | edgeH5 L |
+|---|---|---|---|---|---|---|
+| `FLOAT-ASING-PADAT` | 3,552 | +0.27% | **+0.63%** | +0.41% | **46 / 39** | **+0.92%** |
+| `TIKET-BESAR-AKUM` | 36,984 | +0.13% | +0.36% | +0.68% | 42 / 39 | +0.40% |
+| `TIKET-KECIL-MARKUP` | 16,687 | **−0.34%** | −0.21% | −0.01% | 41 / 41 | +0.20% |
+
+- `FLOAT-ASING-PADAT` — best edge, only tag with a real hit-rate gap (46 vs 39),
+  naturally concentrated in liquid names (2,651 / 3,552). But n ≈ 1k/yr → thin.
+- `TIKET-BESAR-AKUM` — the avg-ticket (value/frequency) institutional-footprint
+  proxy. Edge rises monotonically H1→H10 on a large sample. Modest but the most
+  consistent shape.
+- `TIKET-KECIL-MARKUP` — works as a **negative** signal (−0.34% at H1). "Retail
+  crowd, fragile" thesis holds in-sample. Avoid filter, not a buy.
+
+**Theses contradicted by the data:** `DISTRIBUSI-ASING` is meant to be bearish
+but shows +0.40% edgeH5 / +0.90% edgeH10 — it fires on "price up 5d" and is
+really just momentum, same as `MARKUP`. Treat both as price-momentum proxies, not
+foreign-behaviour signals. `CROSSING-TINGGI`: +0.28% avg edge but hit-rate 38%
+(lowest) — a few tail outliers carry it, fragile.
+
+**Bottom line — verdict unchanged, not yet tradeable:**
+- Every "working" tag lands at or below the 150–190 bp round-trip cost band.
+  `FLOAT-ASING-PADAT` liquid (+0.92% H5) clears one-way, not round-trip;
+  `TIKET-BESAR-AKUM` (+0.40%) is well under.
+- Every hit-rate is < 50% (38–46%) — positive mean, negative median, carried by
+  tail winners. Hard to size discretionarily.
+- But Phase 1.25 produced two long-side forward-test candidates that beat the
+  original `AKUM-ASING`: **`FLOAT-ASING-PADAT`** and **`TIKET-BESAR-AKUM`**, plus
+  **`TIKET-KECIL-MARKUP`** as a negative. Those three are what to watch once real
+  forward observations accumulate.
 
 ## Decision point (after ~2 months of forward `vg eval`)
 
