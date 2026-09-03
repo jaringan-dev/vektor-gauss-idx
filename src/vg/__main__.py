@@ -46,6 +46,22 @@ def main(argv: list[str] | None = None) -> int:
     go.add_argument("--latest", action="store_true", help="this month + last month")
     go.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive YYYY-MM range")
 
+    ci = sub.add_parser("collect-index", help="IDX Index Summary -> index_bars (COMPOSITE = IHSG)")
+    gi = ci.add_mutually_exclusive_group(required=True)
+    gi.add_argument("--date", metavar="YYYY-MM-DD", help="one trading day")
+    gi.add_argument("--latest", action="store_true", help="most recent published day")
+    gi.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
+
+    cc = sub.add_parser("collect-corpactions", help="KSEI CA schedule -> corp_actions")
+    gc = cc.add_mutually_exclusive_group(required=True)
+    gc.add_argument("--year", type=int, metavar="YYYY", help="one calendar year")
+    gc.add_argument("--backfill", nargs=2, type=int, metavar=("START", "END"), help="inclusive years")
+
+    sub.add_parser(
+        "detect-ca",
+        help="derive share_count_change events from price_bars.listed_shares jumps",
+    )
+
     args = p.parse_args(argv)
 
     if args.cmd == "init-db":
@@ -82,6 +98,35 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} months with data")
+        return 0
+
+    if args.cmd == "collect-index":
+        if args.latest:
+            _print(collect.collect_index_latest())
+        elif args.date:
+            _print(collect.collect_index_day(_d(args.date)))
+        else:
+            start, end = _d(args.backfill[0]), _d(args.backfill[1])
+            print(f"backfill {start} .. {end}")
+            outs = collect.collect_index_range(start, end)
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} days with data")
+        return 0
+
+    if args.cmd == "collect-corpactions":
+        if args.year:
+            _print(collect.collect_corpactions_year(args.year))
+        else:
+            outs = collect.collect_corpactions_range(args.backfill[0], args.backfill[1])
+            for o in outs:
+                _print(o)
+        return 0
+
+    if args.cmd == "detect-ca":
+        n = collect.detect_share_count_changes()
+        print(f"share_count_change events written/updated: {n}")
         return 0
 
     return 1

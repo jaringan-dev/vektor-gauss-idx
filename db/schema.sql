@@ -66,16 +66,26 @@ CREATE TABLE IF NOT EXISTS price_bars (
 );
 CREATE INDEX IF NOT EXISTS idx_price_bars_ticker_date ON price_bars (ticker, session_date DESC);
 
+-- IDX Index Summary (Tier 0). 'COMPOSITE' = IHSG. ~45 indices/day.
 CREATE TABLE IF NOT EXISTS index_bars (
     session_date  DATE NOT NULL,
-    index_code    TEXT NOT NULL,            -- 'COMPOSITE' (IHSG), 'LQ45', sector codes...
+    index_code    TEXT NOT NULL,
+    prev          NUMERIC,
+    high          NUMERIC,
+    low           NUMERIC,
     close         NUMERIC,
+    change        NUMERIC,
+    num_stock     NUMERIC,
+    volume        NUMERIC,
+    value         NUMERIC,
+    frequency     NUMERIC,
+    market_capital NUMERIC,
     source        TEXT NOT NULL,
     source_tier   SMALLINT NOT NULL,
     fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (session_date, index_code)
 );
--- Not populated in Phase 1 scaffold — next collector.
+CREATE INDEX IF NOT EXISTS idx_index_bars_code_date ON index_bars (index_code, session_date DESC);
 
 -- ---------------------------------------------------------------------------
 -- Ownership (KSEI BalanceposEfek month-end file, Tier 0) — monthly.
@@ -99,16 +109,30 @@ CREATE TABLE IF NOT EXISTS ownership_monthly (
 );
 CREATE INDEX IF NOT EXISTS idx_ownership_ticker ON ownership_monthly (ticker, month_end DESC);
 
+-- Corporate actions. Two sources feed this:
+--  * ksei_ca_schedule  — KSEI schedule_ca_keseluruhan_<year>.xls (HTML): cash/stock
+--    dividends, rights distributions, mergers. type = normalized 'Type of CA'.
+--  * derived_from_price_bars — share_count_change events inferred from a jump in
+--    price_bars.listed_shares (splits/bonus/rights that KSEI's schedule omits).
+-- ex_date: the date the price/share series goes ex (recording_date for KSEI rows;
+-- the session_date of the listed_shares jump for derived rows).
 CREATE TABLE IF NOT EXISTS corp_actions (
-    ticker      TEXT NOT NULL,
-    ex_date     DATE NOT NULL,
-    type        TEXT NOT NULL,              -- 'stock_split', 'reverse_split', 'bonus', 'rights', 'stock_dividend', ...
-    ratio       NUMERIC,                    -- new : old adjustment factor where applicable
-    notes       TEXT,
-    source      TEXT NOT NULL,
-    source_tier SMALLINT NOT NULL,
-    PRIMARY KEY (ticker, ex_date, type)
+    ticker           TEXT NOT NULL,
+    ex_date          DATE NOT NULL,
+    type             TEXT NOT NULL,     -- cash_dividend, stock_dividend, rights, merger, share_count_change, ...
+    ratio            NUMERIC,           -- share adjustment factor (new/old) where applicable
+    cum_date         DATE,
+    distribution_date DATE,
+    exercise_ratio   TEXT,              -- raw KSEI ratio strings (e.g. "5 : 1")
+    proceed_ratio    TEXT,
+    issuer           TEXT,
+    notes            TEXT,
+    source           TEXT NOT NULL,
+    source_tier      SMALLINT NOT NULL,
+    fetched_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, ex_date, type, source)
 );
+CREATE INDEX IF NOT EXISTS idx_corp_actions_ticker ON corp_actions (ticker, ex_date DESC);
 
 -- ---------------------------------------------------------------------------
 -- Broker summary (Phase 1.5+, Tier 1 preferred). Defined now, left empty.

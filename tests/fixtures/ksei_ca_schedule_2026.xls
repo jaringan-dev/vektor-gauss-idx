@@ -1,0 +1,33 @@
+<html xmlns:x="urn:schemas-microsoft-com:office:excel">
+<HEAD><META HTTP-EQUIV="CONTENT-TYPE" CONTENT="TEXT/HTML; charset=ISO-8859-1"></HEAD>
+<BODY>
+<TABLE border=1>
+  <TR id=header align='center'><TD colspan='15'><font color=red>Schedule of Corporate Action Year 2026</font></TD></TR>
+  <TR id=header>
+    <TD>No.</TD><TD>Issuer</TD><TD>Security Code</TD><TD>Security Name</TD><TD>Type of CA</TD>
+    <TD>Cum Date</TD><TD>Recording Date</TD><TD>Distribution Date</TD><TD>Exercise Ratio</TD>
+    <TD>Exercise Intrument</TD><TD>Proceed Ratio</TD><TD>Proceed Instrument</TD><TD>Description</TD>
+    <TD>Refference No</TD><TD>Letter Date</TD>
+  </TR>
+  <tr id=isi>
+    <td align='center'>1.</td><td>BANK CENTRAL ASIA Tbk, PT</td><td>BBCA</td><td>BANK CENTRAL ASIA TBK</td>
+    <td>CASH DIVIDEND</td><td>10-MAR-2026</td><td>12-MAR-2026</td><td>17-MAR-2026</td>
+    <td>1</td><td>BBCA</td><td>55</td><td>IDR</td><td>DIVIDEN TUNAI INTERIM TAHUN BUKU 2025</td><td>S-1234/BEI/2026</td><td>05-MAR-2026</td>
+  </tr>
+  <tr id=isi>
+    <td align='center'>2.</td><td>SUMBER ALFARIA TRIJAYA Tbk, PT</td><td>AMRT</td><td>SUMBER ALFARIA TRIJAYA TBK</td>
+    <td>RIGHT DISTRIBUTION</td><td>02-APR-2026</td><td>06-APR-2026</td><td>07-APR-2026</td>
+    <td>1000 : 150</td><td>AMRT</td><td>1000 : 150</td><td>AMRT-R</td><td>HMETD RASIO 1000:150 HARGA 2500</td><td>S-5678/BEI/2026</td><td>28-MAR-2026</td>
+  </tr>
+  <tr id=isi>
+    <td align='center'>3.</td><td>PT OBLIGASI XYZ</td><td>XYZ01CN2</td><td>OBLIGASI XYZ TAHAP II</td>
+    <td>INTEREST</td><td>29-DEC-2025</td><td>02-JAN-2026</td><td>08-JAN-2026</td>
+    <td>1000000</td><td>XYZ01CN2</td><td></td><td></td><td>BUNGA KE-8</td><td>S-9/BEI/2026</td><td></td>
+  </tr>
+  <tr id=isi>
+    <td align='center'>4.</td><td>SARANA MENARA NUSANTARA Tbk, PT</td><td>TOWR</td><td>SARANA MENARA NUSANTARA TBK</td>
+    <td>STOCK DIVIDEND</td><td>15-MAY-2026</td><td>19-MAY-2026</td><td>26-MAY-2026</td>
+    <td>10 : 1</td><td>TOWR</td><td>10 : 1</td><td>TOWR</td><td>DIVIDEN SAHAM RASIO 10:1</td><td>S-77/BEI/2026</td><td>10-MAY-2026</td>
+  </tr>
+</TABLE>
+</BODY></html>

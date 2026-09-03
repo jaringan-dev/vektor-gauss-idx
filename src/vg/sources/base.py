@@ -68,6 +68,43 @@ class PriceSource(ABC):
         ...
 
 
+@dataclass(slots=True)
+class IndexBar:
+    index_code: str
+    prev: Num = None
+    high: Num = None
+    low: Num = None
+    close: Num = None
+    change: Num = None
+    num_stock: Num = None
+    volume: Num = None
+    value: Num = None
+    frequency: Num = None
+    market_capital: Num = None
+
+
+@dataclass(slots=True)
+class IndexFetchResult:
+    status: FetchStatus
+    session_date: date
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    bars: list[IndexBar] = field(default_factory=list)
+    detail: str = ""
+
+
+class IndexSource(ABC):
+    """Daily index values (IHSG + others) for a single trading day."""
+
+    name: str
+    tier: int
+
+    @abstractmethod
+    def fetch(self, session_date: date | None) -> IndexFetchResult:
+        ...
+
+
 # Investor-category codes used by KSEI (both Local and Foreign):
 #   IS insurance · CP corporate · PF pension fund · IB financial institution/bank
 #   ID individual · MF mutual fund · SC securities company · FD foundation · OT other
@@ -105,6 +142,43 @@ class OwnershipSource(ABC):
 
     @abstractmethod
     def fetch(self, month: date) -> OwnershipFetchResult:
+        ...
+
+
+@dataclass(slots=True)
+class CorpAction:
+    ticker: str
+    ca_type: str                       # normalized: cash_dividend, rights, stock_split, ...
+    raw_type: str                      # original 'Type of CA' string
+    ex_date: date | None               # recording_date, or cum_date if that's missing
+    cum_date: date | None = None
+    distribution_date: date | None = None
+    exercise_ratio: str | None = None
+    proceed_ratio: str | None = None
+    issuer: str | None = None
+    notes: str | None = None
+
+
+@dataclass(slots=True)
+class CaFetchResult:
+    status: FetchStatus
+    year: int
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    raw_ext: str = "xls"
+    rows: list[CorpAction] = field(default_factory=list)
+    detail: str = ""
+
+
+class CorpActionSource(ABC):
+    """A year's corporate-action schedule."""
+
+    name: str
+    tier: int
+
+    @abstractmethod
+    def fetch(self, year: int) -> CaFetchResult:
         ...
 
 

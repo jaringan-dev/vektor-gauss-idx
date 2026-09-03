@@ -18,14 +18,20 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
 ## What's built so far
 
 - `db/schema.sql` — full canonical schema (12 tables; several unused in Phase 1).
-- `src/vg/sources/idx.py` — **IDX Stock Summary collector** (Tier 0): OHLCV +
-  foreign flow (volume) + regular/negotiated split, per ticker per day.
-- `src/vg/sources/ksei.py` — **KSEI monthly ownership collector** (Tier 0): the
-  `BalanceposEfek<YYYYMMDD>.zip` month-end file → `ownership_monthly`. Per-ticker
-  share counts by investor category (9 categories × local/foreign) + scripless %.
+- **IDX Stock Summary collector** (`sources/idx.py`, Tier 0): OHLCV + foreign flow
+  (volume) + regular/negotiated split, per ticker per day → `price_bars`.
+- **IDX Index Summary collector** (`sources/idx.py`, Tier 0): ~45 indices/day,
+  `COMPOSITE` = IHSG → `index_bars`.
+- **KSEI monthly ownership collector** (`sources/ksei.py`, Tier 0): `BalanceposEfek`
+  month-end zip → `ownership_monthly` (9 investor categories × local/foreign +
+  scripless %).
+- **Corporate actions** (`sources/ksei.py` + `collect.py`, Tier 0):
+  KSEI `schedule_ca_keseluruhan` (dividends / rights / stock dividends / mergers)
+  **plus** a `derived_from_price_bars` detector for splits/bonus (KSEI omits splits)
+  → `corp_actions`.
 - `src/vg/collect.py` + `vg` CLI — fetch → raw artifact (+sha256) → upsert → `run_log`.
 
-Not yet: IHSG/index collector, corp actions, the engine, Telegram, forward-test.
+Not yet: the engine (methodology), Telegram, forward-test.
 
 ## Setup (on the VPS)
 
@@ -52,6 +58,13 @@ vg collect-price --backfill 2024-01-02 2026-09-02       # ~4s/day, polite
 vg collect-ownership --latest                            # this + last month
 vg collect-ownership --month 2026-08
 vg collect-ownership --backfill 2021-01 2026-08          # KSEI files exist ~2018+
+
+vg collect-index --latest                                # IHSG + ~44 others
+vg collect-index --backfill 2024-01-02 2026-09-02
+
+vg collect-corpactions --year 2026                       # KSEI CA schedule
+vg collect-corpactions --backfill 2021 2026
+vg detect-ca                                             # splits from listed_shares jumps (needs price_bars first)
 ```
 
 `collect-ownership` downloads `web.ksei.co.id/Download/BalanceposEfek<YYYYMMDD>.zip`

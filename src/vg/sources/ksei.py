@@ -24,15 +24,25 @@ from __future__ import annotations
 import calendar
 import io
 import random
+import re
 import time
 import zipfile
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
+from html.parser import HTMLParser
 
 import httpx
 
 from ..config import CONFIG
-from .base import KSEI_CATEGORIES, OwnershipFetchResult, OwnershipSnapshot, OwnershipSource
+from .base import (
+    KSEI_CATEGORIES,
+    CaFetchResult,
+    CorpAction,
+    CorpActionSource,
+    OwnershipFetchResult,
+    OwnershipSnapshot,
+    OwnershipSource,
+)
 
 _BASE = "https://web.ksei.co.id/Download"
 _MONTHS = {
@@ -63,6 +73,167 @@ def _parse_ksei_date(v: str) -> date | None:
         return date(int(y), _MONTHS[mon], int(d))
     except (ValueError, KeyError):
         return None
+
+
+# -- Corporate-action schedule -------------------------------------------------
+
+_CA_BASE = "https://web.ksei.co.id/Download"
+
+# normalized type -> matched if the raw 'Type of CA' contains this substring
+_CA_TYPE_MAP: list[tuple[str, str]] = [
+    ("reverse_split", "REVERSE"),
+    ("stock_split", "SPLIT"),
+    ("stock_dividend", "STOCK DIVIDEND"),
+    ("bonus", "BONUS"),
+    ("rights", "RIGHT"),
+    ("warrant_exercise", "WARRANT"),
+    ("merger", "MERGER"),
+    ("tender_offer", "TENDER"),
+    ("cash_dividend", "CASH DIVIDEND"),
+    ("cash_dividend", "DIVIDEND"),
+]
+# Types that change price / share count (or matter for equities). Bond noise
+# (INTEREST, REDEMPTION, MANDATORY CONVERSION, PROXY VOTING) is dropped.
+_CA_KEEP = {
+    "reverse_split", "stock_split", "stock_dividend", "bonus", "rights",
+    "warrant_exercise", "merger", "tender_offer", "cash_dividend",
+}
+
+
+def _normalize_ca_type(raw: str) -> str:
+    up = raw.strip().upper()
+    for norm, needle in _CA_TYPE_MAP:
+        if needle in up:
+            return norm
+    return re.sub(r"[^a-z0-9]+", "_", up.lower()).strip("_")
+
+
+class _KseiCaTableParser(HTMLParser):
+    """Extracts <tr id=isi> rows from KSEI's Excel-flavoured HTML .xls files."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._in_row = False
+        self._in_cell = False
+        self._cell: list[str] = []
+        self._row: list[str] = []
+        self.rows: list[list[str]] = []
+
+    def handle_starttag(self, tag: str, attrs):  # noqa: ANN001
+        if tag == "tr" and dict(attrs).get("id") == "isi":
+            self._in_row, self._row = True, []
+        elif tag in ("td", "th") and self._in_row:
+            self._in_cell, self._cell = True, []
+
+    def handle_endtag(self, tag: str):
+        if tag in ("td", "th") and self._in_cell:
+            self._in_cell = False
+            self._row.append(" ".join("".join(self._cell).split()))
+        elif tag == "tr" and self._in_row:
+            self._in_row = False
+            if self._row:
+                self.rows.append(self._row)
+
+    def handle_data(self, data: str):
+        if self._in_cell:
+            self._cell.append(data)
+
+
+class KseiCaScheduleSource(CorpActionSource):
+    """KSEI schedule_ca_keseluruhan_<year>.xls — the master CA list (HTML table).
+
+    Columns (15): No | Issuer | Security Code | Security Name | Type of CA |
+      Cum Date | Recording Date | Distribution Date | Exercise Ratio |
+      Exercise Intrument | Proceed Ratio | Proceed Instrument | Description |
+      Refference No | Letter Date
+
+    NOTE: this file does NOT contain stock splits (KSEI omits them). Splits come
+    from the derived_from_price_bars detector — see vg.collect.
+    """
+
+    name = "ksei_ca_schedule"
+    tier = 0
+
+    def __init__(self, *, max_retries: int = 3) -> None:
+        self.max_retries = max_retries
+
+    def _download(self, year: int) -> bytes | None:
+        url = f"{_CA_BASE}/schedule_ca_keseluruhan_{year}.xls"
+        headers = {
+            "User-Agent": CONFIG.http_user_agent,
+            "Accept": "text/html, application/vnd.ms-excel, */*",
+            "Referer": "https://web.ksei.co.id/data/download-data-and-user-guide",
+        }
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                with httpx.Client(timeout=CONFIG.http_timeout, headers=headers) as c:
+                    resp = c.get(url, follow_redirects=True)
+                if resp.status_code == 404:
+                    return None
+                if resp.status_code >= 500:
+                    raise httpx.HTTPStatusError("5xx", request=resp.request, response=resp)
+                resp.raise_for_status()
+                return resp.content
+            except (httpx.TransportError, httpx.HTTPStatusError) as exc:
+                last_exc = exc
+                if attempt < self.max_retries - 1:
+                    time.sleep(2**attempt + random.uniform(0, 1))
+        raise RuntimeError(f"KSEI CA download failed for {url}: {last_exc}")
+
+    @staticmethod
+    def _parse(html_bytes: bytes) -> list[CorpAction]:
+        parser = _KseiCaTableParser()
+        parser.feed(html_bytes.decode("latin-1", errors="replace"))
+        out: list[CorpAction] = []
+        for r in parser.rows:
+            if len(r) < 8:
+                continue
+            raw_type = r[4]
+            ca_type = _normalize_ca_type(raw_type)
+            if ca_type not in _CA_KEEP:
+                continue
+            cum = _parse_ksei_date(r[5])
+            recording = _parse_ksei_date(r[6])
+            ex = recording or cum
+            code = r[2].strip()
+            if not code or ex is None:
+                continue
+            out.append(
+                CorpAction(
+                    ticker=code,
+                    ca_type=ca_type,
+                    raw_type=raw_type,
+                    ex_date=ex,
+                    cum_date=cum,
+                    distribution_date=_parse_ksei_date(r[7]),
+                    exercise_ratio=(r[8].strip() or None) if len(r) > 8 else None,
+                    proceed_ratio=(r[10].strip() or None) if len(r) > 10 else None,
+                    issuer=r[1].strip() or None,
+                    notes=(r[12].strip() or None) if len(r) > 12 else None,
+                )
+            )
+        return out
+
+    def fetch(self, year: int) -> CaFetchResult:
+        try:
+            raw = self._download(year)
+        except Exception as exc:
+            return CaFetchResult(
+                status="error", year=year, source=self.name, source_tier=self.tier,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        if raw is None:
+            return CaFetchResult(
+                status="no_data", year=year, source=self.name, source_tier=self.tier,
+                detail=f"no schedule_ca_keseluruhan_{year}.xls",
+            )
+        rows = self._parse(raw)
+        return CaFetchResult(
+            status="ok" if rows else "no_data", year=year, source=self.name,
+            source_tier=self.tier, raw_bytes=raw, rows=rows,
+            detail="" if rows else "file downloaded but no equity CA rows parsed",
+        )
 
 
 def _candidate_dates(month: date) -> list[date]:

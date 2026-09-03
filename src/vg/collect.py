@@ -19,13 +19,17 @@ from .config import CONFIG
 from .db import connect, upsert_many
 from .sources.base import (
     KSEI_CATEGORIES,
+    CaFetchResult,
+    CorpAction,
+    IndexBar,
+    IndexFetchResult,
     OwnershipFetchResult,
     OwnershipSnapshot,
     PriceBar,
     PriceFetchResult,
 )
-from .sources.idx import IdxStockSummarySource
-from .sources.ksei import KseiOwnershipSource
+from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
+from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 
 _PRICE_COLS = (
     "session_date", "ticker", "prev", "open", "first_trade", "high", "low", "close",
@@ -266,3 +270,208 @@ def collect_ownership_latest() -> list[CollectOutcome]:
     today = date.today()
     prev = (today.replace(day=1) - timedelta(days=1))
     return [collect_ownership_month(prev), collect_ownership_month(today)]
+
+
+# ---------------------------------------------------------------------------
+# IDX Index Summary (Tier 0)  ->  index_bars
+# ---------------------------------------------------------------------------
+
+_IDX_COLS = (
+    "session_date", "index_code", "prev", "high", "low", "close", "change",
+    "num_stock", "volume", "value", "frequency", "market_capital", "source", "source_tier",
+)
+_IDX_UPDATE = tuple(c for c in _IDX_COLS if c not in ("session_date", "index_code"))
+
+
+def _index_row(sd: date, b: IndexBar, source: str, tier: int) -> tuple:
+    return (
+        sd, b.index_code, b.prev, b.high, b.low, b.close, b.change, b.num_stock,
+        b.volume, b.value, b.frequency, b.market_capital, source, tier,
+    )
+
+
+def _collect_index(res: IndexFetchResult) -> CollectOutcome:
+    art = artifacts.store(res.source, res.session_date, res.raw_bytes) if res.raw_bytes else None
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if art:
+                artifacts.record(cur, res.source, res.session_date, *art)
+            rows = 0
+            if res.status == "ok":
+                rows = upsert_many(
+                    cur, "index_bars", _IDX_COLS,
+                    [_index_row(res.session_date, b, res.source, res.source_tier) for b in res.bars],
+                    conflict=("session_date", "index_code"), update=_IDX_UPDATE,
+                )
+                cur.execute(
+                    "INSERT INTO trading_calendar (session_date, confirmed_by) VALUES (%s, %s) "
+                    "ON CONFLICT (session_date) DO NOTHING",
+                    (res.session_date, res.source),
+                )
+            cur.execute(
+                "INSERT INTO run_log (phase, batch_date, status, rows_affected, error, finished_at) "
+                "VALUES ('collect_index', %s, %s, %s, %s, now())",
+                (res.session_date, res.status, rows, res.detail or None),
+            )
+        return CollectOutcome(res.session_date, res.status, rows, res.detail)
+    except Exception as exc:
+        _log_error(res.session_date, exc)
+        return CollectOutcome(res.session_date, "error", 0, f"{type(exc).__name__}: {exc}")
+
+
+def collect_index_day(session_date: date) -> CollectOutcome:
+    try:
+        res = IdxIndexSummarySource().fetch(session_date)
+    except Exception as exc:
+        _log_error(session_date, exc)
+        return CollectOutcome(session_date, "error", 0, f"{type(exc).__name__}: {exc}")
+    return _collect_index(res)
+
+
+def collect_index_latest() -> CollectOutcome:
+    try:
+        res = IdxIndexSummarySource().fetch(None)
+    except Exception as exc:
+        _log_error(date.today(), exc)
+        return CollectOutcome(date.today(), "error", 0, f"{type(exc).__name__}: {exc}")
+    return _collect_index(res)
+
+
+def collect_index_range(start: date, end: date) -> list[CollectOutcome]:
+    out: list[CollectOutcome] = []
+    d = start
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(collect_index_day(d))
+            time.sleep(CONFIG.request_delay_seconds)
+        d += timedelta(days=1)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Corporate actions  ->  corp_actions
+#   (a) KSEI schedule_ca_keseluruhan  (dividends, rights, stock dividends, mergers)
+#   (b) derived_from_price_bars       (splits / bonus / rights — share-count jumps)
+# ---------------------------------------------------------------------------
+
+_CA_COLS = (
+    "ticker", "ex_date", "type", "ratio", "cum_date", "distribution_date",
+    "exercise_ratio", "proceed_ratio", "issuer", "notes", "source", "source_tier",
+)
+_CA_UPDATE = tuple(c for c in _CA_COLS if c not in ("ticker", "ex_date", "type", "source"))
+
+
+def _ca_row(a: CorpAction, source: str, tier: int) -> tuple:
+    return (
+        a.ticker, a.ex_date, a.ca_type, None, a.cum_date, a.distribution_date,
+        a.exercise_ratio, a.proceed_ratio, a.issuer, a.notes, source, tier,
+    )
+
+
+def _collect_corpactions(res: CaFetchResult) -> CollectOutcome:
+    label = date(res.year, 12, 31)
+    art = (
+        artifacts.store(res.source, label, res.raw_bytes, ext=res.raw_ext)
+        if res.raw_bytes else None
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if art:
+                artifacts.record(cur, res.source, label, *art)
+            rows = 0
+            if res.status == "ok":
+                upsert_many(
+                    cur, "tickers", ("ticker", "name", "first_seen", "last_seen"),
+                    [(a.ticker, None, a.ex_date, a.ex_date) for a in res.rows],
+                    conflict=("ticker",),
+                )
+                rows = upsert_many(
+                    cur, "corp_actions", _CA_COLS,
+                    [_ca_row(a, res.source, res.source_tier) for a in res.rows],
+                    conflict=("ticker", "ex_date", "type", "source"), update=_CA_UPDATE,
+                )
+            cur.execute(
+                "INSERT INTO run_log (phase, batch_date, status, rows_affected, error, finished_at) "
+                "VALUES ('collect_corpactions', %s, %s, %s, %s, now())",
+                (label, res.status, rows, res.detail or None),
+            )
+        return CollectOutcome(label, res.status, rows, res.detail)
+    except Exception as exc:
+        _log_error(label, exc)
+        return CollectOutcome(label, "error", 0, f"{type(exc).__name__}: {exc}")
+
+
+def collect_corpactions_year(year: int) -> CollectOutcome:
+    try:
+        res = KseiCaScheduleSource().fetch(year)
+    except Exception as exc:
+        _log_error(date(year, 12, 31), exc)
+        return CollectOutcome(date(year, 12, 31), "error", 0, f"{type(exc).__name__}: {exc}")
+    return _collect_corpactions(res)
+
+
+def collect_corpactions_range(start_year: int, end_year: int) -> list[CollectOutcome]:
+    out: list[CollectOutcome] = []
+    for y in range(start_year, end_year + 1):
+        out.append(collect_corpactions_year(y))
+        time.sleep(CONFIG.request_delay_seconds)
+    return out
+
+
+# KSEI's schedule omits stock splits. Derive them from a jump in listed_shares
+# between consecutive price_bars sessions (Tier-0 data, so source_tier=0).
+_SPLIT_MIN_RATIO_DELTA = 0.10   # ignore < 10% changes (buybacks, ESOP, small placements)
+
+_DETECT_SQL = """
+WITH seq AS (
+  SELECT ticker, session_date, listed_shares, close, prev,
+         LAG(listed_shares) OVER w AS prev_listed,
+         LAG(close)         OVER w AS prev_close
+  FROM price_bars
+  WHERE listed_shares IS NOT NULL AND listed_shares > 0
+  WINDOW w AS (PARTITION BY ticker ORDER BY session_date)
+)
+SELECT ticker, session_date, prev_listed, listed_shares, prev_close, close, prev
+FROM seq
+WHERE prev_listed IS NOT NULL
+  AND abs(listed_shares / prev_listed - 1) >= %s
+ORDER BY ticker, session_date
+"""
+
+
+def detect_share_count_changes(min_ratio_delta: float = _SPLIT_MIN_RATIO_DELTA) -> int:
+    """Scan price_bars for listed_shares jumps -> corp_actions rows
+    (type='share_count_change', source='derived_from_price_bars'). Idempotent.
+    Returns the number of events written/updated."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(_DETECT_SQL, (min_ratio_delta,))
+        events = cur.fetchall()
+
+        rows: list[tuple] = []
+        for ticker, sd, prev_listed, listed, prev_close, close, prev in events:
+            share_ratio = float(listed) / float(prev_listed)
+            # same-session reference-price gap: today's `prev` vs yesterday's close
+            price_ratio = (
+                float(prev) / float(prev_close) if (prev and prev_close) else None
+            )
+            # a pure split conserves market cap: price_ratio * share_ratio ~ 1
+            looks_like_split = (
+                price_ratio is not None and abs(price_ratio * share_ratio - 1) < 0.15
+            )
+            kind = "split" if looks_like_split else "dilution_or_placement"
+            pr = f"{price_ratio:.4f}" if price_ratio is not None else "n/a"
+            note = (
+                f"{kind}: listed_shares {prev_listed} -> {listed} (x{share_ratio:.4f}); "
+                f"ref price {prev_close} -> {prev} (x{pr})"
+            )
+            rows.append((
+                ticker, sd, "share_count_change", round(share_ratio, 6),
+                None, None, None, None, None, note,
+                "derived_from_price_bars", 0,
+            ))
+
+        n = upsert_many(
+            cur, "corp_actions", _CA_COLS, rows,
+            conflict=("ticker", "ex_date", "type", "source"), update=_CA_UPDATE,
+        )
+    return n

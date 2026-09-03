@@ -1,0 +1,28 @@
+{
+  "draw": 0,
+  "recordsTotal": 3,
+  "recordsFiltered": 3,
+  "data": [
+    {
+      "No": 1, "IndexSummaryID": 195435, "Date": "2026-09-01T00:00:00",
+      "IndexCode": "COMPOSITE", "Previous": 6525.478, "Highest": 6608.183,
+      "Lowest": 6535.797, "Close": 6599.943, "NumberOfStock": 918.0,
+      "Change": 74.465, "Volume": 57896928823.0, "Value": 20700108924768.0,
+      "Frequency": 2626925.0, "MarketCapital": 1.15315150321011E+16
+    },
+    {
+      "No": 2, "IndexSummaryID": 195436, "Date": "2026-09-01T00:00:00",
+      "IndexCode": "LQ45", "Previous": 643.825, "Highest": 655.732,
+      "Lowest": 644.241, "Close": 654.412, "NumberOfStock": 45.0,
+      "Change": 10.587, "Volume": 25759879105.0, "Value": 10396795524993.0,
+      "Frequency": 725046.0, "MarketCapital": 4.6006200045045E+15
+    },
+    {
+      "No": 3, "IndexSummaryID": 195444, "Date": "2026-09-01T00:00:00",
+      "IndexCode": "IDX30", "Previous": 360.382, "Highest": 367.121,
+      "Lowest": 360.323, "Close": 366.393, "NumberOfStock": 30.0,
+      "Change": 6.011, "Volume": 23857942042.0, "Value": 8098174446541.0,
+      "Frequency": 504006.0, "MarketCapital": 3.80448080865021E+15
+    }
+  ]
+}
