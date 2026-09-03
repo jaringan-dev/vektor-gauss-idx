@@ -479,11 +479,13 @@ request. Migrasi: Alembic `#0001` = skema Fase 1 sekarang; `#0002` = tabel tenan
 8. Billing terakhir: isi `PaymentGateway` (Midtrans/Xendit), webhook, halaman langganan.
 
 **Yang bisa dikerjakan lebih dulu tanpa menunggu gate** (perbaikan Fase 1 murni):
-- `vg eval --since` + `VG_FORWARD_SINCE` — pembeda in-sample vs forward (kritis untuk
-  menilai gate itu sendiri).
-- RADAR di-refocus dari `AKUM-ASING` (mati) ke `FLOAT-ASING-PADAT` / `TIKET-BESAR-AKUM`,
-  jadikan config `VG_RADAR_TAGS`.
-- Pindah cron ke GitHub Actions + self-hosted runner (langkah 3 di atas).
+- ✅ `vg eval --since` + `VG_FORWARD_SINCE` — pembeda in-sample vs forward (juga di
+  digest mingguan). Kritis untuk menilai gate itu sendiri.
+- ✅ RADAR di-refocus dari `AKUM-ASING` (mati) ke `FLOAT-ASING-PADAT` /
+  `TIKET-BESAR-AKUM` via `VG_RADAR_TAGS` (default = dua kandidat itu).
+- ◑ GitHub Actions: `ci.yml` (pytest hosted) + `eod.yml` (self-hosted) + `scripts/eod.sh`
+  ter-commit. **Sisa langkah manual:** daftarkan self-hosted runner, jalankan paralel
+  dengan Task Scheduler seminggu, lalu matikan Task Scheduler — `INFRA-GITHUB-ACTIONS.md`.
 
 ---
 

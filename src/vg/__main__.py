@@ -71,7 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     gm.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
     sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
-    sub.add_parser("eval", help="per-tag forward-return stats (the Phase 1 payoff)")
+    ev = sub.add_parser("eval", help="per-tag forward-return stats (the Phase 1 payoff)")
+    ev.add_argument("--since", metavar="YYYY-MM-DD",
+                    help="only signals on/after this date (forward-test window); "
+                         "without it, prints in-sample + a forward block if VG_FORWARD_SINCE is set")
 
     dg = sub.add_parser("digest", help="build the Telegram EOD digest (or --weekly eval)")
     dg.add_argument("--date", metavar="YYYY-MM-DD", help="digest for a specific trading day")
@@ -238,31 +241,52 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "eval":
-        stats = engine.eval_tags()
-        if not stats:
-            print("no resolved signal_log rows yet (need ~2 weeks of data + backfill-outcomes)")
-            return 0
-
         def pc(x: float | None) -> str:
             return f"{x * 100:+.2f}%" if x is not None else "   -  "
 
-        print(
+        def _table(stats: list[dict], label: str) -> None:
+            print(f"\n{label}")
+            print(
+                f"{'tag':<17}{'n':>7} {'avgH5':>8} {'edgeH1':>8} {'edgeH5':>8} {'edgeH10':>8} "
+                f"{'hit':>5} {'uHit':>5}  | {'nLiq':>6} {'edgeH5L':>8} {'hitL':>5}"
+            )
+            for s in stats:
+                print(
+                    f"{s['tag']:<17}{s['n']:>7} {pc(s['avg_h5']):>8} {pc(s['edge_h1']):>8} "
+                    f"{pc(s['edge_h5']):>8} {pc(s['edge_h10']):>8} "
+                    f"{(s['hit_rate'] or 0) * 100:>4.0f}% {(s['univ_hit_rate'] or 0) * 100:>4.0f}%  | "
+                    f"{s['n_liquid'] or 0:>6} {pc(s['edge_h5_liquid']):>8} "
+                    f"{(s['hit_rate_liquid'] or 0) * 100:>4.0f}%"
+                )
+
+        intro = (
             "edge = tag return minus equal-weight universe on the same day. "
             "hit/uHit = % positive for tag vs universe. "
-            f"liquid = signals on names > Rp{engine.LIQUID_VALUE_IDR/1e9:g}B traded that day.\n"
+            f"liquid = signals on names > Rp{engine.LIQUID_VALUE_IDR/1e9:g}B traded that day."
         )
-        print(
-            f"{'tag':<17}{'n':>7} {'avgH5':>8} {'edgeH1':>8} {'edgeH5':>8} {'edgeH10':>8} "
-            f"{'hit':>5} {'uHit':>5}  | {'nLiq':>6} {'edgeH5L':>8} {'hitL':>5}"
-        )
-        for s in stats:
-            print(
-                f"{s['tag']:<17}{s['n']:>7} {pc(s['avg_h5']):>8} {pc(s['edge_h1']):>8} "
-                f"{pc(s['edge_h5']):>8} {pc(s['edge_h10']):>8} "
-                f"{(s['hit_rate'] or 0) * 100:>4.0f}% {(s['univ_hit_rate'] or 0) * 100:>4.0f}%  | "
-                f"{s['n_liquid'] or 0:>6} {pc(s['edge_h5_liquid']):>8} "
-                f"{(s['hit_rate_liquid'] or 0) * 100:>4.0f}%"
-            )
+
+        if args.since:
+            since = _d(args.since)
+            stats = engine.eval_tags(since)
+            if not stats:
+                print(f"no resolved signal_log rows on/after {since} yet")
+                return 0
+            print(intro)
+            _table(stats, f"forward — signals on/after {since}")
+            return 0
+
+        allstats = engine.eval_tags()
+        if not allstats:
+            print("no resolved signal_log rows yet (need ~2 weeks of data + backfill-outcomes)")
+            return 0
+        print(intro)
+        _table(allstats, "in-sample — full history")
+        if CONFIG.forward_since:
+            fwd = engine.eval_tags(CONFIG.forward_since)
+            if fwd:
+                _table(fwd, f"forward — signals on/after {CONFIG.forward_since} (VG_FORWARD_SINCE)")
+            else:
+                print(f"\nforward (on/after {CONFIG.forward_since}): no resolved rows yet")
         return 0
 
     if args.cmd == "season":

@@ -220,33 +220,44 @@ def build_daily(session_date: date | None = None) -> str:
                     L.append("   " + tl)
 
         # -- radar ------------------------------------------------------
-        cur.execute(
-            """
-            SELECT sl.ticker, sc.nff_w1, sc.atr14, pb.close, pb.prev
-            FROM signal_log sl
-            JOIN signal_components sc
-              ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
-            JOIN price_bars pb
-              ON pb.session_date = sl.session_date AND pb.ticker = sl.ticker
-            WHERE sl.session_date = %s AND sl.tag = 'AKUM-ASING'
-              AND NOT (sl.ticker = ANY(%s))
-            ORDER BY sc.nff_w1 DESC NULLS LAST
-            LIMIT 12
-            """,
-            (sd, wl or [""]),
-        )
-        radar = cur.fetchall()
-        if radar:
-            L.append("\n<b>RADAR</b> — AKUM-ASING hari ini (di luar watchlist)")
-            for t, nff1, atr, close, prv in radar:
-                cf, af = _f(close), _f(atr)
-                chg1 = (cf / float(prv) - 1) if (cf and prv) else None
-                line = f"{t}  {_price(close)} ({_pct(chg1)})  W1 {_idr(_f(nff1))}"
-                if CONFIG.digest_trade_calls and cf and af:
-                    p = calc.plan(cf, calc.atr_stop(cf, af, CONFIG.atr_sl_mult),
-                                  target_r=CONFIG.target_r, fee_pct=CONFIG.fee_pct)
-                    line += f"  · SL {_price(p.stop_loss)} / tgt {_price(p.target)}"
-                L.append(line)
+        radar_tags = list(CONFIG.radar_tags)
+        if radar_tags:
+            cur.execute(
+                """
+                SELECT sl.ticker,
+                       string_agg(DISTINCT sl.tag, ', ' ORDER BY sl.tag) AS tags,
+                       sc.nff_w1, sc.atr14, pb.close, pb.prev
+                FROM signal_log sl
+                JOIN signal_components sc
+                  ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
+                JOIN price_bars pb
+                  ON pb.session_date = sl.session_date AND pb.ticker = sl.ticker
+                WHERE sl.session_date = %s AND sl.tag = ANY(%s)
+                  AND NOT (sl.ticker = ANY(%s))
+                GROUP BY sl.ticker, sc.nff_w1, sc.atr14, pb.close, pb.prev
+                ORDER BY sc.nff_w1 DESC NULLS LAST
+                LIMIT 12
+                """,
+                (sd, radar_tags, wl or [""]),
+            )
+            radar = cur.fetchall()
+            if radar:
+                L.append(
+                    "\n<b>RADAR</b> — " + " / ".join(radar_tags)
+                    + " hari ini (di luar watchlist)"
+                )
+                for t, tags, nff1, atr, close, prv in radar:
+                    cf, af = _f(close), _f(atr)
+                    chg1 = (cf / float(prv) - 1) if (cf and prv) else None
+                    line = (
+                        f"{t}  {_price(close)} ({_pct(chg1)})  "
+                        f"W1 {_idr(_f(nff1))}  · {tags}"
+                    )
+                    if CONFIG.digest_trade_calls and cf and af:
+                        p = calc.plan(cf, calc.atr_stop(cf, af, CONFIG.atr_sl_mult),
+                                      target_r=CONFIG.target_r, fee_pct=CONFIG.fee_pct)
+                        line += f"  · SL {_price(p.stop_loss)} / tgt {_price(p.target)}"
+                    L.append(line)
 
         # -- totals ---------------------------------------------------
         cur.execute(
@@ -268,13 +279,7 @@ def build_daily(session_date: date | None = None) -> str:
     return "\n".join(L)
 
 
-def build_weekly_eval() -> str:
-    stats = engine.eval_tags()
-    if not stats:
-        return (
-            "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>\n"
-            "Belum ada baris signal_log yang matang (butuh ~2 minggu data + backfill-outcomes)."
-        )
+def _eval_table(stats: list[dict]) -> str:
     rows = [f"{'tag':<17}{'n':>7}{'edgeH5':>9}{'hit':>5}{'uHit':>5}{'nLiq':>7}{'edgeH5L':>9}"]
     for s in stats:
         rows.append(
@@ -283,12 +288,34 @@ def build_weekly_eval() -> str:
             f"{(s['hit_rate'] or 0) * 100:>4.0f}%{(s['univ_hit_rate'] or 0) * 100:>4.0f}%"
             f"{s['n_liquid'] or 0:>7}{_pct(s['edge_h5_liquid'], 2):>9}"
         )
-    body = html.escape("\n".join(rows), quote=False)
-    return (
-        "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>\n"
-        f"<pre>{body}</pre>\n"
+    return html.escape("\n".join(rows), quote=False)
+
+
+def build_weekly_eval() -> str:
+    stats = engine.eval_tags()
+    if not stats:
+        return (
+            "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>\n"
+            "Belum ada baris signal_log yang matang (butuh ~2 minggu data + backfill-outcomes)."
+        )
+    parts = [
+        "\U0001F4C8 <b>VEKTOR GAUSS — EVAL MINGGUAN</b>",
+        "<b>in-sample (seluruh riwayat)</b>",
+        f"<pre>{_eval_table(stats)}</pre>",
+    ]
+    if CONFIG.forward_since:
+        fwd = engine.eval_tags(CONFIG.forward_since)
+        if fwd:
+            parts.append(f"<b>forward (sejak {CONFIG.forward_since})</b>")
+            parts.append(f"<pre>{_eval_table(fwd)}</pre>")
+        else:
+            parts.append(
+                f"<i>forward (sejak {CONFIG.forward_since}): belum ada baris matang.</i>"
+            )
+    parts.append(
         "<i>edgeH5 = return 5 hari tag minus rata-rata universe hari yang sama. "
         "hit/uHit = % positif tag vs universe. nLiq/edgeH5L = idem untuk saham "
         "&gt;Rp5B/hari. 'Lulus' ke lapis berbobot butuh n≥50, ≥2 bulan, edge jelas "
         "setelah biaya (~150-190bp).</i>"
     )
+    return "\n".join(parts)

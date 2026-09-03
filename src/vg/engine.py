@@ -745,17 +745,26 @@ def ownership_history(ticker: str, months: int = 12) -> list[dict]:
 # evaluation
 # ---------------------------------------------------------------------------
 
-def eval_tags() -> list[dict]:
+def eval_tags(since: date | None = None) -> list[dict]:
     """Per-tag forward returns vs the equal-weight universe, date-matched.
 
     `edge_h5` is the number that matters: avg(tag ret_h5 - universe ret_h5 on the
     same day). IHSG is large-cap-weighted and not the tradeable universe, so
     comparing to it flatters everything. `*_liquid` restricts to signals on names
     that traded > LIQUID_VALUE_IDR that day, vs the liquid-universe benchmark.
-    Needs market_breadth populated (run `vg backfill-outcomes`)."""
+    Needs market_breadth populated (run `vg backfill-outcomes`).
+
+    `since` restricts to signals emitted on/after that date — the forward-test
+    window (VG_FORWARD_SINCE). Without it the whole history is pooled (in-sample).
+    """
+    params: dict = {"liq": LIQUID_VALUE_IDR}
+    since_clause = ""
+    if since is not None:
+        since_clause = " AND s.session_date >= %(since)s"
+        params["since"] = since
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             SELECT s.tag,
                    count(*)                                       AS n,
                    avg(s.ret_h5)                                  AS avg_h5,
@@ -772,11 +781,11 @@ def eval_tags() -> list[dict]:
             FROM signal_log s
             JOIN market_breadth m USING (session_date)
             JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
-            WHERE s.ret_h5 IS NOT NULL
+            WHERE s.ret_h5 IS NOT NULL{since_clause}
             GROUP BY s.tag
             ORDER BY n DESC
             """,
-            {"liq": LIQUID_VALUE_IDR},
+            params,
         )
         cols = [d[0] for d in cur.description]
         return [

@@ -1,0 +1,31 @@
+name: EOD
+
+# Daily end-of-day collect + compute + digest.
+# Runs on a SELF-HOSTED runner on the residential-IP box (IDX's Cloudflare blocks
+# every cloud/datacenter ASN — a GitHub-hosted runner gets HTTP 1020). See
+# INFRA-GITHUB-ACTIONS.md for runner setup.
+
+on:
+  schedule:
+    - cron: "15 12 * * 1-5"   # 19:15 WIB, Mon-Fri
+  workflow_dispatch:
+    inputs:
+      window_days:
+        description: "rolling backfill window"
+        default: "5"
+
+concurrency:
+  group: vg-eod
+  cancel-in-progress: false
+
+jobs:
+  eod:
+    runs-on: [self-hosted, vektor-gauss]
+    env:
+      VG_HOME: /home/vg/vektor-gauss
+      VG_EOD_WINDOW_DAYS: ${{ github.event.inputs.window_days || '5' }}
+    steps:
+      - name: Update deployment
+        run: git -C "$VG_HOME" pull --ff-only || true
+      - name: Run EOD sequence
+        run: bash "$VG_HOME/scripts/eod.sh"

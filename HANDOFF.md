@@ -34,8 +34,14 @@ ever sold — OJK).
 1. ~~Let the backfill finish, then read `vg eval`.~~ Done — see
    **First `vg eval` read** below. Real test is still the forward run.
 2. **Tune `.env`**: real watchlist, `VG_HOLDINGS` (drives HOLD/REDUCE vs BUY),
-   `VG_ACCOUNT_BALANCE` + `VG_RISK_PCT` for lot sizing in the digest.
-3. **Confirm the first cron run** (19:15 WIB) lands a digest in Telegram.
+   `VG_ACCOUNT_BALANCE` + `VG_RISK_PCT` for lot sizing in the digest. Also set
+   **`VG_FORWARD_SINCE`** to today's date once the cron is steady — it splits
+   `vg eval` / the weekly digest into an in-sample and a forward-only block, the
+   actual instrument for the gate. (`VG_RADAR_TAGS` defaults to the two live
+   candidates now; override only to change them.)
+3. **Confirm the first cron run** (19:15 WIB) lands a digest in Telegram. Then
+   migrate the cron to GitHub Actions — see `INFRA-GITHUB-ACTIONS.md` (register
+   the self-hosted runner, run both in parallel a week, disable Task Scheduler).
 4. **Leave it running ~2 months.** Paper-trade the surviving candidates
    (`FLOAT-ASING-PADAT`, `TIKET-BESAR-AKUM`; `TIKET-KECIL-MARKUP` as an avoid) on
    the watchlist in parallel, keep a manual spreadsheet. Read `vg digest

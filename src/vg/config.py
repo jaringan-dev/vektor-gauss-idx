@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 try:  # optional
@@ -19,6 +20,20 @@ DEFAULT_UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
+# Which probation tags the digest RADAR section surfaces (names outside the
+# watchlist). The old default was AKUM-ASING; the first `vg eval` read (HANDOFF)
+# showed it has no edge, so the default is now the two candidates that do.
+DEFAULT_RADAR_TAGS = ("FLOAT-ASING-PADAT", "TIKET-BESAR-AKUM")
+
+
+def _parse_date(s: str | None) -> date | None:
+    if not s or not s.strip():
+        return None
+    try:
+        return date.fromisoformat(s.strip())
+    except ValueError:
+        return None
+
 
 @dataclass
 class Config:
@@ -32,6 +47,8 @@ class Config:
     telegram_chat_id: str
     watchlist: tuple[str, ...]
     holdings: tuple[str, ...]
+    radar_tags: tuple[str, ...]
+    forward_since: date | None
     digest_trade_calls: bool
     account_balance: float
     risk_pct: float
@@ -43,6 +60,7 @@ class Config:
     def load() -> "Config":
         wl = os.environ.get("VG_WATCHLIST", "")
         hd = os.environ.get("VG_HOLDINGS", "")
+        rt = os.environ.get("VG_RADAR_TAGS", "").strip()
         return Config(
             database_url=os.environ.get(
                 "VG_DATABASE_URL",
@@ -57,6 +75,11 @@ class Config:
             telegram_chat_id=os.environ.get("VG_TELEGRAM_CHAT_ID", ""),
             watchlist=tuple(t.strip().upper() for t in wl.split(",") if t.strip()),
             holdings=tuple(t.strip().upper() for t in hd.split(",") if t.strip()),
+            radar_tags=(
+                tuple(t.strip().upper() for t in rt.split(",") if t.strip())
+                if rt else DEFAULT_RADAR_TAGS
+            ),
+            forward_since=_parse_date(os.environ.get("VG_FORWARD_SINCE")),
             digest_trade_calls=os.environ.get("VG_DIGEST_TRADE_CALLS", "true").lower()
             in ("1", "true", "yes"),
             account_balance=float(os.environ.get("VG_ACCOUNT_BALANCE", "0") or "0"),

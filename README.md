@@ -12,6 +12,7 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
 | [RENCANA-FASE-1.md](RENCANA-FASE-1.md) | Phase 1 plan — scope, methodology (2-tier + forward-test), schema, Telegram |
 | [PRINSIP-DATA.md](PRINSIP-DATA.md) | **Binding.** Source tiers + 9 anti-manipulation checks |
 | [RENCANA-FASE-2.md](RENCANA-FASE-2.md) | Phase 2 design (held) — product concept, data inventory, GitHub/Cloudflare infra, web architecture |
+| [INFRA-GITHUB-ACTIONS.md](INFRA-GITHUB-ACTIONS.md) | CI + moving the EOD cron to GitHub Actions (self-hosted runner) |
 | [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) | Critique of the original Gemini blueprint |
 | [INVENTARIS-SUMBER-DATA.md](INVENTARIS-SUMBER-DATA.md) | IDX + KSEI data source inventory |
 | [LANSKAP-KOMPETITOR.md](LANSKAP-KOMPETITOR.md) · [IDXALPHA-TEARDOWN.md](IDXALPHA-TEARDOWN.md) · [SECTORS-API.md](SECTORS-API.md) · [PERTANYAAN-IDX-KSEI.md](PERTANYAAN-IDX-KSEI.md) | Landscape research |
