@@ -1,0 +1,49 @@
+{
+  "draw": 0,
+  "recordsTotal": 3,
+  "recordsFiltered": 3,
+  "data": [
+    {
+      "No": 1, "IDStockSummary": 4083638, "Date": "2026-09-01T00:00:00",
+      "StockCode": "AADI", "StockName": "Adaro Andalan Indonesia Tbk.",
+      "Remarks": "--MO1SD0F70000A121------------",
+      "Previous": 10825.0, "OpenPrice": 10950.0, "FirstTrade": 10950.0,
+      "High": 11175.0, "Low": 10825.0, "Close": 10875.0, "Change": 50.0,
+      "Volume": 13118200.0, "Value": 144092477500.0, "Frequency": 8877.0,
+      "IndexIndividual": 195.9, "Offer": 10900.0, "OfferVolume": 11700.0,
+      "Bid": 10875.0, "BidVolume": 4700.0, "ListedShares": 7786891760.0,
+      "TradebleShares": 7786891760.0, "WeightForIndex": 1498976664.0,
+      "ForeignSell": 2802200.0, "ForeignBuy": 5325100.0, "DelistingDate": "",
+      "NonRegularVolume": 152141.0, "NonRegularValue": 1544453125.0,
+      "NonRegularFrequency": 35.0, "persen": null, "percentage": null
+    },
+    {
+      "No": 2, "IDStockSummary": 4083639, "Date": "2026-09-01T00:00:00",
+      "StockCode": "AALI", "StockName": "Astra Agro Lestari Tbk.",
+      "Remarks": "--MO113E100200D232------------",
+      "Previous": 8050.0, "OpenPrice": 8050.0, "FirstTrade": 8100.0,
+      "High": 8425.0, "Low": 8050.0, "Close": 8400.0, "Change": 350.0,
+      "Volume": 2664400.0, "Value": 22073022500.0, "Frequency": 3411.0,
+      "IndexIndividual": 682.4, "Offer": 8400.0, "OfferVolume": 31400.0,
+      "Bid": 8350.0, "BidVolume": 1700.0, "ListedShares": 1924688333.0,
+      "TradebleShares": 1924688333.0, "WeightForIndex": 390326794.0,
+      "ForeignSell": 736400.0, "ForeignBuy": 1081800.0, "DelistingDate": "",
+      "NonRegularVolume": 0.0, "NonRegularValue": 0.0, "NonRegularFrequency": 0.0,
+      "persen": null, "percentage": null
+    },
+    {
+      "No": 3, "IDStockSummary": 4083640, "Date": "2026-09-01T00:00:00",
+      "StockCode": "ABBA", "StockName": "Mahaka Media Tbk.",
+      "Remarks": "--U-4100000000E614-E---------X",
+      "Previous": 30.0, "OpenPrice": 0.0, "FirstTrade": 0.0,
+      "High": 0.0, "Low": 0.0, "Close": 30.0, "Change": 0.0,
+      "Volume": 0.0, "Value": 0.0, "Frequency": 0.0,
+      "IndexIndividual": 66.3, "Offer": 0.0, "OfferVolume": 0.0,
+      "Bid": 0.0, "BidVolume": 0.0, "ListedShares": 3935892857.0,
+      "TradebleShares": 3935892857.0, "WeightForIndex": 1298451054.0,
+      "ForeignSell": 0.0, "ForeignBuy": 0.0, "DelistingDate": "",
+      "NonRegularVolume": 0.0, "NonRegularValue": 0.0, "NonRegularFrequency": 0.0,
+      "persen": null, "percentage": null
+    }
+  ]
+}
