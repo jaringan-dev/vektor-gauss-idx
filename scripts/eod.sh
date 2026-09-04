@@ -24,10 +24,11 @@ BACK=$(date -d "$TODAY -${WINDOW} days" +%F)
 
 echo "===================== EOD $(date -Is) ====================="
 echo "-- window $BACK .. $TODAY --"
-vg collect-price  --backfill "$BACK" "$TODAY"
-vg collect-index  --backfill "$BACK" "$TODAY"
+vg collect-price       --backfill "$BACK" "$TODAY"
+vg collect-index       --backfill "$BACK" "$TODAY"
+vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg detect-ca
-vg compute        --backfill "$BACK" "$TODAY"
+vg compute             --backfill "$BACK" "$TODAY"
 vg backfill-outcomes
 
 if [ "$(date +%-d)" -le 5 ]; then

@@ -42,6 +42,11 @@ TICKET_Z_LOW = -1.0          # avg-ticket z <= this => unusually small trades (r
 FLOAT_ACCUM_BAND = 0.01      # 5d foreign net shares / free float >= this => meaningful foreign take
 _MIN_FREQ_FOR_TICKET = 20    # skip avg-ticket z below this many trades (too noisy)
 
+# Disclosure-filing activity (disclosure_filings). A weight-0 proxy: it has no
+# direction (that's in the PDF — Phase B). The forward test decides if it matters.
+DISCLOSURE_MIN_5D = 3         # absolute filing cluster in the trailing 5 td
+DISCLOSURE_SURGE_MULT = 2.0   # ... AND >= this x the trailing-20 td rate (per 5 td)
+
 
 @dataclass(slots=True)
 class _Bar:
@@ -104,6 +109,8 @@ class Components:
     bid_offer_imb: float | None = None       # (bidvol - offervol) / (bidvol + offervol) at close
     float_ratio: float | None = None         # tradable_shares / listed_shares
     foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
+    disclosure_5d: int | None = None         # ownership-disclosure filings, trailing 5 td
+    disclosure_20d: int | None = None        # ... trailing 20 td (baseline)
     ksei_foreign_trend_3m: str = "nodata"
     ksei_retail_trend_3m: str = "nodata"
     ksei_foreign_pct: float | None = None      # level, transient (not persisted)
@@ -145,6 +152,27 @@ def _ihsg_series(cur: psycopg.Cursor, cal: list[date]) -> dict[date, float]:
         (cal,),
     )
     return {d: float(c) for d, c in cur.fetchall() if c is not None}
+
+
+def _disclosure_counts(
+    cur: psycopg.Cursor, session_date: date, cal: list[date]
+) -> dict[str, tuple[int, int]]:
+    """Per-ticker ownership-disclosure filing counts in the trailing 5 / 20 trading-day
+    windows (by calendar range, so weekend/holiday filings aren't dropped)."""
+    lo5 = cal[-5] if len(cal) >= 5 else cal[0]
+    lo20 = cal[-20] if len(cal) >= 20 else cal[0]
+    cur.execute(
+        """
+        SELECT ticker,
+               count(*) FILTER (WHERE filed_date >= %s),
+               count(*)
+        FROM disclosure_filings
+        WHERE filed_date >= %s AND filed_date <= %s
+        GROUP BY ticker
+        """,
+        (lo5, lo20, session_date),
+    )
+    return {t: (c5, c20) for t, c5, c20 in cur.fetchall()}
 
 
 def _tickers_on(cur: psycopg.Cursor, session_date: date) -> list[str]:
@@ -397,6 +425,13 @@ def _classify(c: Components) -> list[str]:
     if c.foreign_float_5d is not None and c.foreign_float_5d > FLOAT_ACCUM_BAND:
         tags.append("FLOAT-ASING-PADAT")       # foreign net-took a slice of a thin float
 
+    # Unusual ownership-disclosure activity (>5% / insider filings). No direction —
+    # weight-0 proxy pending the PDF parse (Phase B).
+    if (c.disclosure_5d or 0) >= DISCLOSURE_MIN_5D:
+        rate_5td = (c.disclosure_20d or c.disclosure_5d) / 4.0   # trailing rate per 5 td
+        if c.disclosure_5d >= DISCLOSURE_SURGE_MULT * rate_5td:
+            tags.append("LAPOR-KEPEMILIKAN-RAMAI")
+
     if c.price_chg_5d is None or c.nff_w1 is None:
         return tags  # not enough price history for the rest
 
@@ -475,6 +510,7 @@ _COMP_COLS = (
     "rs_ihsg_10d", "rs_ihsg_20d", "nonreg_ratio", "ksei_foreign_trend_3m",
     "ksei_retail_trend_3m", "ksei_foreign_d3m", "ksei_inst_d3m", "ksei_indiv_d3m",
     "avg_ticket", "avg_ticket_z", "bid_offer_imb", "float_ratio", "foreign_float_5d",
+    "disclosure_5d", "disclosure_20d",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -487,6 +523,7 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.rs_ihsg_10d, c.rs_ihsg_20d, c.nonreg_ratio, c.ksei_foreign_trend_3m,
         c.ksei_retail_trend_3m, c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m,
         c.avg_ticket, c.avg_ticket_z, c.bid_offer_imb, c.float_ratio, c.foreign_float_5d,
+        c.disclosure_5d, c.disclosure_20d,
         c.quadrant, sorted(set(c.data_flags)),
     )
 
@@ -501,6 +538,7 @@ def compute_day(session_date: date) -> ComputeSummary:
                                   detail="not a confirmed trading day")
 
         ihsg = _ihsg_series(cur, cal)
+        disc = _disclosure_counts(cur, session_date, cal)
         tickers = _tickers_on(cur, session_date)
 
         comp_rows: list[tuple] = []
@@ -519,6 +557,7 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m = (
                 snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
             )
+            c.disclosure_5d, c.disclosure_20d = disc.get(t, (0, 0))
             tags = _classify(c)
             comp_rows.append(_comp_row(session_date, c))
             for tag in tags:

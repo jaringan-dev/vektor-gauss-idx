@@ -155,6 +155,21 @@ def test_classify_distribusi_with_ksei_divergen():
     assert "KSEI-DIVERGEN" in c.data_flags
 
 
+def test_classify_lapor_kepemilikan_ramai():
+    # surge: 3 filings in 5td vs a baseline rate of 4/20td (=1/5td). No price history needed.
+    assert "LAPOR-KEPEMILIKAN-RAMAI" in _classify(
+        Components(ticker="X", disclosure_5d=3, disclosure_20d=4)
+    )
+    # below the absolute cluster floor
+    assert "LAPOR-KEPEMILIKAN-RAMAI" not in _classify(
+        Components(ticker="X", disclosure_5d=2, disclosure_20d=2)
+    )
+    # elevated but in line with a busy baseline (16/20td = 4/5td) -> not a surge
+    assert "LAPOR-KEPEMILIKAN-RAMAI" not in _classify(
+        Components(ticker="X", disclosure_5d=4, disclosure_20d=16)
+    )
+
+
 def test_classify_needs_history():
     assert _classify(Components(ticker="X")) == []          # no price_chg_5d / nff_w1
 

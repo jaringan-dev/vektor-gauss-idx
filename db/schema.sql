@@ -134,6 +134,31 @@ CREATE TABLE IF NOT EXISTS corp_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_corp_actions_ticker ON corp_actions (ticker, ex_date DESC);
 
+-- Ownership-disclosure filings (Tier 0): >5% substantial shareholders and
+-- director/commissioner ("insider") ownership changes, POJK 4/2024, filed via
+-- KSEI AKSes and published on the IDX announcement feed
+-- (/primary/ListedCompany/GetAnnouncement, keyword "LAPORAN KEPEMILIKAN").
+-- Phase A stores filing metadata + archives the KSEI PDF form. Phase B parses
+-- the PDFs into disclosure_holdings.
+CREATE TABLE IF NOT EXISTS disclosure_filings (
+    no_pengumuman     TEXT PRIMARY KEY,          -- IDX NoPengumuman, unique per filing
+    ticker            TEXT NOT NULL,
+    filed_at          TIMESTAMPTZ NOT NULL,      -- TglPengumuman (WIB)
+    filed_date        DATE NOT NULL,             -- filed_at::date — the engine bucket key
+    title             TEXT,                      -- JudulPengumuman
+    subject           TEXT,                      -- PerihalPengumuman (raw)
+    party             TEXT,                      -- reporting party parsed from subject (heuristic)
+    jenis             TEXT,                      -- JenisPengumuman
+    pdf_url           TEXT,                      -- first attachment FullSavePath
+    pdf_artifact_path TEXT,                      -- local archived copy (raw_artifacts.path)
+    raw               JSONB,                     -- full pengumuman node + attachments[]
+    source            TEXT NOT NULL,
+    source_tier       SMALLINT NOT NULL,
+    fetched_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_disclosure_ticker_date ON disclosure_filings (ticker, filed_date DESC);
+CREATE INDEX IF NOT EXISTS idx_disclosure_filed_date  ON disclosure_filings (filed_date DESC);
+
 -- ---------------------------------------------------------------------------
 -- Broker summary (Phase 1.5+, Tier 1 preferred). Defined now, left empty.
 -- ---------------------------------------------------------------------------
@@ -273,3 +298,7 @@ ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS avg_ticket_z      NUMERIC
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bid_offer_imb     NUMERIC;  -- (bidvol - offervol) / (bidvol + offervol) at close
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS float_ratio       NUMERIC;  -- tradable_shares / listed_shares
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS foreign_float_5d  NUMERIC;  -- 5d foreign net shares / tradable_shares
+
+-- Ownership-disclosure filing counts (disclosure_filings), trailing trading-day windows.
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS disclosure_5d     SMALLINT;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS disclosure_20d    SMALLINT;

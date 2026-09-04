@@ -85,6 +85,9 @@ vg collect-corpactions --year 2026                       # KSEI CA schedule
 vg collect-corpactions --backfill 2021 2026
 vg detect-ca                                             # splits from listed_shares jumps (needs price_bars first)
 
+vg collect-disclosure --latest                           # >5% + insider ownership-disclosure filings (IDX announcements)
+vg collect-disclosure --backfill 2026-07-01 2026-09-04   # ~13 filings/day; archives each KSEI PDF form
+
 vg compute --latest                                      # engine v0 -> signal_components + probation tags
 vg compute --backfill 2024-01-02 2026-09-02
 vg backfill-outcomes                                     # forward returns on resolved tags + refresh market_breadth
@@ -105,6 +108,7 @@ vg ownership BBRI --months 12      # KSEI monthly %foreign / %local-inst / %loca
 ```
 vg collect-price --latest
 vg collect-index --latest
+vg collect-disclosure --latest
 vg detect-ca                # cheap; catches splits since yesterday
 vg compute --latest
 vg backfill-outcomes

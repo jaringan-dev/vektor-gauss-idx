@@ -1,0 +1,98 @@
+{
+ "ResultCount": 5,
+ "SearchParams": {
+  "DateFrom": "03/09/2026 12:00:00 AM",
+  "DateTo": "03/09/2026 12:00:00 AM",
+  "Query": "LAPORAN KEPEMILIKAN",
+  "Language": "id-id",
+  "indexfrom": 0,
+  "pagesize": 6
+ },
+ "Replies": [
+  {
+   "pengumuman": {
+    "NoPengumuman": "LK/03092026/0011/1",
+    "TglPengumuman": "2026-09-03T21:18:25",
+    "JudulPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "AKRA",
+    "PerihalPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA - JIMMY TANDYO   - Group:-"
+   },
+   "attachments": [
+    {
+     "IsAttachment": true,
+     "OriginalFilename": "LK-03092026-8380-00.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-03092026-8380-00.pdf-0.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "NoPengumuman": "LK/03092026/0010/1",
+    "TglPengumuman": "2026-09-03T17:46:06",
+    "JudulPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "NSSS",
+    "PerihalPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA - SAMUEL SEKURITAS INDONESIA - Group:-"
+   },
+   "attachments": [
+    {
+     "IsAttachment": true,
+     "OriginalFilename": "LK-03092026-7863-00.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-03092026-7863-00.pdf-0.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "NoPengumuman": "LK/03092026/0009/1",
+    "TglPengumuman": "2026-09-03T17:41:59",
+    "JudulPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "FILM",
+    "PerihalPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA - SAMUEL SEKURITAS INDONESIA - Group:-"
+   },
+   "attachments": [
+    {
+     "IsAttachment": true,
+     "OriginalFilename": "LK-03092026-8113-00.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-03092026-8113-00.pdf-0.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "NoPengumuman": "LK/03092026/0008/1",
+    "TglPengumuman": "2026-09-03T17:28:51",
+    "JudulPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "RGAS",
+    "PerihalPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA - PT PLATINUM BERKAH ABADI - Group:-"
+   },
+   "attachments": [
+    {
+     "IsAttachment": true,
+     "OriginalFilename": "LK-03092026-8845-00.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-03092026-8845-00.pdf-0.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "NoPengumuman": "LK/03092026/0007/1",
+    "TglPengumuman": "2026-09-03T17:22:04",
+    "JudulPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "RGAS",
+    "PerihalPengumuman": "LAPORAN KEPEMILIKAN ATAU SETIAP PERUBAHAN KEPEMILIKAN SAHAM PERUSAHAAN TERBUKA - PT PLATINUM BERKAH ABADI - Group:-"
+   },
+   "attachments": [
+    {
+     "IsAttachment": true,
+     "OriginalFilename": "LK-03092026-0304-00.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_KSEI/LK-03092026-0304-00.pdf-0.pdf"
+    }
+   ]
+  }
+ ]
+}

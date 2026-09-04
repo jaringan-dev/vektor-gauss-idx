@@ -54,6 +54,13 @@ def main(argv: list[str] | None = None) -> int:
     gi.add_argument("--latest", action="store_true", help="most recent published day")
     gi.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    cd_ = sub.add_parser("collect-disclosure",
+                         help="IDX ownership-disclosure filings (>5% + insider) -> disclosure_filings")
+    gd = cd_.add_mutually_exclusive_group(required=True)
+    gd.add_argument("--date", metavar="YYYY-MM-DD", help="one filing day")
+    gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
+    gd.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
+
     cc = sub.add_parser("collect-corpactions", help="KSEI CA schedule -> corp_actions")
     gc = cc.add_mutually_exclusive_group(required=True)
     gc.add_argument("--year", type=int, metavar="YYYY", help="one calendar year")
@@ -150,6 +157,27 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with data")
+        return 0
+
+    if args.cmd == "collect-disclosure":
+        if args.latest:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT max(session_date) FROM trading_calendar")
+                latest = cur.fetchone()[0]
+            if latest is None:
+                print("no trading_calendar rows — run collect-price first")
+                return 1
+            _print(collect.collect_disclosure_day(latest))
+        elif args.date:
+            _print(collect.collect_disclosure_day(_d(args.date)))
+        else:
+            start, end = _d(args.backfill[0]), _d(args.backfill[1])
+            print(f"backfill {start} .. {end}")
+            outs = collect.collect_disclosure_range(start, end)
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} days with filings")
         return 0
 
     if args.cmd == "collect-corpactions":

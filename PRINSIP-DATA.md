@@ -47,7 +47,7 @@ Dua ancaman berbeda yang keduanya harus ditangani:
 |---|---|---|
 | **Jumlah pemegang tercatat (registered holders)** | Broker crossing dengan dirinya **tidak mengubah register**. Register melebar → distribusi riil ke ritel | KSEI / BAE (Tier 0) |
 | **Komposisi kepemilikan KSEI** (lokal/asing/tipe investor) | Posisi ter-settle, tidak bisa dipalsu oleh churn intraday | KSEI bulanan (Tier 0) |
-| **Disclosure pemegang >5% / insider** | Wajib lapor secara hukum, nama jelas | IDX/OJK filing (Tier 0) |
+| **Disclosure pemegang >5% / insider** | Wajib lapor secara hukum (POJK 4/2024), nama jelas, saham & % sebelum/sesudah | IDX GetAnnouncement + form KSEI (Tier 0) — `vg collect-disclosure` |
 | **Split D/F resmi IDX** (`ForeignBuy`/`ForeignSell` di Stock Summary) | Dihitung IDX dari domisili rekening, bukan dari tebakan kode broker | IDX Stock Summary (Tier 0) |
 | **Partisipasi ritel versi IDX** (kalau tersedia) | Klasifikasi bursa sendiri | IDX |
 | **Konsistensi net foreign flow multi-minggu** | Mengecat arah konsisten selama berminggu-minggu itu mahal | IDX (Tier 0) |

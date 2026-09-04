@@ -17,6 +17,7 @@ Baca bersama [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) — inventaris ini men
 | **Broker Summary per emiten** (beli/jual per broker) — inti bandarmologi | IDX Data Services (redistributor) **atau** vendor API | ticker × broker × hari | EOD | **Berlangganan / lisensi** | **Berbayar, tidak publik** |
 | Broker Summary agregat pasar (bukan per emiten) | IDX **Broker Summary** (publik) | broker × hari | EOD | Publik | Gratis — **tapi bukan yang dibutuhkan** |
 | Kepemilikan Lokal vs Asing per emiten | KSEI **Kepemilikan Efek (Lokal-Asing)** | ticker × kategori investor × akhir bulan | **BULANAN** | Publik | Gratis |
+| **Laporan kepemilikan >5% + direksi/komisaris** (POJK 4/2024) | IDX **GetAnnouncement** `keyword=LAPORAN KEPEMILIKAN` → form PDF KSEI | emiten × filing | ~harian (~13/hari bursa) | Publik (Cloudflare — IP residensial) | Gratis — **`vg collect-disclosure`** |
 | Corporate action (split, dividen, HMETD, merger) | KSEI **List of CA Activities** + IDX pengumuman | emiten × event | Berkala | Publik | Gratis |
 | Statik efek / master (listed shares, dsb) | KSEI **Master File Efek** / IDX | efek | Berkala | Publik | Gratis |
 | Fundamental (lapkeu, rasio) | IDX **Financial Statements** / IDX Data Reference | emiten × kuartal | Kuartalan | Publik (PDF) / lisensi (terstruktur) | Gratis / berbayar |

@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -21,6 +22,8 @@ from .sources.base import (
     KSEI_CATEGORIES,
     CaFetchResult,
     CorpAction,
+    DisclosureFetchResult,
+    DisclosureFiling,
     IndexBar,
     IndexFetchResult,
     OwnershipFetchResult,
@@ -28,6 +31,7 @@ from .sources.base import (
     PriceBar,
     PriceFetchResult,
 )
+from .sources.disclosure import IdxDisclosureSource
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 
@@ -98,18 +102,21 @@ def _persist(cur: psycopg.Cursor, res: PriceFetchResult) -> int:
     return n
 
 
-def _log(cur: psycopg.Cursor, sd: date, status: str, rows: int, err: str | None) -> None:
+def _log(
+    cur: psycopg.Cursor, sd: date, status: str, rows: int, err: str | None,
+    phase: str = "collect_price",
+) -> None:
     cur.execute(
         "INSERT INTO run_log (phase, batch_date, status, rows_affected, error, finished_at) "
-        "VALUES ('collect_price', %s, %s, %s, %s, now())",
-        (sd, status, rows, err),
+        "VALUES (%s, %s, %s, %s, %s, now())",
+        (phase, sd, status, rows, err),
     )
 
 
-def _log_error(sd: date, exc: BaseException) -> None:
+def _log_error(sd: date, exc: BaseException, phase: str = "collect_price") -> None:
     try:
         with connect() as conn, conn.cursor() as cur:
-            _log(cur, sd, "error", 0, f"{type(exc).__name__}: {exc}")
+            _log(cur, sd, "error", 0, f"{type(exc).__name__}: {exc}", phase)
     except Exception:
         pass  # last resort — don't mask the original error
 
@@ -475,3 +482,127 @@ def detect_share_count_changes(min_ratio_delta: float = _SPLIT_MIN_RATIO_DELTA) 
             conflict=("ticker", "ex_date", "type", "source"), update=_CA_UPDATE,
         )
     return n
+
+
+# ---------------------------------------------------------------------------
+# Ownership-disclosure filings (Tier 0)  ->  disclosure_filings
+#   >5% substantial + director/commissioner changes, POJK 4/2024 (KSEI AKSes),
+#   published on the IDX announcement feed. Phase A: metadata + archive the PDFs.
+# ---------------------------------------------------------------------------
+
+_DISC_COLS = (
+    "no_pengumuman", "ticker", "filed_at", "filed_date", "title", "subject",
+    "party", "jenis", "pdf_url", "pdf_artifact_path", "raw", "source", "source_tier",
+)
+_DISC_UPDATE = tuple(c for c in _DISC_COLS if c != "no_pengumuman")
+
+
+def _disc_row(f: DisclosureFiling, pdf_path: str | None, source: str, tier: int) -> tuple:
+    return (
+        f.no_pengumuman, f.ticker, f.filed_at, f.filed_date, f.title, f.subject,
+        f.party, f.jenis,
+        (f.attachments[0]["full_save_path"] if f.attachments else None),
+        pdf_path, Jsonb(f.raw), source, tier,
+    )
+
+
+def _persist_disclosure(
+    cur: psycopg.Cursor, res: DisclosureFetchResult, pdf_paths: dict[str, str]
+) -> int:
+    upsert_many(
+        cur, "tickers", ("ticker", "name", "first_seen", "last_seen"),
+        [(f.ticker, None, f.filed_date, f.filed_date) for f in res.rows],
+        conflict=("ticker",),
+    )
+    n = upsert_many(
+        cur, "disclosure_filings", _DISC_COLS,
+        [_disc_row(f, pdf_paths.get(f.no_pengumuman), res.source, res.source_tier)
+         for f in res.rows],
+        conflict=("no_pengumuman",), update=_DISC_UPDATE,
+    )
+    cur.execute(
+        "UPDATE disclosure_filings SET fetched_at = now() WHERE filed_date = %s AND source = %s",
+        (res.session_date, res.source),
+    )
+    return n
+
+
+def _existing_pdf_paths(cur: psycopg.Cursor, nos: list[str]) -> dict[str, str]:
+    if not nos:
+        return {}
+    cur.execute(
+        "SELECT no_pengumuman, pdf_artifact_path FROM disclosure_filings "
+        "WHERE no_pengumuman = ANY(%s) AND pdf_artifact_path IS NOT NULL",
+        (nos,),
+    )
+    return {no: p for no, p in cur.fetchall() if p and Path(p).exists()}
+
+
+def _collect_disclosure(res: DisclosureFetchResult) -> CollectOutcome:
+    sd = res.session_date
+    if res.status not in ("ok", "no_data"):
+        _log_error(sd, RuntimeError(res.detail or res.status), "collect_disclosure")
+        return CollectOutcome(sd, res.status, 0, res.detail)
+
+    # already-archived PDFs (self-healing re-runs skip the re-fetch)
+    with connect() as conn, conn.cursor() as cur:
+        have = _existing_pdf_paths(cur, [f.no_pengumuman for f in res.rows])
+
+    pdf_paths: dict[str, str] = dict(have)
+    pdf_arts: list[tuple] = []          # (source, logical_date, path, sha, nbytes)
+    notes: list[str] = []
+    src = IdxDisclosureSource()
+    for f in res.rows:
+        if f.no_pengumuman in have or not f.attachments:
+            continue
+        url = f.attachments[0]["full_save_path"]
+        stem = Path(f.attachments[0].get("original_filename") or f.no_pengumuman).stem \
+            or f.no_pengumuman.replace("/", "-")
+        try:
+            pdf = src.fetch_pdf(url)
+            art = artifacts.store("idx_disclosure_pdf", f.filed_date, pdf, ext="pdf", stem=stem)
+            pdf_paths[f.no_pengumuman] = str(art[0])
+            pdf_arts.append(("idx_disclosure_pdf", f.filed_date, *art))
+        except Exception as exc:  # noqa: BLE001 — one bad PDF never aborts the day
+            notes.append(f"{f.no_pengumuman}: {type(exc).__name__}")
+        time.sleep(CONFIG.request_delay_seconds)
+
+    list_art = (
+        artifacts.store(res.source, sd, res.raw_bytes, ext=res.raw_ext)
+        if res.raw_bytes else None
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if list_art:
+                artifacts.record(cur, res.source, sd, *list_art)
+            for source, ld, path, sha, nbytes in pdf_arts:
+                artifacts.record(cur, source, ld, path, sha, nbytes)
+            rows = _persist_disclosure(cur, res, pdf_paths) if res.status == "ok" else 0
+            detail = "; ".join(x for x in [res.detail, *notes] if x)
+            _log(cur, sd, res.status, rows, detail or None, "collect_disclosure")
+        return CollectOutcome(sd, res.status, rows, detail)
+    except Exception as exc:
+        _log_error(sd, exc, "collect_disclosure")
+        return CollectOutcome(sd, "error", 0, f"{type(exc).__name__}: {exc}")
+
+
+def collect_disclosure_day(session_date: date) -> CollectOutcome:
+    try:
+        res = IdxDisclosureSource().fetch(session_date)
+    except Exception as exc:
+        _log_error(session_date, exc, "collect_disclosure")
+        return CollectOutcome(session_date, "error", 0, f"{type(exc).__name__}: {exc}")
+    return _collect_disclosure(res)
+
+
+def collect_disclosure_range(start: date, end: date) -> list[CollectOutcome]:
+    """Inclusive. Skips weekends locally; the feed simply returns no_data for days
+    with no filings (KSEI occasionally posts on a Saturday — a --date catches those)."""
+    out: list[CollectOutcome] = []
+    d = start
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(collect_disclosure_day(d))
+            time.sleep(CONFIG.request_delay_seconds)
+        d += timedelta(days=1)
+    return out

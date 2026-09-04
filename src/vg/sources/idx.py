@@ -44,7 +44,9 @@ from .base import (
 
 _STOCK_PATH = "/primary/TradingSummary/GetStockSummary"
 _INDEX_PATH = "/primary/TradingSummary/GetIndexSummary"
+_ANNOUNCE_PATH = "/primary/ListedCompany/GetAnnouncement"
 _REFERER = "/en/market-data/trading-summary/"
+_ANNOUNCE_REFERER = "/en/listed-companies/company-announcements"
 
 # Cloudflare sits in front of www.idx.co.id. A plain httpx/OpenSSL request to the
 # /primary/ JSON endpoint draws a "Just a moment..." challenge that never clears.
@@ -57,6 +59,7 @@ _REFERER = "/en/market-data/trading-summary/"
 _WARMUP_PATHS = {
     _STOCK_PATH: "/en/market-data/trading-summary/stock-summary",
     _INDEX_PATH: "/en/market-data/trading-summary/index-summary",
+    _ANNOUNCE_PATH: _ANNOUNCE_REFERER,
 }
 _IMPERSONATE = "chrome"
 
@@ -191,6 +194,35 @@ def _idx_get(base_url: str, path: str, params: dict[str, str], *, max_retries: i
     if curl_requests is None:
         hint += " Also: curl_cffi is not installed (pip install 'vektor-gauss[cffi]')."
     raise IdxAccessBlocked(f"IDX {path} unreachable after {max_retries} attempts: {last_detail}. {hint}")
+
+
+def idx_fetch_file(url: str, *, max_retries: int = 3) -> bytes:
+    """GET a Cloudflare-fronted static file (an announcement PDF) reusing the warmed
+    curl_cffi session. Raises IdxAccessBlocked on a challenge/block."""
+    global _cffi_warm
+    base = url.split("/StaticData", 1)[0] if "/StaticData" in url else CONFIG.idx_base_url
+    warmup_url = f"{base}{_ANNOUNCE_REFERER}"
+    headers = {
+        "User-Agent": CONFIG.http_user_agent,
+        "Accept": "application/pdf,*/*",
+        "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+        "Referer": f"{base}{_ANNOUNCE_REFERER}",
+    }
+    fetch = _fetch_curl_cffi if curl_requests is not None else _fetch_httpx
+    last_detail = "no attempts made"
+    for attempt in range(max_retries):
+        try:
+            status, content_type, body = fetch(warmup_url, url, {}, headers, warm=attempt > 0)
+        except Exception as exc:  # noqa: BLE001 — transport errors vary by backend
+            last_detail = f"{type(exc).__name__}: {exc}"
+        else:
+            if status == 200 and (body[:5] == b"%PDF-" or "pdf" in content_type.lower()):
+                return body
+            last_detail = f"HTTP {status}, content-type {content_type!r} (not a PDF)"
+        _cffi_warm = False
+        if attempt < max_retries - 1:
+            time.sleep(2**attempt + random.uniform(0, 1))
+    raise IdxAccessBlocked(f"IDX file {url} unreachable after {max_retries} attempts: {last_detail}")
 
 
 class IdxStockSummarySource(PriceSource):

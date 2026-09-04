@@ -108,7 +108,8 @@ setelah biaya. Rapor per-tag lebih jujur daripada satu angka.
 | **`vg eval --since` (forward-only)** — pembeda in-sample vs forward | ⬜ GAP | 1 (kritis untuk gate) |
 | **RADAR di-refocus** ke kandidat hidup (kini hardcoded ke `AKUM-ASING` mati) | ⬜ GAP | 1 |
 | **Dashboard web read-only** (rapor + watchlist) di Cloudflare Pages | ⬜ | 1→2 (prasyarat produk) |
-| Collector KSEI >5%/insider harian (dasar IDXRadar) | ⬜ | 1.5 |
+| Collector >5%/insider harian + tag `LAPOR-KEPEMILIKAN-RAMAI` (probation) | ◑ Fase A jalan | 1.5 |
+| Parser form PDF KSEI → `disclosure_holdings` + tag `INSIDER-AKUM/DIST`, `SUBSTANTIAL-*` | ⬜ | 1.5 (Fase B) |
 | `BrokerSummarySource` adapter (Sectors $59 / Index Alpha Rp200k) | ⬜ stub skema ada | 1.5 |
 | Tag broker-level: CR3/konsentrasi, cohort institusi-vs-ritel, inventory bandar, wash-detect | ⬜ | 1.5 |
 | Multi-user, tier, watchlist per-user, alert rules | ⬜ | 2 (gated) |
@@ -148,7 +149,7 @@ tiap hari (`raw_artifacts`).
 | **IDX Index Summary** | close ~45 indeks/hari, `COMPOSITE` = IHSG | `.../TradingSummary/GetIndexSummary?...` | EOD | idem (Cloudflare) |
 | **KSEI Kepemilikan (Lokal-Asing)** | 9 kategori investor × lokal/asing (asuransi, korporat, dapen, lembaga keu., individu, reksadana, sekuritas, yayasan, lainnya), nilai = jumlah lembar; scripless % | `web.ksei.co.id/Download/BalanceposEfek<YYYYMMDD>.zip` (YYYYMMDD = hari bursa terakhir bulan; geser utk libur) → ZIP → 1 `.txt` pipe-delimited 25 kolom, filter Type=EQUITY (~1000 baris) | **BULANAN** (akhir bulan) | KSEI **tanpa Cloudflare** — jalan dari mana saja. File ~2018+. **Tidak ada jumlah pemegang saham** di file ini. Tanggal file bergeser utk libur → collector coba weekday terakhir, mundur ≤9 hari. |
 | **KSEI List of CA Activities** | tanggal, jenis, rasio (dividen, HMETD, bonus, merger) | `web.ksei.co.id/Download/schedule_ca_keseluruhan_<YEAR>.xls` (tabel HTML 15 kolom) + file per-tipe (`div_`, `Bonu_`, `right_`, …) | Mingguan cek | **Tanpa stock split** — split dideteksi dari lonjakan `listed_shares` (`vg detect-ca`). `mconv_*` = konversi obligasi, bukan split. |
-| **KSEI >5% / insider ownership** | perubahan kepemilikan pemegang >5% + direksi/komisaris, ~harian (wajib lapor) | portal KSEI / IDX disclosure | ~harian | **Belum dikoleksi `vg`.** Dasar seluruh produk IDXRadar (Rp50k/mo). Kandidat sinyal un-paintable Fase 1.5. |
+| **>5% / insider ownership** (POJK 4/2024) | filing per emiten: pihak pelapor, jabatan (direksi/komisaris), saham & % sebelum/sesudah, jenis transaksi, harga, tanggal | IDX `GetAnnouncement` (`keyword=LAPORAN KEPEMILIKAN`) → form PDF KSEI standar | ~harian (~13/hari bursa) | **Fase A jalan** (`vg collect-disclosure` — metadata + arsip PDF + tag `LAPOR-KEPEMILIKAN-RAMAI`). Fase B = parse PDF → tag `INSIDER-*`/`SUBSTANTIAL-*`. Dasar produk IDXRadar. Cloudflare → runner residensial. |
 | **Kalender bursa** | tanggal unik dari Stock Summary | turunan | otomatis | window sinyal = hari bursa (row-based), bukan kalender. |
 
 ### 2.2 Tier 1/2 — berlisensi / berbayar (Fase 1.5, kalau gate gagal atau butuh kedalaman)

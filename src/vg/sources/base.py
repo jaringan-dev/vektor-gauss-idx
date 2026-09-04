@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -179,6 +179,46 @@ class CorpActionSource(ABC):
 
     @abstractmethod
     def fetch(self, year: int) -> CaFetchResult:
+        ...
+
+
+@dataclass(slots=True)
+class DisclosureFiling:
+    """One ownership-disclosure filing (>5% substantial holder or director/commissioner
+    change) — POJK 4/2024, filed via KSEI AKSes, published on the IDX announcement feed."""
+
+    ticker: str
+    no_pengumuman: str                 # IDX NoPengumuman — unique per filing
+    filed_at: datetime                 # TglPengumuman (naive WIB)
+    filed_date: date                   # filed_at.date() — the engine bucket key
+    title: str | None = None           # JudulPengumuman
+    subject: str | None = None         # PerihalPengumuman (raw)
+    party: str | None = None           # reporting party parsed from subject (heuristic)
+    jenis: str | None = None           # JenisPengumuman ("STOCK")
+    attachments: list[dict] = field(default_factory=list)   # [{original_filename, full_save_path}]
+    raw: dict = field(default_factory=dict)                 # full pengumuman node + attachments
+
+
+@dataclass(slots=True)
+class DisclosureFetchResult:
+    status: FetchStatus
+    session_date: date
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    raw_ext: str = "json"
+    rows: list[DisclosureFiling] = field(default_factory=list)
+    detail: str = ""
+
+
+class DisclosureSource(ABC):
+    """Ownership-disclosure filings (>5% substantial + insider) for one filing day."""
+
+    name: str
+    tier: int
+
+    @abstractmethod
+    def fetch(self, session_date: date) -> DisclosureFetchResult:
         ...
 
 
