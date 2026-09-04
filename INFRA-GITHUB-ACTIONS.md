@@ -23,7 +23,65 @@ does the monthly KSEI pull on day ≤5, the weekly eval on Mondays, then the dig
 Only the residential-IP box reaches `www.idx.co.id`. KSEI is not blocked, but the
 box also holds Postgres, so the whole sequence runs there.
 
-## Status — cutover complete (2026-09-04)
+## Status — cutover REVERTED (2026-09-04, session 4)
+
+**The self-hosted runner does not work as the EOD driver on this box. Rolled back to
+Task Scheduler.** `Enable-ScheduledTask -TaskName VektorGauss-EOD` — it is the EOD
+driver again (proven: last good run 2026-09-03 19:15, result 0).
+
+Why it failed: the **WSL2 VM does not stay up between `wsl.exe` sessions** on this
+machine. A persistent systemd *system* service (the runner) is not enough to hold the
+VM alive — the VM shuts down a short while after the last session ends, killing Postgres
+and the runner process with it. Observed while testing: `postgresql` cycling
+active→inactive every ~20 s (`received fast shutdown request`), the runner stuck in an
+`EstablishVssConnection` reconnect loop, and one hard VM crash (`CreateVm 0x800705b4`,
+`WaitForBootProcess: /sbin/init failed within 10000ms`, journal corruption). Two
+`workflow_dispatch` tests of `eod.yml` both failed identically: `Set up job` ✓,
+`Update deployment` (git pull) ✓, then **`Run EOD sequence` cancelled ~14 s in**
+("Cancellation/Shutdown message received … UserCancelled" = the runner↔GitHub broker
+connection dropped); GitHub marks the job failed after its 10-min reconcile window.
+`eod.sh` reached `collect_price` for 2 days before the drop — **no DB damage** (Postgres
+data is on ext4, survives VM shutdown).
+
+Task Scheduler works precisely because its action `wsl.exe -d Ubuntu-24.04 -- bash …`
+*starts* the VM and **holds the session open for the entire run** — VM-down-between-runs
+is a non-issue for it.
+
+Contributing factors: host has only **15.7 GB RAM, ~3.2 GB free**; no
+`%UserProfile%\.wslconfig` (WSL defaults; VM allotted ~7.6 GB → oversubscribed under
+collect load); a broken `wsl-pro-service` (Ubuntu Pro) error-looping every 2 s. WSL
+2.7.3.0, kernel 6.6.114.1, Win11 26200.9278, NAT networking.
+
+### To make GitHub Actions viable here (not done — user's call)
+
+Pick one, then re-disable Task Scheduler:
+
+1. **Keep-alive session** — a Windows Task Scheduler task *at logon/boot* that holds a
+   permanent WSL session so the VM never idles out:
+   `wsl.exe -d Ubuntu-24.04 -u root -- sh -c "exec sleep infinity"` (run hidden, restart
+   on failure). Simplest fix; the runner + Postgres then stay up.
+2. **`%UserProfile%\.wslconfig`**:
+   ```ini
+   [wsl2]
+   vmIdleTimeout=-1
+   memory=6GB
+   swap=8GB
+   networkingMode=mirrored
+   dnsTunneling=true
+   ```
+   then `wsl --shutdown` once. (`vmIdleTimeout=-1` alone may not be enough without a
+   held session — combine with #1.)
+3. **Free Windows RAM** so the VM isn't memory-starved during the nightly collect.
+
+Also: `sudo systemctl disable --now wsl-pro-service`. And once fixed, consider whether
+`eod.yml`'s `schedule:` should stay (right now its cron still fires at 19:15 and
+harmlessly fails against the offline runner; `flock` guards any double-run).
+
+`ci.yml` on `ubuntu-latest` (hosted) is unaffected — it still runs on push/PR.
+
+---
+
+## Original cutover notes (2026-09-04) — superseded by the section above
 
 - Runner `vg-wsl-bogor` (labels `self-hosted, vektor-gauss`) registered and online;
   systemd service `actions.runner.jaringan-bot-vektor-gauss.vg-wsl-bogor` (enabled

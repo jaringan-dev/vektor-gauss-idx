@@ -2,6 +2,28 @@
 
 _State as of 2026-09-03 (session 2). Phase 1 is **running**._
 
+## Session 4 update (2026-09-04)
+
+- **Disclosure Phase A backfill DONE** — `vg collect-disclosure --backfill 2026-07-01
+  2026-09-04`: 659 filings, 171 tickers, every PDF archived. Recompute over the window
+  done. `vg eval` now shows `LAPOR-KEPEMILIKAN-RAMAI`: n 188, edgeH5 **−1.17%** (−2.29%
+  liquid), hit 48% vs uHit 54% — the crude filing-surge tag reads **negative** in-sample
+  (a burst of >5%/insider filings tends to precede underperformance). Probation weight-0;
+  forward-test will judge it. 212 signal rows / 42 dates. Other tags unchanged.
+- **Dashboard artifact regenerated** (`a13ea232`) with the above.
+- **GitHub Actions EOD cutover FAILED — rolled back to Task Scheduler.** The self-hosted
+  runner (`vg-wsl-bogor`) does not hold up on this box: the WSL2 VM shuts down shortly
+  after each `wsl.exe` session ends, so Postgres + the runner process keep dying and the
+  runner↔GitHub link flaps. Two `workflow_dispatch` tests of `eod.yml` both failed the
+  same way (job picked up, `git pull` ✓, "Run EOD sequence" cancelled ~14 s in when the
+  broker connection dropped). No DB damage. `Enable-ScheduledTask -TaskName
+  VektorGauss-EOD` run — Task Scheduler is the EOD driver again (its action holds a WSL
+  session for the whole run, which is why it always worked). Full diagnosis + the options
+  to make Actions work here (keep-alive session / `.wslconfig` / free RAM; host has only
+  15.7 GB) are in the `vektor-gauss-vps` memory and `INFRA-GITHUB-ACTIONS.md`.
+- **Not committed.** `HANDOFF.md`, `INFRA-GITHUB-ACTIONS.md`, and the memory files are the
+  only changes; ask the user before committing.
+
 ## Where things stand
 
 **Phase 1 is live on the user's home PC.** IDX's Cloudflare blocks every cloud

@@ -4,10 +4,16 @@ name: EOD
 # Runs on a SELF-HOSTED runner on the residential-IP box (IDX's Cloudflare blocks
 # every cloud/datacenter ASN — a GitHub-hosted runner gets HTTP 1020). See
 # INFRA-GITHUB-ACTIONS.md for runner setup.
+#
+# SCHEDULE DISABLED (2026-09-04, session 4): the self-hosted runner can't stay up
+# on the WSL2 box (the VM shuts down between wsl.exe sessions). EOD is driven by
+# Windows Task Scheduler again. This workflow is manual-dispatch only, kept for
+# when the runner is made reliable (INFRA-GITHUB-ACTIONS.md "To make GitHub
+# Actions viable here"). Re-enable by restoring the `schedule:` block below.
 
 on:
-  schedule:
-    - cron: "15 12 * * 1-5"   # 19:15 WIB, Mon-Fri
+  # schedule:
+  #   - cron: "15 12 * * 1-5"   # 19:15 WIB, Mon-Fri
   workflow_dispatch:
     inputs:
       window_days:
