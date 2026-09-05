@@ -160,6 +160,44 @@ CREATE INDEX IF NOT EXISTS idx_disclosure_ticker_date ON disclosure_filings (tic
 CREATE INDEX IF NOT EXISTS idx_disclosure_filed_date  ON disclosure_filings (filed_date DESC);
 
 -- ---------------------------------------------------------------------------
+-- Disclosure PDF parse (Phase B, src/vg/sources/disclosure_pdf.py). One row
+-- per transaction line in the filing's table; row_seq=0 with all
+-- transaction_*/price/etc NULL when the per-row table didn't structurally
+-- parse (rare — the header fields above it are regexed independently and
+-- still land here, since shares_before/after alone is enough for the
+-- INSIDER-*/SUBSTANTIAL-* direction tags in engine.py).
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS disclosure_holdings (
+    no_pengumuman         TEXT NOT NULL REFERENCES disclosure_filings(no_pengumuman),
+    row_seq               SMALLINT NOT NULL,
+    ticker                TEXT NOT NULL,
+    filed_date            DATE NOT NULL,          -- denormalized from disclosure_filings
+    reporter_name         TEXT,
+    is_insider            BOOLEAN,                -- Anggota Direksi/Dewan Komisaris
+    position              TEXT,                   -- Jabatan
+    is_controller         BOOLEAN,                -- Keterangan Pengendali
+    shares_before         NUMERIC,
+    shares_after          NUMERIC,
+    voting_rights_before  NUMERIC,                -- fraction, e.g. 0.000346 == 0.0346%
+    voting_rights_after   NUMERIC,
+    transaction_type      TEXT,                   -- raw Indonesian label, e.g. "Pembelian"
+    direction             TEXT,                   -- 'buy' | 'sell' | 'other'
+    ownership_status      TEXT,                   -- Langsung / Tidak Langsung
+    direct_investor       TEXT,
+    shares_qty            NUMERIC,                -- this row's transaction volume
+    share_class           TEXT,
+    price                 NUMERIC,
+    transaction_date      DATE,
+    purpose               TEXT,
+    source                TEXT NOT NULL,
+    source_tier           SMALLINT NOT NULL,
+    parsed_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (no_pengumuman, row_seq)
+);
+CREATE INDEX IF NOT EXISTS idx_disclosure_holdings_ticker_date ON disclosure_holdings (ticker, filed_date DESC);
+
+-- ---------------------------------------------------------------------------
 -- Broker summary (Phase 1.5+, Tier 1 preferred). Defined now, left empty.
 -- ---------------------------------------------------------------------------
 

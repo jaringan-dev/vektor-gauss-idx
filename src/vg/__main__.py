@@ -61,6 +61,13 @@ def main(argv: list[str] | None = None) -> int:
     gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
     gd.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    pd_ = sub.add_parser(
+        "parse-disclosure",
+        help="Phase B: parse archived disclosure PDFs -> disclosure_holdings (direction)",
+    )
+    pd_.add_argument("--backfill", nargs=2, metavar=("START", "END"),
+                      help="inclusive filed_date range; omit to catch up on everything unparsed")
+
     cc = sub.add_parser("collect-corpactions", help="KSEI CA schedule -> corp_actions")
     gc = cc.add_mutually_exclusive_group(required=True)
     gc.add_argument("--year", type=int, metavar="YYYY", help="one calendar year")
@@ -178,6 +185,14 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with filings")
+        return 0
+
+    if args.cmd == "parse-disclosure":
+        if args.backfill:
+            start, end = _d(args.backfill[0]), _d(args.backfill[1])
+            _print(collect.parse_disclosure_pdfs(start, end))
+        else:
+            _print(collect.parse_disclosure_pdfs())
         return 0
 
     if args.cmd == "collect-corpactions":

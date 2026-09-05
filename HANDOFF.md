@@ -13,6 +13,13 @@ _State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock 
   quadrant tags (MARKUP/AKUMULASI/DISTRIBUSI/MARKDOWN) are confirmed **no edge**
   in-sample (3.5y research pass + Phase 1 recompute) — they still fire in the
   digest (legacy/context), but they are not what decides the gate.
+- **New candidate as of 2026-09-05: `INSIDER-AKUM`** (Phase B, disclosure PDF
+  direction). In-sample n=151, edgeH5 +1.63%, edgeH10 +4.91%, hit 61%/54% —
+  the strongest shape in the whole `vg eval` table. n is thin only because
+  disclosure collection itself starts 2026-07-01 (not the 3.5y price history);
+  it grows daily now that `vg parse-disclosure` runs in `eod.sh`. Still
+  probation — same gate, same rules, don't act on it yet. `INSIDER-DIST`/
+  `SUBSTANTIAL-AKUM`/`SUBSTANTIAL-DIST` are live too but weaker/mixed in-sample.
 - **EOD driver:** Windows Task Scheduler `VektorGauss-EOD`, daily 19:15 WIB. The
   GitHub Actions self-hosted-runner cutover was tried and reverted 2026-09-04
   (WSL2 VM doesn't survive between sessions on this box) — see
@@ -54,6 +61,19 @@ _State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock 
   none of this is acted on until the gate above.** Committed `4688b13`.
 - `.env` audited per HANDOFF item #2 below — still open, see "Status at a
   glance".
+- **Phase B shipped: disclosure PDF parsing** (`src/vg/sources/disclosure_pdf.py`
+  + `disclosure_holdings` table + `vg parse-disclosure`, wired into `eod.sh`
+  after `collect-disclosure`). Word-position clustering over `pdfplumber`
+  (its `extract_table()` doesn't survive this form's 2-line-wrapped cells —
+  verified empirically), not naive text regex. Backfilled all 663 archived
+  filings (2026-07-01→09-05): **0 parse errors**, 1446 transaction rows, only
+  24 filings (3.6%) fell back to header-only (no per-row breakdown, but
+  shares-before/after — and therefore direction — still captured). New tags
+  `INSIDER-AKUM/DIST`, `SUBSTANTIAL-AKUM/DIST` in `engine.py` — direction
+  from the header's shares_before/after (reliable), not the fragile
+  transaction-type column. Recomputed `signal_components`/`signal_log` over
+  the same window; see "Status at a glance" for the first read. Real PDF
+  fixtures + regression tests in `tests/test_disclosure_pdf_parse.py`.
 
 ## Session 4 update (2026-09-04)
 

@@ -111,6 +111,14 @@ class Components:
     foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
     disclosure_5d: int | None = None         # ownership-disclosure filings, trailing 5 td
     disclosure_20d: int | None = None        # ... trailing 20 td (baseline)
+    # Phase B (disclosure_pdf.py parse of the archived KSEI forms) — direction
+    # for *today's* filings only, from the header's reliably-parsed shares
+    # before/after (not the fragile per-row transaction-type breakdown).
+    # Transient — not persisted, only used to fire today's tag.
+    insider_akum: bool | None = None
+    insider_dist: bool | None = None
+    substantial_akum: bool | None = None
+    substantial_dist: bool | None = None
     ksei_foreign_trend_3m: str = "nodata"
     ksei_retail_trend_3m: str = "nodata"
     ksei_foreign_pct: float | None = None      # level, transient (not persisted)
@@ -173,6 +181,33 @@ def _disclosure_counts(
         (lo5, lo20, session_date),
     )
     return {t: (c5, c20) for t, c5, c20 in cur.fetchall()}
+
+
+def _disclosure_direction(cur: psycopg.Cursor, session_date: date) -> dict[str, dict[str, bool]]:
+    """Per-ticker direction from *today's* disclosure_holdings (Phase B parse),
+    split by is_insider. Uses the header's shares_before/after — reliably
+    regexed even on filings where the per-row transaction-type table didn't
+    structurally parse (see disclosure_pdf.py). One row per (ticker,
+    is_insider); a ticker with both insider and non-insider filings today
+    gets both."""
+    cur.execute(
+        """
+        SELECT ticker, is_insider,
+               bool_or(shares_after > shares_before) AS akum,
+               bool_or(shares_after < shares_before) AS dist
+        FROM disclosure_holdings
+        WHERE filed_date = %s AND shares_before IS NOT NULL AND shares_after IS NOT NULL
+        GROUP BY ticker, is_insider
+        """,
+        (session_date,),
+    )
+    out: dict[str, dict[str, bool]] = {}
+    for ticker, is_insider, akum, dist in cur.fetchall():
+        key = "insider" if is_insider else "substantial"
+        d = out.setdefault(ticker, {})
+        d[f"{key}_akum"] = bool(akum)
+        d[f"{key}_dist"] = bool(dist)
+    return out
 
 
 def _tickers_on(cur: psycopg.Cursor, session_date: date) -> list[str]:
@@ -432,6 +467,17 @@ def _classify(c: Components) -> list[str]:
         if c.disclosure_5d >= DISCLOSURE_SURGE_MULT * rate_5td:
             tags.append("LAPOR-KEPEMILIKAN-RAMAI")
 
+    # Phase B — direction from today's parsed disclosure filings (see
+    # _disclosure_direction). Independent of the surge-count proxy above.
+    if c.insider_akum:
+        tags.append("INSIDER-AKUM")
+    if c.insider_dist:
+        tags.append("INSIDER-DIST")
+    if c.substantial_akum:
+        tags.append("SUBSTANTIAL-AKUM")
+    if c.substantial_dist:
+        tags.append("SUBSTANTIAL-DIST")
+
     if c.price_chg_5d is None or c.nff_w1 is None:
         return tags  # not enough price history for the rest
 
@@ -539,6 +585,7 @@ def compute_day(session_date: date) -> ComputeSummary:
 
         ihsg = _ihsg_series(cur, cal)
         disc = _disclosure_counts(cur, session_date, cal)
+        dirn = _disclosure_direction(cur, session_date)
         tickers = _tickers_on(cur, session_date)
 
         comp_rows: list[tuple] = []
@@ -558,6 +605,11 @@ def compute_day(session_date: date) -> ComputeSummary:
                 snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
             )
             c.disclosure_5d, c.disclosure_20d = disc.get(t, (0, 0))
+            dflags = dirn.get(t, {})
+            c.insider_akum = dflags.get("insider_akum")
+            c.insider_dist = dflags.get("insider_dist")
+            c.substantial_akum = dflags.get("substantial_akum")
+            c.substantial_dist = dflags.get("substantial_dist")
             tags = _classify(c)
             comp_rows.append(_comp_row(session_date, c))
             for tag in tags:

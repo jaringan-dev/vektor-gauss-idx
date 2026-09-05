@@ -170,6 +170,19 @@ def test_classify_lapor_kepemilikan_ramai():
     )
 
 
+def test_classify_disclosure_direction():
+    # Phase B tags fire independently of each other and of the surge-count proxy.
+    assert _classify(Components(ticker="X", insider_akum=True)) == ["INSIDER-AKUM"]
+    assert _classify(Components(ticker="X", insider_dist=True)) == ["INSIDER-DIST"]
+    assert _classify(Components(ticker="X", substantial_akum=True)) == ["SUBSTANTIAL-AKUM"]
+    assert _classify(Components(ticker="X", substantial_dist=True)) == ["SUBSTANTIAL-DIST"]
+    # a ticker can have both an insider and a substantial-holder filing the same day
+    tags = _classify(Components(ticker="X", insider_akum=True, substantial_dist=True))
+    assert set(tags) == {"INSIDER-AKUM", "SUBSTANTIAL-DIST"}
+    # False/None must not fire
+    assert _classify(Components(ticker="X", insider_akum=False, insider_dist=None)) == []
+
+
 def test_classify_needs_history():
     assert _classify(Components(ticker="X")) == []          # no price_chg_5d / nff_w1
 

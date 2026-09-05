@@ -32,6 +32,7 @@ from .sources.base import (
     PriceFetchResult,
 )
 from .sources.disclosure import IdxDisclosureSource
+from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 
@@ -606,3 +607,107 @@ def collect_disclosure_range(start: date, end: date) -> list[CollectOutcome]:
             time.sleep(CONFIG.request_delay_seconds)
         d += timedelta(days=1)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Disclosure PDF parse (Phase B, Tier 0) -> disclosure_holdings
+#   Reads the PDFs Phase A already archived on disk; adds per-transaction
+#   direction (buy/sell) + the header ownership-change numbers. No network.
+# ---------------------------------------------------------------------------
+
+_DH_COLS = (
+    "no_pengumuman", "row_seq", "ticker", "filed_date",
+    "reporter_name", "is_insider", "position", "is_controller",
+    "shares_before", "shares_after", "voting_rights_before", "voting_rights_after",
+    "transaction_type", "direction", "ownership_status", "direct_investor",
+    "shares_qty", "share_class", "price", "transaction_date", "purpose",
+    "source", "source_tier",
+)
+_DH_UPDATE = tuple(c for c in _DH_COLS if c not in ("no_pengumuman", "row_seq"))
+
+
+def _dh_rows(
+    no_pengumuman: str, ticker: str, filed_date: date, parsed: ParsedDisclosure,
+    source: str, tier: int,
+) -> list[tuple]:
+    h = parsed.header
+    header_part = (
+        h.reporter_name, h.is_insider, h.position, h.is_controller,
+        h.shares_before, h.shares_after, h.voting_rights_before, h.voting_rights_after,
+    )
+    if not parsed.transactions:
+        # Header (shares before/after) still regexed independently of the
+        # per-row table — enough on its own for the INSIDER-*/SUBSTANTIAL-*
+        # direction tags even when the transaction breakdown didn't parse.
+        return [(no_pengumuman, 0, ticker, filed_date, *header_part,
+                 None, None, None, None, None, None, None, None, None, source, tier)]
+    return [
+        (no_pengumuman, i, ticker, filed_date, *header_part,
+         t.transaction_type, t.direction, t.ownership_status, t.direct_investor,
+         t.shares_qty, t.share_class, t.price, t.transaction_date, t.purpose, source, tier)
+        for i, t in enumerate(parsed.transactions)
+    ]
+
+
+def _unparsed_filings(
+    cur: psycopg.Cursor, start: date | None, end: date | None
+) -> list[tuple[str, str, date, str]]:
+    """(no_pengumuman, ticker, filed_date, pdf_artifact_path) for archived
+    filings that don't have disclosure_holdings rows yet."""
+    where = ["f.pdf_artifact_path IS NOT NULL", "h.no_pengumuman IS NULL"]
+    params: list = []
+    if start:
+        where.append("f.filed_date >= %s")
+        params.append(start)
+    if end:
+        where.append("f.filed_date <= %s")
+        params.append(end)
+    cur.execute(
+        f"""
+        SELECT f.no_pengumuman, f.ticker, f.filed_date, f.pdf_artifact_path
+        FROM disclosure_filings f
+        LEFT JOIN disclosure_holdings h ON h.no_pengumuman = f.no_pengumuman
+        WHERE {' AND '.join(where)}
+        ORDER BY f.filed_date
+        """,
+        params,
+    )
+    return cur.fetchall()
+
+
+def parse_disclosure_pdfs(start: date | None = None, end: date | None = None) -> CollectOutcome:
+    """Phase B: parse archived disclosure PDFs (Phase A's metadata + PDF,
+    already collected) into disclosure_holdings. Idempotent by construction —
+    only filings without an existing holdings row are processed, so re-runs
+    only pick up what's new (delete a filing's holdings rows to force a
+    re-parse after a parser fix). start/end filter by filed_date; omit both
+    to catch up on every unparsed filing."""
+    today = date.today()
+    with connect() as conn, conn.cursor() as cur:
+        pending = _unparsed_filings(cur, start, end)
+    if not pending:
+        return CollectOutcome(today, "no_data", 0, "nothing to parse")
+
+    rows: list[tuple] = []
+    errors: list[str] = []
+    for no_peng, ticker, filed_date, pdf_path in pending:
+        try:
+            parsed = parse_disclosure_pdf(Path(pdf_path).read_bytes())
+            rows.extend(_dh_rows(no_peng, ticker, filed_date, parsed, "idx_disclosure_pdf", 0))
+        except Exception as exc:  # noqa: BLE001 — one bad PDF never aborts the batch
+            errors.append(f"{no_peng}: {type(exc).__name__}: {exc}")
+
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            n = upsert_many(
+                cur, "disclosure_holdings", _DH_COLS, rows,
+                conflict=("no_pengumuman", "row_seq"), update=_DH_UPDATE,
+            )
+            detail = f"{len(pending)} filings, {n} rows" + (
+                f"; {len(errors)} errors: {'; '.join(errors[:5])}" if errors else ""
+            )
+            _log(cur, today, "ok" if not errors else "partial", n, detail, "parse_disclosure")
+        return CollectOutcome(today, "ok" if not errors else "partial", n, detail)
+    except Exception as exc:
+        _log_error(today, exc, "parse_disclosure")
+        return CollectOutcome(today, "error", 0, f"{type(exc).__name__}: {exc}")

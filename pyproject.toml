@@ -11,6 +11,8 @@ dependencies = [
     # Cloudflare challenges a plain httpx request and never clears it, even from a
     # residential IP. See src/vg/sources/idx.py.
     "curl-cffi>=0.7",
+    # Phase B: parse the archived KSEI ownership-disclosure PDF forms.
+    "pdfplumber>=0.11",
 ]
 
 [project.optional-dependencies]

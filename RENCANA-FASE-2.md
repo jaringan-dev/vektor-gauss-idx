@@ -109,7 +109,7 @@ setelah biaya. Rapor per-tag lebih jujur daripada satu angka.
 | **RADAR di-refocus** ke kandidat hidup (kini hardcoded ke `AKUM-ASING` mati) | ⬜ GAP | 1 |
 | **Dashboard web read-only** (rapor + watchlist) di Cloudflare Pages | ⬜ | 1→2 (prasyarat produk) |
 | Collector >5%/insider harian + tag `LAPOR-KEPEMILIKAN-RAMAI` (probation) | ◑ Fase A jalan | 1.5 |
-| Parser form PDF KSEI → `disclosure_holdings` + tag `INSIDER-AKUM/DIST`, `SUBSTANTIAL-*` | ⬜ | 1.5 (Fase B) |
+| Parser form PDF KSEI → `disclosure_holdings` + tag `INSIDER-AKUM/DIST`, `SUBSTANTIAL-*` | ✅ ada, 2026-09-05 (`src/vg/sources/disclosure_pdf.py`) — 663/663 arsip berhasil diparse, 0 error. `INSIDER-AKUM` in-sample n=151 edgeH5 +1,63% edgeH10 +4,91% hit 61%/54% — terkuat di tabel `vg eval`, tapi tetap probation & butuh forward-test yang sama | 1 (data Tier 0, bukan Fase 1.5 — tidak butuh broker summary berbayar) |
 | `BrokerSummarySource` adapter (Sectors $59 / Index Alpha Rp200k) | ⬜ stub skema ada | 1.5 |
 | Tag broker-level: CR3/konsentrasi, cohort institusi-vs-ritel, inventory bandar, wash-detect | ⬜ | 1.5 |
 | Multi-user, tier, watchlist per-user, alert rules | ⬜ | 2 (gated) |

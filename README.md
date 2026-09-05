@@ -109,6 +109,7 @@ vg ownership BBRI --months 12      # KSEI monthly %foreign / %local-inst / %loca
 vg collect-price --latest
 vg collect-index --latest
 vg collect-disclosure --latest
+vg parse-disclosure         # Phase B: archived PDFs -> disclosure_holdings (direction)
 vg detect-ca                # cheap; catches splits since yesterday
 vg compute --latest
 vg backfill-outcomes
