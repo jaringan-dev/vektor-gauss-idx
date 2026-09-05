@@ -10,7 +10,7 @@ from __future__ import annotations
 import html
 from datetime import date
 
-from . import calc, engine
+from . import calc, engine, paper
 from .config import CONFIG
 from .db import connect
 
@@ -340,6 +340,18 @@ def _eval_table(stats: list[dict]) -> str:
     return html.escape("\n".join(rows), quote=False)
 
 
+def _paper_table(rows: list[dict]) -> str:
+    lines = [f"{'tag':<19} {'open':>7} {'win':>7} {'loss':>7} {'timeout':>7} {'winrate':>7} {'avgR':>6}"]
+    for r in rows:
+        wr = f"{r['win_rate'] * 100:.0f}%" if r["win_rate"] is not None else "  -"
+        avg_r = f"{r['avg_r_resolved']:+.2f}" if r["avg_r_resolved"] is not None else "  -"
+        lines.append(
+            f"{r['tag']:<19} {r['n_open']:>7} {r['n_win']:>7} {r['n_loss']:>7} "
+            f"{r['n_timeout']:>7} {wr:>7} {avg_r:>6}"
+        )
+    return html.escape("\n".join(lines), quote=False)
+
+
 def build_weekly_eval() -> str:
     stats = engine.eval_tags()
     if not stats:
@@ -367,4 +379,15 @@ def build_weekly_eval() -> str:
         "&gt;Rp5B/hari. 'Lulus' ke lapis berbobot butuh n≥50, ≥2 bulan, edge jelas "
         "setelah biaya (~150-190bp).</i>"
     )
+
+    paper_rows = paper.report()
+    if any(r["n_open"] + r["n_win"] + r["n_loss"] + r["n_timeout"] for r in paper_rows):
+        parts.append("\n<b>PAPER TRADING</b> (entry/SL/target mekanis, bukan sinyal aksi)")
+        parts.append(f"<pre>{_paper_table(paper_rows)}</pre>")
+        parts.append(
+            "<i>winrate = win/(win+loss), timeout tak dihitung. avgR = realized "
+            f"R-multiple. Hold maks {paper.MAX_HOLD_DAYS} hari bursa. Probation — "
+            "informasional, bukan gate forward-test itu sendiri.</i>"
+        )
+
     return "\n".join(parts)

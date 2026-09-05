@@ -35,6 +35,7 @@ vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usual
 vg detect-ca
 vg compute             --backfill "$BACK" "$TODAY"
 vg backfill-outcomes
+vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 
 if [ "$(date +%-d)" -le 5 ]; then
   echo "-- monthly: ownership + corp actions --"

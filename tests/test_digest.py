@@ -111,14 +111,29 @@ def _fake_stats(tag="AKUM-ASING", n=63):
 def test_weekly_eval_table(monkeypatch):
     monkeypatch.setattr(digest.CONFIG, "forward_since", None)
     monkeypatch.setattr(digest.engine, "eval_tags", lambda since=None: _fake_stats())
+    monkeypatch.setattr(digest.paper, "report", lambda since=None: [])
     out = digest.build_weekly_eval()
     assert "<pre>" in out and "AKUM-ASING" in out
     assert "63" in out
-    assert out.count("<pre>") == 1        # in-sample only, no forward block
+    assert out.count("<pre>") == 1        # in-sample only, no forward block, no paper trades
+
+
+def test_weekly_eval_paper_trading_section(monkeypatch):
+    monkeypatch.setattr(digest.CONFIG, "forward_since", None)
+    monkeypatch.setattr(digest.engine, "eval_tags", lambda since=None: _fake_stats())
+    fake_paper = [{
+        "tag": "FLOAT-ASING-PADAT", "n_open": 2, "n_win": 5, "n_loss": 3, "n_timeout": 1,
+        "avg_r_resolved": 0.8, "avg_r_timeout": 0.1, "win_rate": 5 / 8,
+    }]
+    monkeypatch.setattr(digest.paper, "report", lambda since=None: fake_paper)
+    out = digest.build_weekly_eval()
+    assert "PAPER TRADING" in out
+    assert "FLOAT-ASING-PADAT" in out and out.count("<pre>") == 2   # eval table + paper table
 
 
 def test_weekly_eval_forward_block(monkeypatch):
     monkeypatch.setattr(digest.CONFIG, "forward_since", date(2026, 9, 4))
+    monkeypatch.setattr(digest.paper, "report", lambda since=None: [])
     seen = []
 
     def fake(since=None):

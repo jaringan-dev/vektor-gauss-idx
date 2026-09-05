@@ -198,6 +198,37 @@ CREATE TABLE IF NOT EXISTS disclosure_holdings (
 CREATE INDEX IF NOT EXISTS idx_disclosure_holdings_ticker_date ON disclosure_holdings (ticker, filed_date DESC);
 
 -- ---------------------------------------------------------------------------
+-- Paper-trading simulation (src/vg/paper.py) — HANDOFF.md's "keep a manual
+-- spreadsheet" ask for FLOAT-ASING-PADAT / TIKET-BESAR-AKUM, automated.
+-- One row per (ticker, tag, signal_date): entry/SL/target computed the same
+-- way as digest.py's trade line, then walked forward against price_bars
+-- until stop or target is hit or MAX_HOLD_DAYS elapses. A different lens
+-- than signal_log's fixed-horizon returns -- "would this SL/target trade
+-- plan have actually worked", trade by trade.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS paper_trades (
+    id            BIGSERIAL PRIMARY KEY,
+    ticker        TEXT NOT NULL,
+    tag           TEXT NOT NULL,
+    signal_date   DATE NOT NULL,
+    entry         NUMERIC NOT NULL,          -- close on signal_date
+    atr14         NUMERIC NOT NULL,
+    stop_loss     NUMERIC NOT NULL,
+    target        NUMERIC NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'open',   -- 'open' | 'win' | 'loss' | 'timeout'
+    resolved_date DATE,
+    exit_price    NUMERIC,                   -- stop/target price on win/loss; last close on timeout
+    r_multiple    NUMERIC,                   -- (exit-entry)/(entry-stop_loss), signed
+    days_held     INT,                       -- trading days from signal_date to resolved_date
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (ticker, tag, signal_date)
+);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades (status);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_tag     ON paper_trades (tag, signal_date DESC);
+
+-- ---------------------------------------------------------------------------
 -- Broker summary (Phase 1.5+, Tier 1 preferred). Defined now, left empty.
 -- ---------------------------------------------------------------------------
 

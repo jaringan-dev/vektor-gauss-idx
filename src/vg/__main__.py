@@ -7,7 +7,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from . import calc, collect, digest, engine
+from . import calc, collect, digest, engine, paper
 from .config import CONFIG
 from .db import connect, run_sql_file
 from .telegram import TelegramSender
@@ -85,6 +85,13 @@ def main(argv: list[str] | None = None) -> int:
     gm.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
     sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
+    sub.add_parser(
+        "paper-update",
+        help="open new paper trades for FLOAT-ASING-PADAT/TIKET-BESAR-AKUM, resolve open ones",
+    )
+    pr = sub.add_parser("paper-report", help="paper-trading win/loss/timeout stats per tag")
+    pr.add_argument("--since", metavar="YYYY-MM-DD", help="only trades signalled on/after this date")
+
     ev = sub.add_parser("eval", help="per-tag forward-return stats (the Phase 1 payoff)")
     ev.add_argument("--since", metavar="YYYY-MM-DD",
                     help="only signals on/after this date (forward-test window); "
@@ -281,6 +288,59 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  risk        : Rp {pl.risk_idr:,.0f} target, "
                   f"Rp {pl.shares * pl.risk_per_share:,.0f} actual "
                   f"({pl.risk_pct_of_balance:+.2%} of balance)")
+        return 0
+
+    if args.cmd == "paper-update":
+        s = paper.update_paper_trades()
+        print(
+            f"opened={s.opened}  win={s.resolved_win}  loss={s.resolved_loss}  "
+            f"timeout={s.resolved_timeout}  still_open={s.still_open}"
+        )
+        return 0
+
+    if args.cmd == "paper-report":
+        def pr_table(rows: list[dict], label: str) -> None:
+            print(f"\n{label}")
+            print(
+                f"{'tag':<19} {'open':>7} {'win':>7} {'loss':>7} {'timeout':>7} "
+                f"{'winrate':>7} {'avgR':>6} {'avgR(timeout)':>13}"
+            )
+            for r in rows:
+                wr = f"{r['win_rate'] * 100:.0f}%" if r["win_rate"] is not None else "  -"
+                avg_r = f"{r['avg_r_resolved']:+.2f}" if r["avg_r_resolved"] is not None else "  -"
+                avg_rt = f"{r['avg_r_timeout']:+.2f}" if r["avg_r_timeout"] is not None else "  -"
+                print(
+                    f"{r['tag']:<19} {r['n_open']:>7} {r['n_win']:>7} {r['n_loss']:>7} "
+                    f"{r['n_timeout']:>7} {wr:>7} {avg_r:>6} {avg_rt:>13}"
+                )
+
+        intro = (
+            "winrate = win / (win+loss), timeouts excluded. avgR = realized R-multiple "
+            f"on resolved trades. Mechanical ATR entry/SL/target, {paper.MAX_HOLD_DAYS}td max hold — "
+            "see src/vg/paper.py. Probation: informational, not the forward-test gate itself."
+        )
+        if args.since:
+            since = _d(args.since)
+            rows = paper.report(since)
+            if not any(r["n_open"] + r["n_win"] + r["n_loss"] + r["n_timeout"] for r in rows):
+                print(f"no paper trades signalled on/after {since} yet")
+                return 0
+            print(intro)
+            pr_table(rows, f"signals on/after {since}")
+            return 0
+
+        allrows = paper.report()
+        if not any(r["n_open"] + r["n_win"] + r["n_loss"] + r["n_timeout"] for r in allrows):
+            print("no paper trades yet — run `vg paper-update` first")
+            return 0
+        print(intro)
+        pr_table(allrows, "in-sample — full history")
+        if CONFIG.forward_since:
+            fwd = paper.report(CONFIG.forward_since)
+            if any(r["n_open"] + r["n_win"] + r["n_loss"] + r["n_timeout"] for r in fwd):
+                pr_table(fwd, f"forward — signals on/after {CONFIG.forward_since} (VG_FORWARD_SINCE)")
+            else:
+                print(f"\nforward (on/after {CONFIG.forward_since}): no paper trades yet")
         return 0
 
     if args.cmd == "eval":
