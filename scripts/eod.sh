@@ -43,5 +43,10 @@ if [ "$(date +%u)" -eq 1 ]; then
   vg digest --weekly || true
 fi
 
+if [ "$(date +%u)" -eq 7 ]; then
+  echo "-- Sunday: backup (pg_dump + artifacts -> GitHub Releases) --"
+  bash "$VG_HOME/scripts/backup.sh" || true
+fi
+
 vg digest || true
 echo "----- done $(date -Is) -----"
