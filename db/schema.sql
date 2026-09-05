@@ -229,6 +229,25 @@ CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades (status);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_tag     ON paper_trades (tag, signal_date DESC);
 
 -- ---------------------------------------------------------------------------
+-- Trading-halt announcements (src/vg/sources/trading_halt.py). Metadata
+-- only, no PDF — the announcement title is enough. Lets the digest say WHY a
+-- watchlist ticker didn't trade instead of a bare "tidak diperdagangkan".
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS trading_halts (
+    no_pengumuman TEXT PRIMARY KEY,
+    ticker        TEXT NOT NULL,
+    filed_at      TIMESTAMPTZ NOT NULL,
+    filed_date    DATE NOT NULL,
+    title         TEXT,
+    is_halt       BOOLEAN NOT NULL,      -- true = the halt notice itself; false = a related follow-up
+    source        TEXT NOT NULL,
+    source_tier   SMALLINT NOT NULL,
+    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_trading_halts_ticker_date ON trading_halts (ticker, filed_date DESC);
+
+-- ---------------------------------------------------------------------------
 -- Broker summary (Phase 1.5+, Tier 1 preferred). Defined now, left empty.
 -- ---------------------------------------------------------------------------
 

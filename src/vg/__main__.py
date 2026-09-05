@@ -61,6 +61,13 @@ def main(argv: list[str] | None = None) -> int:
     gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
     gd.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    ch = sub.add_parser("collect-halts",
+                        help="IDX trading-halt announcements -> trading_halts")
+    gh_ = ch.add_mutually_exclusive_group(required=True)
+    gh_.add_argument("--date", metavar="YYYY-MM-DD", help="one announcement day")
+    gh_.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
+    gh_.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
+
     pd_ = sub.add_parser(
         "parse-disclosure",
         help="Phase B: parse archived disclosure PDFs -> disclosure_holdings (direction)",
@@ -192,6 +199,27 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with filings")
+        return 0
+
+    if args.cmd == "collect-halts":
+        if args.latest:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT max(session_date) FROM trading_calendar")
+                latest = cur.fetchone()[0]
+            if latest is None:
+                print("no trading_calendar rows — run collect-price first")
+                return 1
+            _print(collect.collect_trading_halts_day(latest))
+        elif args.date:
+            _print(collect.collect_trading_halts_day(_d(args.date)))
+        else:
+            start, end = _d(args.backfill[0]), _d(args.backfill[1])
+            print(f"backfill {start} .. {end}")
+            outs = collect.collect_trading_halts_range(start, end)
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} days with halt announcements")
         return 0
 
     if args.cmd == "parse-disclosure":

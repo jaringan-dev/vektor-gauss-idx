@@ -65,6 +65,24 @@ def _tags_by_ticker(cur, session_date: date, tickers: list[str]) -> dict[str, se
     return out
 
 
+def _halt_status(cur, session_date: date, tickers: list[str]) -> dict[str, tuple[date, str]]:
+    """Ticker -> (filed_date, title) for tickers whose most recent halt-related
+    announcement on/before session_date is the halt notice itself (not a later
+    reopening/recovery-plan follow-up) — i.e. presumed still suspended."""
+    if not tickers:
+        return {}
+    cur.execute(
+        """
+        SELECT DISTINCT ON (ticker) ticker, filed_date, title, is_halt
+        FROM trading_halts
+        WHERE ticker = ANY(%s) AND filed_date <= %s
+        ORDER BY ticker, filed_date DESC, filed_at DESC
+        """,
+        (tickers, session_date),
+    )
+    return {t: (d, title) for t, d, title, is_halt in cur.fetchall() if is_halt}
+
+
 _FLOW_TAGS = ("AKUM-ASING", "DISTRIBUSI-ASING", "MARKUP", "MARKDOWN")
 
 
@@ -204,13 +222,25 @@ def build_daily(session_date: date | None = None) -> str:
                 (sd, wl),
             )
             byt = {r[0]: r for r in cur.fetchall()}
+            halts = _halt_status(cur, sd, wl)
             L.append("")
             L.append(_hr("WATCHLIST"))
             for t in wl:
                 L.append("")
                 r = byt.get(t)
                 if r is None:
-                    L.append(f"▪️ <b>{t}</b>  — tidak diperdagangkan")
+                    halt = halts.get(t)
+                    if halt:
+                        halt_date, halt_title = halt
+                        reason = (halt_title or "").strip()
+                        if len(reason) > 60:
+                            reason = reason[:57] + "..."
+                        L.append(
+                            f"▪️ <b>{t}</b>  — disuspend sejak {halt_date:%d %b %Y}"
+                            + (f" ({reason})" if reason else "")
+                        )
+                    else:
+                        L.append(f"▪️ <b>{t}</b>  — tidak diperdagangkan")
                     continue
                 _, close, prv, atr, nff0, nff1, cons, quad, kf, atz, flags = r
                 chg1 = (float(close) / float(prv) - 1) if (close and prv) else None

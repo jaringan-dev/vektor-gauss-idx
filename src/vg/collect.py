@@ -35,6 +35,7 @@ from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
+from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
 
 _PRICE_COLS = (
     "session_date", "ticker", "prev", "open", "first_trade", "high", "low", "close",
@@ -711,3 +712,77 @@ def parse_disclosure_pdfs(start: date | None = None, end: date | None = None) ->
     except Exception as exc:
         _log_error(today, exc, "parse_disclosure")
         return CollectOutcome(today, "error", 0, f"{type(exc).__name__}: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Trading-halt announcements (Tier 0) -> trading_halts
+#   Metadata only, no PDF — see sources/trading_halt.py for why this can't
+#   reuse IdxDisclosureSource despite it being keyword-parameterized.
+# ---------------------------------------------------------------------------
+
+_HALT_COLS = (
+    "no_pengumuman", "ticker", "filed_at", "filed_date", "title", "is_halt", "source", "source_tier",
+)
+_HALT_UPDATE = tuple(c for c in _HALT_COLS if c != "no_pengumuman")
+
+
+def _halt_row(e: TradingHaltEvent, source: str, tier: int) -> tuple:
+    return (e.no_pengumuman, e.ticker, e.filed_at, e.filed_date, e.title, e.is_halt, source, tier)
+
+
+def _collect_trading_halts(res: TradingHaltFetchResult) -> CollectOutcome:
+    sd = res.session_date
+    if res.status not in ("ok", "no_data"):
+        _log_error(sd, RuntimeError(res.detail or res.status), "collect_trading_halts")
+        return CollectOutcome(sd, res.status, 0, res.detail)
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            n = 0
+            skipped = 0
+            if res.status == "ok":
+                # IDX occasionally posts dummy/test announcements (e.g. ticker
+                # "TESTSBKD", seen live 2026-09-05) through the same feed —
+                # only accept tickers already known from real price data.
+                cur.execute(
+                    "SELECT ticker FROM tickers WHERE ticker = ANY(%s)",
+                    ([e.ticker for e in res.rows],),
+                )
+                known = {t for (t,) in cur.fetchall()}
+                rows = [e for e in res.rows if e.ticker in known]
+                skipped = len(res.rows) - len(rows)
+                if rows:
+                    n = upsert_many(
+                        cur, "trading_halts", _HALT_COLS,
+                        [_halt_row(e, res.source, res.source_tier) for e in rows],
+                        conflict=("no_pengumuman",), update=_HALT_UPDATE,
+                    )
+            detail = res.detail
+            if skipped:
+                detail = f"{detail}; {skipped} skipped (unknown/test ticker)".strip("; ")
+            _log(cur, sd, res.status, n, detail or None, "collect_trading_halts")
+        return CollectOutcome(sd, res.status, n, detail)
+    except Exception as exc:
+        _log_error(sd, exc, "collect_trading_halts")
+        return CollectOutcome(sd, "error", 0, f"{type(exc).__name__}: {exc}")
+
+
+def collect_trading_halts_day(session_date: date) -> CollectOutcome:
+    try:
+        res = IdxTradingHaltSource().fetch(session_date)
+    except Exception as exc:
+        _log_error(session_date, exc, "collect_trading_halts")
+        return CollectOutcome(session_date, "error", 0, f"{type(exc).__name__}: {exc}")
+    return _collect_trading_halts(res)
+
+
+def collect_trading_halts_range(start: date, end: date) -> list[CollectOutcome]:
+    """Inclusive. Skips weekends locally; the feed returns no_data for days
+    with no halt announcements."""
+    out: list[CollectOutcome] = []
+    d = start
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(collect_trading_halts_day(d))
+            time.sleep(CONFIG.request_delay_seconds)
+        d += timedelta(days=1)
+    return out

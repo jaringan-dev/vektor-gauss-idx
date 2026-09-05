@@ -32,6 +32,7 @@ vg collect-price       --backfill "$BACK" "$TODAY"
 vg collect-index       --backfill "$BACK" "$TODAY"
 vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usually 0-15/day)
+vg collect-halts       --backfill "$BACK" "$TODAY"
 vg detect-ca
 vg compute             --backfill "$BACK" "$TODAY"
 vg backfill-outcomes
