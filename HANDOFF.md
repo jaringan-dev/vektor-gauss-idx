@@ -20,10 +20,15 @@ _State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock 
   it grows daily now that `vg parse-disclosure` runs in `eod.sh`. Still
   probation — same gate, same rules, don't act on it yet. `INSIDER-DIST`/
   `SUBSTANTIAL-AKUM`/`SUBSTANTIAL-DIST` are live too but weaker/mixed in-sample.
-- **EOD driver:** Windows Task Scheduler `VektorGauss-EOD`, daily 19:15 WIB. The
-  GitHub Actions self-hosted-runner cutover was tried and reverted 2026-09-04
-  (WSL2 VM doesn't survive between sessions on this box) — see
-  `INFRA-GITHUB-ACTIONS.md` if revisiting this.
+- **EOD driver:** **both** Windows Task Scheduler `VektorGauss-EOD` (19:15 WIB) and
+  GitHub Actions `eod.yml` (cron 19:15 WIB) are active in parallel as of
+  2026-09-05 — the WSL2 VM-doesn't-survive-between-sessions issue that killed the
+  first GitHub Actions attempt (2026-09-04) is now fixed via a Windows Startup-folder
+  keep-alive script (Task Scheduler creation was blocked by system policy on this
+  machine). First `workflow_dispatch` test completed successfully end-to-end.
+  **Not yet cut over** — watch a few real scheduled `eod.yml` runs before disabling
+  Task Scheduler. Expect duplicate Telegram digests on days both fire until then.
+  See `INFRA-GITHUB-ACTIONS.md`.
 - **`VG_HOLDINGS`/`VG_ACCOUNT_BALANCE` blank/0 in `.env` is CORRECT, not a gap** —
   confirmed with the user 2026-09-05: no live execution yet, this tool is still
   paper-trading/forward-testing (see HANDOFF #4). Every watchlist ticker digests

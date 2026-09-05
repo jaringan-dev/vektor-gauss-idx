@@ -23,6 +23,39 @@ does the monthly KSEI pull on day ≤5, the weekly eval on Mondays, then the dig
 Only the residential-IP box reaches `www.idx.co.id`. KSEI is not blocked, but the
 box also holds Postgres, so the whole sequence runs there.
 
+## Status — FIXED 2026-09-05 (session 6), running in parallel with Task Scheduler
+
+**Root cause fixed: the WSL2 VM keep-alive.** A per-user Windows Startup-folder
+script (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\vg-wsl-keepalive.vbs`)
+launches `wsl.exe -d Ubuntu-24.04 -u root -- sh -c "exec sleep infinity"` hidden at
+every logon, holding one WSL session open permanently so the VM never idles out.
+**Note: Task Scheduler task creation was blocked by system policy on this machine**
+(`Register-ScheduledTask`/`schtasks /Create` both "Access is denied", even elevated)
+— the Startup-folder script is the workaround, needs no special permission, and
+is functionally equivalent to option 1 below.
+
+Verified via `journalctl -u postgresql`: before the fix, Postgres cycled
+active→deactivated every 16-20s (4 repeats observed same day); after the keep-alive
+script started, it ran continuously with zero cycling. Re-enabled the runner
+(`systemctl enable --now actions.runner...`) and triggered `eod.yml` via
+`workflow_dispatch` (run `33962104682`): **completed successfully end-to-end in
+3m50s** — collect price/index/disclosure, parse-disclosure, collect-halts,
+detect-ca, compute, backfill-outcomes, paper-update, monthly ownership/corpactions,
+and the digest actually sent to Telegram. Previously this always died ~14s in.
+
+**Current state: BOTH drivers active in parallel** (Task Scheduler `VektorGauss-EOD`
+19:15 WIB + `eod.yml` cron 19:15 WIB) — deliberately not cut over yet. Both are
+idempotent (`flock` + upserts), a double run is a no-op on the data, though it does
+mean **two Telegram digests some days** until one side is disabled. Per the original
+plan (§ "One-time setup" step 3): watch a few real scheduled `eod.yml` runs (not just
+today's manual `workflow_dispatch` test) before running
+`Disable-ScheduledTask -TaskName VektorGauss-EOD` — not done this session.
+
+**Caveat:** the keep-alive script only starts at Windows *logon*. If the PC reboots
+and nobody logs in (or it's set to auto-login and that's disabled), the VM won't be
+held up until someone logs in — unlike a true Task Scheduler AtStartup trigger. Worth
+revisiting if the PC is ever left rebooting unattended for the EOD window.
+
 ## Status — cutover REVERTED (2026-09-04, session 4)
 
 **The self-hosted runner does not work as the EOD driver on this box. Rolled back to
