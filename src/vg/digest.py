@@ -128,6 +128,31 @@ def _trade_line(
     return f"aksi {action}"
 
 
+_QUAD_EMOJI = {
+    "MARKUP": "📈",
+    "AKUMULASI": "🟢",
+    "DISTRIBUSI": "🔻",
+    "MARKDOWN": "📉",
+    "NETRAL": "▪️",
+}
+
+# Confirmation annotations read positive (KSEI agrees with the flow signal);
+# everything else on the KSEI / crossing family is a caution.
+_ANNOT_OK = {"KSEI-KONFIRM"}
+
+
+def _annot(tag: str) -> str:
+    if tag in _ANNOT_OK:
+        return "✅ " + tag
+    if tag.startswith("KSEI") or tag == "CROSSING-TINGGI":
+        return "⚠️ " + tag
+    return tag
+
+
+def _hr(label: str) -> str:
+    return f"<b>━━━━━  {label}  ━━━━━</b>"
+
+
 def build_daily(session_date: date | None = None) -> str:
     wl = list(CONFIG.watchlist)
     with connect() as conn, conn.cursor() as cur:
@@ -142,25 +167,29 @@ def build_daily(session_date: date | None = None) -> str:
         cur.execute("SELECT max(month_end) FROM ownership_monthly")
         latest_own = cur.fetchone()[0]
 
-        L: list[str] = []
         ok_price = latest_price == sd
         ok_index = latest_index == sd
         ksei_str = f"{latest_own:%b %Y}" if latest_own else "-"
-        L.append(f"\U0001F4CA <b>VEKTOR GAUSS</b> — EOD {sd:%d %b %Y}")
+
+        L: list[str] = []
+        L.append(f"\U0001F4CA  <b>VEKTOR GAUSS</b>  ·  EOD {sd:%d %b %Y}")
         L.append(
-            f"harga {'✓' if ok_price else '⚠'} · "
-            f"indeks {'✓' if ok_index else '⚠'} · "
+            f"harga {'✅' if ok_price else '⚠️'}  ·  "
+            f"indeks {'✅' if ok_index else '⚠️'}  ·  "
             f"KSEI {ksei_str}"
         )
         if not ok_price:
-            L.append(f"⚠ harga terbaru = {latest_price} (bukan {sd}). Jangan analisa data lama.")
+            L.append(
+                f"⚠️ harga terbaru = {latest_price} (bukan {sd}). "
+                "Jangan analisa data lama."
+            )
 
-        # -- watchlist ----------------------------------------------------
+        # -- watchlist --------------------------------------------------
         tags_today = _tags_by_ticker(cur, sd, wl)
         prev = _prev_trading_day(cur, sd)
         tags_prev = _tags_by_ticker(cur, prev, wl) if prev else {}
-
         held = set(CONFIG.holdings)
+
         if wl:
             cur.execute(
                 """
@@ -175,51 +204,60 @@ def build_daily(session_date: date | None = None) -> str:
                 (sd, wl),
             )
             byt = {r[0]: r for r in cur.fetchall()}
-            L.append("\n<b>WATCHLIST</b>")
+            L.append("")
+            L.append(_hr("WATCHLIST"))
             for t in wl:
+                L.append("")
                 r = byt.get(t)
                 if r is None:
-                    L.append(f"{t}  — tidak diperdagangkan")
+                    L.append(f"▪️ <b>{t}</b>  — tidak diperdagangkan")
                     continue
                 _, close, prv, atr, nff0, nff1, cons, quad, kf, atz, flags = r
                 chg1 = (float(close) / float(prv) - 1) if (close and prv) else None
                 tset = tags_today.get(t, set())
                 prim = _primary(tset)
-                changed = prev and _primary(tags_prev.get(t, set())) != prim
-                ann = [x for x in tset if x not in _FLOW_TAGS]
+                changed = bool(prev) and _primary(tags_prev.get(t, set())) != prim
+                ann = sorted(x for x in tset if x not in _FLOW_TAGS)
 
-                mark = "📌 " if t in held else ""
-                line1 = (
-                    f"{mark}<b>{t}</b>  {_price(close)} ({_pct(chg1)})   "
-                    f"NFF D0 {_idr(_f(nff0))}  W1 {_idr(_f(nff1))}"
+                head = (
+                    f"{_QUAD_EMOJI.get(quad or '', '▪️')} <b>{t}</b>"
+                    f"   {_price(close)}   <b>{_pct(chg1)}</b>"
                 )
-                if cons is not None:
-                    line1 += f"  asing {cons}/10"
-                L.append(line1)
+                if t in held:
+                    head += "   📌"
+                if changed:
+                    head += "   ⚡"
+                L.append(head)
 
-                bits = []
+                ctx: list[str] = []
                 if quad:
-                    bits.append(quad.lower())
-                bits.append(f"KSEI %asing {_TREND.get(kf, '?')}")
+                    ctx.append(quad)
+                if cons is not None:
+                    ctx.append(f"asing {cons}/10")
+                ctx.append(f"KSEI %asing {_TREND.get(kf, '?')}")
                 if atz is not None and abs(float(atz)) >= 1.0:
-                    bits.append(f"tiket z{float(atz):+.1f}".replace(".", ","))
-                if prim:
-                    bits.append(f"<b>{prim}</b>" + (" ⚡" if changed else ""))
-                for a in sorted(ann):
-                    bits.append("⚠ " + a if a.startswith("KSEI") or a == "CROSSING-TINGGI" else a)
-                for fl in (flags or []):
+                    ctx.append(f"tiket z{float(atz):+.1f}".replace(".", ","))
+                if prim in ("AKUM-ASING", "DISTRIBUSI-ASING"):
+                    ctx.append(f"<b>{prim}</b>")
+                L.append("   " + "  ·  ".join(ctx))
+
+                L.append(
+                    f"   Asing bersih — hari ini {_idr(_f(nff0))}"
+                    f"   ·   1 minggu terakhir {_idr(_f(nff1))}"
+                )
+
+                marks = [_annot(a) for a in ann]
+                for fl in flags or []:
                     if fl not in ann and fl != "CROSSING-TINGGI":
-                        bits.append("⚠ " + fl)
-                # bits hold only internal tag/quadrant/flag strings + a literal <b>…</b>
-                # for the primary tag — no user data, so don't html.escape (that was
-                # turning the bold into &lt;b&gt;).
-                L.append("   " + " · ".join(bits))
+                        marks.append("⚠️ " + fl)
+                if marks:
+                    L.append("   " + "  ·  ".join(marks))
 
                 tl = _trade_line(_f(close), _f(atr), prim, tset, t in held)
                 if tl:
                     L.append("   " + tl)
 
-        # -- radar ------------------------------------------------------
+        # -- radar ----------------------------------------------------
         radar_tags = list(CONFIG.radar_tags)
         if radar_tags:
             cur.execute(
@@ -242,38 +280,49 @@ def build_daily(session_date: date | None = None) -> str:
             )
             radar = cur.fetchall()
             if radar:
-                L.append(
-                    "\n<b>RADAR</b> — " + " / ".join(radar_tags)
-                    + " hari ini (di luar watchlist)"
-                )
+                L.append("")
+                L.append(_hr("RADAR"))
+                L.append("<i>" + " / ".join(radar_tags) + "  ·  di luar watchlist</i>")
                 for t, tags, nff1, atr, close, prv in radar:
                     cf, af = _f(close), _f(atr)
                     chg1 = (cf / float(prv) - 1) if (cf and prv) else None
-                    line = (
-                        f"{t}  {_price(close)} ({_pct(chg1)})  "
-                        f"W1 {_idr(_f(nff1))}  · {tags}"
-                    )
+                    L.append("")
+                    L.append(f"<b>{t}</b>   {_price(close)}   <b>{_pct(chg1)}</b>")
+                    sub = f"   Asing bersih 1 minggu terakhir {_idr(_f(nff1))}   ·   {tags}"
                     if CONFIG.digest_trade_calls and cf and af:
                         p = calc.plan(cf, calc.atr_stop(cf, af, CONFIG.atr_sl_mult),
                                       target_r=CONFIG.target_r, fee_pct=CONFIG.fee_pct)
-                        line += f"  · SL {_price(p.stop_loss)} / tgt {_price(p.target)}"
-                    L.append(line)
+                        sub += f"\n   SL {_price(p.stop_loss)}  →  target {_price(p.target)}"
+                    L.append(sub)
 
         # -- totals ---------------------------------------------------
         cur.execute(
-            "SELECT tag, count(*) FROM signal_log WHERE session_date = %s GROUP BY tag ORDER BY tag",
+            "SELECT tag, count(*) FROM signal_log WHERE session_date = %s GROUP BY tag",
             (sd,),
         )
-        counts = cur.fetchall()
+        counts = sorted(cur.fetchall(), key=lambda r: (-r[1], r[0]))
         if counts:
-            L.append("\n" + " · ".join(f"{tag}:{n}" for tag, n in counts))
+            w = max(len(tag) for tag, _ in counts)
+            body = "\n".join(f"{tag.ljust(w)}  {n:>3}" for tag, n in counts)
+            L.append("")
+            L.append(_hr("SINYAL HARI INI"))
+            L.append(f"<pre>{html.escape(body, quote=False)}</pre>")
+
+    L.append("")
+    legend = "⚡ tag utama berubah dari sesi lalu"
+    if held:
+        legend += "   ·   📌 posisi Anda"
+    L.append(f"<i>{legend}</i>")
 
     foot = (
-        "\n<i>Analisis data publik IDX/KSEI untuk pemakaian pribadi. "
+        "<i>Analisis data publik IDX/KSEI untuk pemakaian pribadi. "
         "Sinyal masih tahap uji (bobot 0)."
     )
     if CONFIG.digest_trade_calls:
-        foot += " Aksi/SL/target = aturan mekanis (ATR), bukan prediksi — keputusan di tangan Anda."
+        foot += (
+            " Aksi/SL/target = aturan mekanis (ATR), bukan prediksi — "
+            "keputusan di tangan Anda."
+        )
     foot += "</i>"
     L.append(foot)
     return "\n".join(L)

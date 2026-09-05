@@ -49,6 +49,18 @@ def test_primary_tag_priority():
     assert digest._primary({"CROSSING-TINGGI"}) is None
 
 
+def test_annot_markers():
+    assert digest._annot("KSEI-KONFIRM") == "✅ KSEI-KONFIRM"
+    assert digest._annot("KSEI-DIVERGEN") == "⚠️ KSEI-DIVERGEN"
+    assert digest._annot("CROSSING-TINGGI") == "⚠️ CROSSING-TINGGI"
+    assert digest._annot("LAPOR-KEPEMILIKAN-RAMAI") == "LAPOR-KEPEMILIKAN-RAMAI"
+
+
+def test_hr_is_balanced_bold():
+    out = digest._hr("WATCHLIST")
+    assert out.startswith("<b>") and out.endswith("</b>") and "WATCHLIST" in out
+
+
 def test_weekly_eval_empty(monkeypatch):
     monkeypatch.setattr(digest.CONFIG, "forward_since", None)
     monkeypatch.setattr(digest.engine, "eval_tags", lambda since=None: [])
