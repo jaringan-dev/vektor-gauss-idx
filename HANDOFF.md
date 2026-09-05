@@ -17,10 +17,13 @@ _State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock 
   GitHub Actions self-hosted-runner cutover was tried and reverted 2026-09-04
   (WSL2 VM doesn't survive between sessions on this box) — see
   `INFRA-GITHUB-ACTIONS.md` if revisiting this.
-- **Open from HANDOFF #2, still not done:** `VG_HOLDINGS` and `VG_ACCOUNT_BALANCE`
-  are blank/0 in `.env` — every watchlist ticker digests as "not held" (BUY/WATCH/
-  AVOID, never ADD/HOLD/REDUCE) and the BUY/ADD line has no lot-size suggestion.
-  Needs the user's real portfolio numbers; not something to fill in blind.
+- **`VG_HOLDINGS`/`VG_ACCOUNT_BALANCE` blank/0 in `.env` is CORRECT, not a gap** —
+  confirmed with the user 2026-09-05: no live execution yet, this tool is still
+  paper-trading/forward-testing (see HANDOFF #4). Every watchlist ticker digests
+  as "not held" (BUY/WATCH/AVOID) and the BUY/ADD line has no lot-size
+  suggestion, which is the right behaviour with zero real capital at risk. Only
+  fill these in once the user actually starts executing — don't "fix" this
+  pre-emptively.
 - **Data-vendor research is done and filed, but paid data is explicitly on hold**
   until the gate above — see `INVENTARIS-SUMBER-DATA.md` §6bis for the official
   IDX price catalogue and vendor findings (Invezgo, Wiguna Investment, NeoBDM).
@@ -105,8 +108,10 @@ ever sold — OJK).
 
 1. ~~Let the backfill finish, then read `vg eval`.~~ Done — see
    **First `vg eval` read** below. Real test is still the forward run.
-2. **Tune `.env`**: real watchlist, `VG_HOLDINGS` (drives HOLD/REDUCE vs BUY),
-   `VG_ACCOUNT_BALANCE` + `VG_RISK_PCT` for lot sizing in the digest. Also set
+2. ~~Tune `.env`: real watchlist, `VG_HOLDINGS`, `VG_ACCOUNT_BALANCE` +
+   `VG_RISK_PCT` for lot sizing.~~ Watchlist done. `VG_HOLDINGS`/`VG_ACCOUNT_BALANCE`
+   deliberately blank/0 — no live execution yet (confirmed 2026-09-05, see
+   "Status at a glance"); fill in only once actually trading. Also set
    **`VG_FORWARD_SINCE`** to today's date once the cron is steady — it splits
    `vg eval` / the weekly digest into an in-sample and a forward-only block, the
    actual instrument for the gate. (`VG_RADAR_TAGS` defaults to the two live
