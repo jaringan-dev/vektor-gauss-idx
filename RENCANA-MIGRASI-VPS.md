@@ -74,18 +74,16 @@ Skema & arsitektur sengaja dibangun untuk migrasi ini sejak awal:
 
 - **`.env` berisi secret** (token Telegram, kredensial DB) — jangan pernah lewat git.
   Transfer langsung via `scp`/manual copy-paste ke VPS baru.
-- **`git remote origin` saat ini menunjuk ke path lokal Windows**
-  (`/mnt/c/Users/.../vektor-gauss`), **bukan alamat jaringan** (dicek 2026-09-05). Artinya
-  `git clone`/`git pull` dari VPS **tidak akan bisa** memakai remote ini apa adanya — VPS
-  tidak punya akses ke drive `C:` Windows Anda. **Sebelum migrasi**, perlu salah satu:
-  1. Push ke remote GitHub yang sebenarnya (memory `vektor-gauss-vps` menyebut pernah ada
-     repo privat `github.com/jaringan-bot/vektor-gauss` dari eksperimen VPS lama — perlu
-     dicek apakah masih ada/relevan, atau buat repo privat baru), **atau**
-  2. Transfer awal via `git bundle`/`rsync` langsung dari PC rumah ke VPS (tidak butuh
-     GitHub sama sekali, tapi update selanjutnya jadi manual, bukan `git pull`).
-  **Saya belum melakukan ini** — butuh keputusan Anda (bikin repo GitHub baru = privat?
-  pakai yang lama?) sebelum saya bisa eksekusi. Bukan sesuatu yang saya putuskan sendiri
-  karena menyangkut hosting kode di pihak ketiga.
+- ~~**`git remote origin` saat ini menunjuk ke path lokal Windows**~~ **RESOLVED
+  2026-09-05.** Repo privat lama `github.com/jaringan-bot/vektor-gauss` (dari eksperimen
+  VPS session 2) masih ada dan dipakai kembali atas pilihan Anda. Windows `origin` sudah
+  benar sejak awal; WSL `origin` diarahkan ulang ke URL yang sama
+  (`git remote set-url origin https://github.com/jaringan-bot/vektor-gauss.git`) +
+  `gh auth setup-git` supaya kredensial `gh` (akun `jaringan-bot`, token scope `repo`)
+  jadi credential helper git. Windows sudah `git push` (`b4c4aaf..d5f6767`), WSL sudah
+  `git fetch` bersih (`main...origin/main`, tidak ada divergensi). **VPS nanti tinggal
+  `git clone https://github.com/jaringan-bot/vektor-gauss.git` + autentikasi `gh` di sana
+  — tidak perlu `git bundle`/`rsync` kode lagi.**
 - **Kalender/timezone**: pastikan VPS diset `Asia/Jakarta` (WIB) — cron 19:15 WIB harus
   cocok, jangan andalkan default UTC datacenter.
 
@@ -94,8 +92,9 @@ Skema & arsitektur sengaja dibangun untuk migrasi ini sejak awal:
 1. **Pre-flight IDX** (§1) — sudah lolos, catat provider/region/ASN yang dipakai.
 2. **Setup dasar VPS**: `apt install python3.12 python3.12-venv postgresql-16 git`,
    `timedatectl set-timezone Asia/Jakarta`.
-3. **Bawa kode**: selesaikan gap remote (§3) → `git clone` (kalau sudah ada remote
-   jaringan) atau `git bundle`/`rsync` dari PC rumah.
+3. **Bawa kode**: `git clone https://github.com/jaringan-bot/vektor-gauss.git`, lalu
+   `gh auth login` (atau salin token) supaya push/pull berikutnya jalan — remote sudah
+   siap sejak 2026-09-05 (§3), tidak perlu `git bundle`/`rsync` lagi.
 4. **Bawa database**:
    ```bash
    # di WSL (sumber)
@@ -147,8 +146,8 @@ run/log yang lebih rapi di GitHub. Bukan wajib, cron polos di §4.8 sudah cukup.
 
 1. **Kandidat VPS mana yang mau ditest duluan?** Biznet Gio / IDCloudHost / Dewaweb /
    Niagahoster, atau ada yang lain di radar Anda?
-2. **Remote GitHub** (§3): buat repo privat baru, atau pakai `jaringan-bot/vektor-gauss`
-   yang disebut di memory lama (perlu dicek dulu apakah masih ada & isinya cocok)?
+2. ~~Remote GitHub~~ **RESOLVED 2026-09-05** — pakai `jaringan-bot/vektor-gauss` (repo
+   lama), sudah diverifikasi jalan dari Windows & WSL.
 3. Kapan target waktunya — sekarang sekadar disiapkan, atau ada tenggat migrasi konkret?
 
 ---
