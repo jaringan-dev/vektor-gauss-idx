@@ -125,6 +125,31 @@ sourced later from Sectors `shareholders-composition` or elsewhere).
 
 Run tests (offline, no DB): `pytest`
 
+## Uptime monitoring (optional but recommended)
+
+The digest and the (future) superadmin dashboard both monitor from *inside* the
+machine — useless if the whole PC/WSL/home internet goes down, since nothing
+running on a dead machine can report that it's dead. `scripts/eod.sh` supports an
+external dead-man's-switch instead: it pings a URL at the very end of every run,
+and an outside service alerts you if that ping *doesn't* show up on schedule.
+
+Setup (one-time, ~2 minutes, free — this creates an account, so do it yourself,
+not something to hand to an assistant):
+1. Sign up at [healthchecks.io](https://healthchecks.io) (free tier is plenty).
+2. Create a check named e.g. `vektor-gauss-eod`, schedule "every 1 day", grace
+   period a few hours (Task Scheduler runs daily at 19:15 WIB regardless of
+   whether IDX traded that day, so a daily ping is expected even on weekends).
+3. Copy its ping URL (`https://hc-ping.com/<uuid>`) into `.env`:
+   `VG_HEALTHCHECK_URL=https://hc-ping.com/<uuid>`
+4. Point notifications (Integrations tab) at email and/or Telegram — connecting
+   their bot to a chat is a couple of clicks on their side.
+
+Scope: this only answers "did `eod.sh` reach its last line today" — it does
+**not** tell you whether an individual collector inside that run failed (a
+`vg collect-price` error is swallowed by the script's `|| true` self-healing
+design on purpose). Per-collector failure visibility is a separate, not-yet-built
+concern — see `RENCANA-UI-UX.md` §3.3 (superadmin dashboard).
+
 ## Cloudflare note
 
 `www.idx.co.id` sits behind Cloudflare. Tested 2026-09-03 from AWS (Singapore +

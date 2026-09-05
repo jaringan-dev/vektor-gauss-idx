@@ -7,6 +7,9 @@
 #   VG_HOME             repo checkout with .venv + .env   (default: parent of this script)
 #   VG_EOD_WINDOW_DAYS  rolling backfill window            (default: 5)
 #   VG_LOCK            flock path to guard overlap         (default: /tmp/vg-eod.lock)
+#   VG_HEALTHCHECK_URL  healthchecks.io ping URL (optional) — "is the whole machine/
+#                       cron still alive" dead-man's-switch. Empty/unset = skipped.
+#                       See README.md "Uptime monitoring" for setup.
 #
 # Writes to stdout (so it shows in the Actions log). Redirect yourself for cron.
 set -u
@@ -14,6 +17,7 @@ set -u
 VG_HOME="${VG_HOME:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$VG_HOME" || { echo "VG_HOME not found: $VG_HOME"; exit 1; }
 [ -f .venv/bin/activate ] && . .venv/bin/activate
+[ -f .env ] && { set -a; . ./.env; set +a; }
 
 exec 9>"${VG_LOCK:-/tmp/vg-eod.lock}"
 flock -n 9 || { echo "$(date -Is) another run holds the lock; skip"; exit 0; }
@@ -49,4 +53,15 @@ if [ "$(date +%u)" -eq 7 ]; then
 fi
 
 vg digest || true
+
+if [ -n "${VG_HEALTHCHECK_URL:-}" ]; then
+  # Dead-man's-switch: tells an OUTSIDE service the machine/cron is still alive.
+  # Catches "PC/WSL/internet died entirely" (Task Scheduler never even fires this
+  # script), which nothing running ON this machine can ever detect about itself.
+  # Deliberately unconditional (reached even after upstream `|| true` failures) —
+  # this checks "did the run happen at all", not "did every step succeed"; the
+  # latter belongs to the superadmin dashboard's per-collector view (RENCANA-UI-UX.md).
+  curl -fsS -m 10 --retry 2 "$VG_HEALTHCHECK_URL" >/dev/null 2>&1 || true
+fi
+
 echo "----- done $(date -Is) -----"
