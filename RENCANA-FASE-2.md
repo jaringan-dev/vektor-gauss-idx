@@ -116,6 +116,7 @@ setelah biaya. Rapor per-tag lebih jujur daripada satu angka.
 | Billing (Midtrans/Xendit) | ⬜ adapter kosong | 2 (gated) |
 | API akses (sudut B2B) | ⬜ | 2 (gated) |
 | Rapor publik sebagai pembeda ("lihat rekam jejak sebelum bayar") | ⬜ | 2 (gated) |
+| **Dashboard superadmin** — monitor kesehatan infra + data + website (bukan untuk pengguna biasa): status tiap collector (IDX/KSEI/disclosure) per hari, gap/staleness data, health cron/EOD job, uptime web, log error, kuota vendor data (kalau Fase 1.5 jalan) | ⬜ dicatat 2026-09-05 | 2 (gated) — prasyarat sebelum ada pengguna lain |
 
 ### 1.4 Alur pengguna (Fase 2, kalau jadi)
 - **Anonim** → landing → **halaman Rapor publik** (edge forward tiap tag, terbuka) →
