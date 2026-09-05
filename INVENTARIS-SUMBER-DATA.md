@@ -14,7 +14,7 @@ Baca bersama [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) — inventaris ini men
 | Price bars (OHLCV) per emiten | IDX **Stock Summary** (publik) | ticker × hari | EOD ~17:00 WIB | Publik, tanpa login | Gratis |
 | **Net foreign flow** per emiten | IDX **Stock Summary** (kolom `ForeignBuy`/`ForeignSell`) | ticker × hari | EOD | Publik | Gratis |
 | Papan negosiasi terpisah | IDX Stock Summary (`NonRegular*`) | ticker × hari | EOD | Publik | Gratis |
-| **Broker Summary per emiten** (beli/jual per broker) — inti bandarmologi | IDX Data Services (redistributor) **atau** vendor API | ticker × broker × hari | EOD | **Berlangganan / lisensi** | **Berbayar, tidak publik** |
+| **Broker Summary per emiten** (beli/jual per broker) — inti bandarmologi | **Tidak dijual siap pakai** — agregasi sendiri dari IDX Equity & Derivative Log Data (Rp3jt/bln, ada kode broker, §6bis) **atau** vendor API | ticker × broker × hari | EOD (Log Data) / real-time (Order/ITCH) | **Berlangganan / lisensi** | **Berbayar, tidak publik — harga resmi kini diketahui, lihat §6bis** |
 | Broker Summary agregat pasar (bukan per emiten) | IDX **Broker Summary** (publik) | broker × hari | EOD | Publik | Gratis — **tapi bukan yang dibutuhkan** |
 | Kepemilikan Lokal vs Asing per emiten | KSEI **Kepemilikan Efek (Lokal-Asing)** | ticker × kategori investor × akhir bulan | **BULANAN** | Publik | Gratis |
 | **Laporan kepemilikan >5% + direksi/komisaris** (POJK 4/2024) | IDX **GetAnnouncement** `keyword=LAPORAN KEPEMILIKAN` → form PDF KSEI | emiten × filing | ~harian (~13/hari bursa) | Publik (Cloudflare — IP residensial) | Gratis — **`vg collect-disclosure`** |
@@ -81,7 +81,7 @@ Situs `idx.co.id` = Nuxt SPA di belakang **Cloudflare**. Data tabel diambil dari
 - **Indirect (lebih realistis):** lewat **Redistributor**:
   - **Lokal:** Perum LKBN **Antara / IMQ**, **PT IQ Plus Prima**, **PT RTI Infokom**, **PT IDX Solusi Teknologi Informasi (IDX-STI)**.
   - **Asing:** Bloomberg, Refinitiv, FactSet, Morningstar, ICE Data, SIX Financial, Baha, Active Financial Systems, FIS.
-- **Biaya:** tabel fee di halaman **kosong** ("hubungi IDX / redistributor"). **[perlu konfirmasi]** — ini item anggaran yang hilang dari blueprint Gemini.
+- **Biaya:** tabel fee di halaman produk **kosong** ("hubungi IDX / redistributor"), tapi **katalog harga resmi lengkap ditemukan terpisah dan publik** — lihat §6bis (RESOLVED 2026-09-05). Ini item anggaran yang tadinya hilang dari blueprint Gemini, sekarang terisi.
 - **Kewajiban:** tanda tangan **License Agreement** + **Reporting** rutin pemakaian data ke IDX. Redistribusi (mis. tampilkan ke user publik) butuh lisensi **Display** + izin jadi Redistributor.
 
 ---
@@ -145,10 +145,10 @@ Kalau jalur lisensi IDX langsung terlalu berat, broker summary per emiten + fore
 | Komponen metodologi | Sumber | Status kelayakan |
 |---|---|---|
 | Net Flow kasta (Asing vs Ritel vs Institusi) | IDX Stock Summary `ForeignBuy/Sell` (asing); broker summary + mapping (institusi vs ritel) | **Asing: layak & gratis.** Institusi vs ritel: butuh broker summary berbayar + mapping (hipotesis) |
-| CR3 / konsentrasi broker | Broker summary per emiten (berlisensi) | Layak **hanya jika** beli data. EOD saja (bukan intraday) |
+| CR3 / konsentrasi broker | **IDX tidak menjual "broker summary" siap pakai** (§6bis) — harus diagregasi sendiri dari **IDX Equity & Derivative Log Data** (order/trade mentah + Kode Broker, Rp3jt/bln, historis) atau **IDX Equity Real Time Order** (Rp19,8–22jt/bln, live) | Layak **hanya jika** beli data mentah + bangun agregasi sendiri. EOD/historis via Log Data lebih murah dari semua vendor pihak ketiga yang dicek (§4) |
 | Rolling window D/W | Turunan dari net flow + `trading_calendar` | Layak — bangun kalender dari tanggal-tanggal IDX Stock Summary |
-| Sultan / Zombi tagging | Butuh order-size / kode broker intraday | **Tidak layak** dari sumber publik/EOD. Turunkan jadi "konsentrasi net EOD" |
-| Freq Analyzer / jejak HFT | Butuh tick/ITCH intraday | **Tidak layak** kecuali beli ITCH (mahal) + kode broker tetap anonim intraday |
+| Sultan / Zombi tagging | Butuh order-size / kode broker | **Kode broker TIDAK dianonimkan di produk berlisensi** (Log Data & Real Time Order keduanya punya field `Brokers Code`/`Buyer Code`/`Seller Code`, §6bis) — anggapan lama ("dianonimkan sejak 2021") ternyata hanya berlaku untuk feed **publik gratis**. Layak **jika** beli Log Data; tetap tidak layak dari sumber gratis |
+| Freq Analyzer / jejak HFT | Butuh tick/ITCH intraday | Layak secara data **jika** beli IDX ITCH (Rp14,4–44 juta/bln tergantung tier, §6bis — mahal tapi kode broker **tercantum**, bukan anonim seperti dugaan sebelumnya) |
 | Audit KSEI T+2 (Pilar 4) | Tidak ada feed publik | **Tidak layak** — ganti dengan "tren kepemilikan bulanan" (kasar, lagging) |
 | Corporate action adjustment | KSEI List of CA + IDX announcement | **Layak & gratis** |
 | Rotation chart / sector activity | IDX Index Summary + sektoral + `ForeignBuy/Sell` agregat sektor | **Layak & gratis** |
@@ -160,12 +160,42 @@ Kalau jalur lisensi IDX langsung terlalu berat, broker summary per emiten + fore
 
 1. **KSEI:** Adakah produk **lebih sering dari bulanan** untuk kepemilikan per emiten (via ORCHiD / permintaan resmi / berbayar)? Ini menentukan hidup-matinya "senjata utama".
 2. **KSEI:** Layout kolom file "Kepemilikan Efek (Lokal-Asing)" + seberapa jauh arsip historisnya.
-3. **IDX Data Services:** Apakah **"IDX Equity EoD Recapitulation"** atau **"IDX-i Equity EoD/Delayed Summary"** = broker summary per emiten (beli/jual per broker)? Minta **sample data** + **daftar field**.
-4. **IDX:** **Harga** IDX Equity EoD + Recapitulation (Display & Non-Display), via redistributor lokal (RTI / IQ Plus / IDX-STI).
-5. **IDX:** Lisensi mana yang mengizinkan **menampilkan metrik turunan ke user berbayar** (Display + Redistributor?).
+3. ~~**IDX Data Services:** Apakah "IDX Equity EoD Recapitulation" atau "IDX-i Equity EoD/Delayed Summary" = broker summary per emiten?~~ **RESOLVED — lihat §6bis.**
+4. ~~**IDX:** Harga IDX Equity EoD + Recapitulation (Display & Non-Display), via redistributor lokal.~~ **RESOLVED — lihat §6bis.**
+5. **IDX:** Lisensi mana yang mengizinkan **menampilkan metrik turunan ke user berbayar** (Display + Redistributor?) — §6bis menjawab sebagian (kategori Non-Display ada, tapi kombinasi persis untuk "tampilkan turunan ke user berbayar" belum eksplisit di katalog; masih perlu ditanyakan ke `idxdata@idx.co.id`).
 6. **IDX Stock Summary publik:** kedalaman date picker (berapa tahun mundur) + apakah `ForeignBuy/Sell` mencakup semua papan.
-7. **Vendor** (Invezgo / Sectors / GOAPI): jawab 4 pertanyaan di §4.
+7. **Vendor** (Invezgo / Sectors / GOAPI): jawab 4 pertanyaan di §4. **Invezgo dicek 2026-09-05** (lihat catatan vendor di §4) — dokumentasi API-nya sendiri membatasi semua endpoint maks. 2 tahun historis (bertentangan dengan klaim marketing "15+ tahun sejak 2009") dan **melarang eksplisit redistribusi/jual-ulang data ke pelanggan lain**.
 8. **Legal lokal:** apakah men-scrape endpoint `/primary/` publik IDX untuk histori panjang melanggar ToS IDX secara material (vs. sekadar dilarang formal).
+9. **Log Data via redistributor?** Katalog resmi (§6bis) hanya mencantumkan "IDX Equity & Derivative Log Data" sebagai **Direct Connection** (butuh leased line NSP, biaya terpisah dari Rp3jt/bln lisensinya). Tidak jelas apakah produk ini juga tersedia **Indirect** lewat RTI/IQ Plus/IDX-STI tanpa infra NSP sendiri — tanyakan langsung.
+
+---
+
+## 6bis. RESOLVED 2026-09-05 — IDX Data Service Catalogue & Pricelist (resmi, publik)
+
+Ditemukan via web search biasa (bukan scraping login): **`idx.co.id/media/2qalvu4z/20240923_idx-data-catalogue-pricelist-2024.pdf`** — 49 halaman, PDF publik tanpa login, terbit 23 Sep 2024, masih linked aktif dari idx.co.id per pengecekan hari ini. Ini menjawab tuntas item #3, #4 di atas (yang sebelumnya dicatat "tabel fee KOSONG → hubungi").
+
+**Temuan kunci:**
+- **IDX tidak menjual produk bernama "broker summary per emiten".** Field data tiap produk dicek satu per satu — hanya dua bentuk yang ada: (a) data mentah per-order/per-trade dengan `Brokers Code`/`Buyer Code`/`Seller Code` (real-time atau log historis — kamu agregasi sendiri jadi broker summary), atau (b) rekap **agregat** Domestik vs Asing saja (`IDX Equity EoD Recapitulation`, TANPA breakdown per broker). Jadi **#3 di atas terjawab: EoD Recapitulation BUKAN broker summary**, dan tidak ada produk EoD lain yang lebih dekat — semua vendor pihak ketiga (NeoBDM, Invezgo, RTI, dst.) yang mengaku jual "broker summary" pasti mengagregasi sendiri dari data mentah ini; itu produk turunan mereka, bukan produk resmi IDX.
+- **Kode broker TIDAK dianonimkan di produk berlisensi** — `IDX Equity Real Time Order`, `IDX Equity & Derivative Log Data`, dan seluruh varian `IDX ITCH` eksplisit mencantumkan `Brokers Code` per order dan `Buyer Code`/`Seller Code` per trade. Anggapan lama "kode broker intraday dianonimkan sejak ±2021" (dipakai untuk menyimpulkan Sultan/Zombi/Freq-Analyzer "tidak layak") ternyata **hanya berlaku untuk feed publik gratis di website IDX**, bukan untuk data berlisensi.
+- **Harga bulanan (Non-Group, lokal/IDR — tier termurah untuk pihak non-anggota bursa):**
+
+| Produk | Isi | Direct | Indirect (redistributor) |
+|---|---|---|---|
+| **IDX Equity & Derivative Log Data** (historis, "past trading data") | Order+Trade w/ kode broker | **Rp3.000.000/bln** | tidak dicantumkan di katalog (§6 #9) |
+| IDX Equity Real Time Order | Sama, live | Rp22.000.000/bln | Rp19.800.000/bln (IDX-i) |
+| IDX Equity EoD Recapitulation | Agregat D/F saja, bukan per broker | Rp700.000/bln | Rp650.000/bln |
+| IDX Equity EoD Professional | OHLCV semua papan reguler | Rp3.000.000/bln | Rp2.700.000/bln |
+| IDX Equity EoD Basic | OHLCV ringkas | Rp2.500.000/bln | Rp1.300.000/bln |
+| IDX Data Reference (>800 emiten: lapkeu, CA, disclosure, **status suspend/unsuspend**) | — | Rp10.000.000/bln | Rp9.000.000/bln |
+| IDX ITCH (Total View/Basic/Last Sale) | Order-level + broker code, real-time | Rp16–44jt/bln | Rp14,4–39,6jt/bln |
+| IDX Non-Display Usage Kategori 2 (analisis investasi/kuantitatif — kemungkinan lisensi tambahan wajib untuk pemakaian internal) | — | Rp5.500.000/bln | Rp5.000.000/bln |
+
+- **Catatan biaya tersembunyi:** harga di atas cuma lisensi data. Koneksi **Direct** secara teknis butuh leased line via NSP resmi (Biznet, Lintasarta, Artha Telekomindo, dll. — daftar lengkap di PDF hlm. 40), biaya jaringan terpisah dan tidak tercantum. **Indirect** (lewat RTI/IQ Plus/Antara-IMQ/IDX-STI) tidak butuh NSP tapi produk Log Data tidak terlihat punya varian Indirect di katalog ini.
+- **Uang jaminan (deposit):** 300% dari biaya langganan bulanan, berlaku untuk semua produk. Free trial 1 bulan setelah subscribe.
+- **Fee eksklusi relevan:** "Unit of Count Fee" (biaya tambahan per end-user untuk Real Time Data) **tidak berlaku** untuk "pemakaian internal untuk kepentingan sendiri" — jadi tool personal (bukan disebarkan ke banyak end-user) kemungkinan bebas dari fee ini.
+- PDF disimpan lokal untuk referensi (tidak commit ke repo — file besar/turunan pihak ketiga): scratchpad sesi 2026-09-05.
+
+**Masih belum terjawab (lanjutan §6):** kombinasi lisensi persis untuk kasus "tampilkan metrik turunan ke user berbayar" (item #5), ketersediaan Log Data via redistributor (item #9), dan penerapan biaya NSP riil untuk direct connection.
 
 ---
 

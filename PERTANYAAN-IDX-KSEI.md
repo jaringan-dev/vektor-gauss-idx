@@ -12,23 +12,25 @@ Pendamping [INVENTARIS-SUMBER-DATA.md](INVENTARIS-SUMBER-DATA.md). Tujuan: dapat
 
 ### Pertanyaan
 
-1. **Broker summary per emiten (EOD).** Produk mana yang menyediakan nilai & volume **beli/jual per kode broker, per emiten, per hari** (setelah bursa tutup), termasuk flag **Domestik/Asing (D/F)**? Apakah ini tercakup di *IDX Equity EoD Recapitulation*, *IDX-i Equity EoD Summary*, atau *IDX-i Equity Delayed Summary*? Mohon **daftar field lengkap + contoh file (sample data)**.
+**Update RESOLVED 2026-09-05:** poin 1, 3 (sebagian), 6, dan 9 sudah terjawab lewat katalog harga resmi publik `idx.co.id/media/2qalvu4z/20240923_idx-data-catalogue-pricelist-2024.pdf` (49 halaman, tanpa login) — detail lengkap di `INVENTARIS-SUMBER-DATA.md` §6bis. Ringkasan tiap poin ditambahkan inline di bawah; yang masih **belum terjawab** ditandai tetap terbuka.
 
-2. **Stock summary EOD.** Apakah tersedia produk resmi berisi OHLCV per emiten per hari + **nilai (Rupiah) foreign buy/sell** (bukan hanya volume lembar) + pemisahan papan reguler vs negosiasi? Field list + sample.
+1. ~~**Broker summary per emiten (EOD).**~~ **RESOLVED:** tidak ada produk resmi bernama itu. `IDX Equity EoD Recapitulation` cuma agregat Domestik/Asing (bukan per broker). Yang ada: `IDX Equity & Derivative Log Data` (historis, field `Brokers Code` per order + `Buyer Code`/`Seller Code` per trade, Rp3jt/bln, Direct) atau `IDX Equity Real Time Order` (live, sama field, Rp19,8–22jt/bln) — keduanya harus diagregasi sendiri jadi "broker summary". Masih terbuka: sample data riil belum diminta ke IDX.
 
-3. **Data historis.** Untuk kedua produk di atas: berapa tahun ke belakang data historis yang bisa dibeli, format pengirimannya (file CSV sekali kirim / API / SFTP harian), dan apakah ada biaya terpisah untuk backfill historis vs langganan berjalan.
+2. **Stock summary EOD.** Apakah tersedia produk resmi berisi OHLCV per emiten per hari + **nilai (Rupiah) foreign buy/sell** (bukan hanya volume lembar) + pemisahan papan reguler vs negosiasi? Field list + sample. *(Katalog resmi menunjukkan `IDX Equity EoD Professional`/`Basic` punya OHLCV lengkap tapi field foreign buy/sell dalam Rupiah tidak eksplisit tercantum — masih perlu tanya field list persis.)*
 
-4. **Skema lisensi.** Kami ingin: (a) menyimpan & mengolah data ini di server kami, dan (b) menampilkan **metrik turunan** (mis. rasio konsentrasi broker, skor akumulasi, sparkline) ke pengguna **berbayar** via web dan bot Telegram — **tanpa** menampilkan tabel broker summary mentah. Lisensi apa yang dibutuhkan: **Display** atau **Non-Display** (kategori yang mana)? Apakah kami perlu berstatus **Redistributor**?
+3. **Data historis.** ~~Untuk kedua produk di atas: berapa tahun ke belakang...~~ **SEBAGIAN RESOLVED:** `IDX Equity & Derivative Log Data` dijual per-bulan-berjalan ("1 Bulan/1 Month", Rp3jt), bukan backfill sekaligus — tidak jelas apakah bisa beli banyak bulan historis sekaligus atau cuma mulai dari tanggal subscribe. **Masih terbuka:** konfirmasi ke IDX apakah backfill jauh ke belakang tersedia dan berapa biayanya.
+
+4. **Skema lisensi.** Kami ingin: (a) menyimpan & mengolah data ini di server kami, dan (b) menampilkan **metrik turunan** (mis. rasio konsentrasi broker, skor akumulasi, sparkline) ke pengguna **berbayar** via web dan bot Telegram — **tanpa** menampilkan tabel broker summary mentah. Lisensi apa yang dibutuhkan: **Display** atau **Non-Display** (kategori yang mana)? Apakah kami perlu berstatus **Redistributor**? *(Katalog resmi mengonfirmasi ada "IDX Non-Display Usage Kategori 2: investment analysis/portfolio valuation/risk management/quantitative analysis", Rp5,5jt/bln Direct — kemungkinan cocok, tapi kombinasi persis untuk "tampilkan turunan ke user berbayar" tidak eksplisit di katalog. Masih terbuka.)*
 
 5. **Menampilkan teaser gratis.** Apakah boleh menampilkan sebagian metrik turunan ke pengunjung non-pelanggan (mis. "3 saham akumulasi tertinggi hari ini") sebagai promosi, atau semua turunan wajib di balik paywall?
 
-6. **Biaya.** Kisaran biaya langganan bulanan/tahunan untuk produk EOD di poin 1–2 (Display & Non-Display), via redistributor lokal, untuk skala startup (1 environment, ~900 emiten). Plus perkiraan biaya data historis sekali beli.
+6. ~~**Biaya.**~~ **RESOLVED:** tabel harga resmi lengkap (Direct & Indirect, Group/Non-Group, lokal/asing) ada di `INVENTARIS-SUMBER-DATA.md` §6bis. Termurah relevan: Log Data Rp3jt/bln, EoD Professional Rp3jt/bln (Direct) / Rp2,7jt (Indirect), Data Reference Rp10jt/bln (Direct) / Rp9jt (Indirect). Uang jaminan 300% biaya bulanan berlaku semua produk; free trial 1 bulan.
 
-7. **Jalur akses termudah untuk perusahaan kecil.** Direct via NSP (leased line) vs via redistributor — mana yang Anda sarankan, dan siapa PIC/kontak redistributor lokal yang relevan.
+7. **Jalur akses termudah untuk perusahaan kecil.** Direct via NSP (leased line) vs via redistributor — mana yang Anda sarankan, dan siapa PIC/kontak redistributor lokal yang relevan. *(Katalog resmi cuma cantumkan Log Data sebagai Direct-only — **masih terbuka**: tanyakan apakah tersedia Indirect lewat RTI/IQ Plus/Antara-IMQ/IDX-STI, karena Direct butuh leased line NSP terpisah yang biayanya tak tercantum.)*
 
 8. **Kewajiban pelaporan.** Bentuk & frekuensi laporan pemakaian data (*reporting*) yang wajib kami kirim ke IDX sebagai licensee.
 
-9. **ITCH / order-level.** Hanya untuk pemetaan: apakah data order-by-order (IDX ITCH) memuat identitas broker? (Kami menduga kode broker tetap dianonimkan intraday sejak 2021 — mohon konfirmasi.) Ini menentukan apakah analisa "ukuran order" mungkin dilakukan sama sekali.
+9. ~~**ITCH / order-level.** ... (Kami menduga kode broker tetap dianonimkan intraday sejak 2021 — mohon konfirmasi.)~~ **RESOLVED — dugaan itu SALAH.** Katalog resmi eksplisit mencantumkan `Brokers Code` sebagai field di `IDX Equity Real Time Order`, `IDX Equity & Derivative Log Data`, dan semua varian `IDX ITCH` (Total View/Basic/Last Sale). Kode broker **tidak dianonimkan** di produk berlisensi — anonimisasi cuma berlaku di feed publik gratis. Ini berarti analisa "ukuran order"/Sultan-Zombi **secara data mungkin dilakukan**, asal beli salah satu produk ini.
 
 ---
 

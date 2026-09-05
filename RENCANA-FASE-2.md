@@ -156,7 +156,7 @@ tiap hari (`raw_artifacts`).
 
 | Vendor | Yang diberi | Harga | Kedalaman sejarah | Catatan |
 |---|---|---|---|---|
-| **Broker summary via redistributor IDX** (RTI Infokom, IQ Plus Prima, IDX-STI, Antara/IMQ) | broker summary per emiten (buy/sell per broker, flag D/F) — **inti bandarmologi** | tabel fee KOSONG → hubungi | penuh | Tier 1 = setara Tier 0. Wajib License Agreement + laporan pemakaian ke IDX. Redistribusi butuh izin Display + Redistributor. |
+| **Broker summary via redistributor IDX** (RTI Infokom, IQ Plus Prima, IDX-STI, Antara/IMQ) | **IDX tidak jual "broker summary" jadi** — produk resminya adalah data mentah order/trade dengan `Brokers Code` (lihat `INVENTARIS-SUMBER-DATA.md` §6bis, RESOLVED 2026-09-05: katalog harga resmi `idx.co.id/media/2qalvu4z/20240923_idx-data-catalogue-pricelist-2024.pdf`) | **Rp3jt/bln** (IDX Equity & Derivative Log Data, historis, Direct only) s.d. **Rp22jt/bln** (Real Time Order) — bukan lagi "kosong" | penuh — kode broker **tidak dianonimkan** di produk berlisensi (koreksi atas asumsi lama) | Tier 1 = setara Tier 0. Wajib License Agreement + laporan pemakaian ke IDX. Redistribusi butuh izin Display + Redistributor. Direct connection perlu leased line NSP terpisah (biaya tak tercantum); belum jelas apakah Log Data tersedia Indirect. |
 | **Index Alpha** (`indexalpha.id`) | broker summary + foreign flow, API/CSV/Excel | Free 5 tkr/hari · **Starter Rp200k** (25k req) · Pro Rp350k · Advanced Rp750k | **hanya sejak 2025-01-01** (~1,5 th — backfill pendek) | operator kecil (`@neon_scale`), kemungkinan scraper sendiri → risiko ToS berlapis. Kamu tetap parse KSEI sendiri. |
 | **Sectors.app** (Supertype, SG) | broker summary `/v2/broker-summary/{sym}/top/` **dengan `cohort` (institutional/retail/mixed) + `origin` (domestic/foreign) bawaan**; `shareholders-composition` KSEI **terstruktur** per kategori L/F + **`numbers_of_shareholders` + `change_in_shareholders`** (sinyal un-paintable!) sejak 2021; `corporate-actions` per emiten; foreign flow **dalam IDR** (vs IDX-gratis = volume); indeks sejak 2019; laporan keuangan | **Insider $59/mo** (~Rp950k, 5.000 kredit/bln — pemakaian pribadi <2.000) atau $531/th | broker-level **belum dikonfirmasi** (contoh doc semua Mei 2025); ownership 2021, indeks 2019 | **Opsi Fase 1.5/2 terkuat** — 1 langganan mengganti 3 parser (broker + KSEI ownership + CA). Vendor matang, ToS komersial eksplisit. Konfirmasi: kedalaman sejarah broker-level, hak redistribusi turunan. |
 
@@ -169,9 +169,15 @@ tiap hari (`raw_artifacts`).
 
 ### 2.4 Yang harus dikonfirmasi sebelum Fase 1.5
 KSEI: adakah yang lebih sering dari bulanan (ORCHiD / permintaan resmi / berbayar)?
-IDX: apakah "IDX Equity EoD Recapitulation" = broker summary per emiten + harganya?
+~~IDX: apakah "IDX Equity EoD Recapitulation" = broker summary per emiten + harganya?~~
+**RESOLVED 2026-09-05:** bukan — EoD Recapitulation cuma agregat Domestik/Asing, bukan
+per-broker. IDX tidak jual "broker summary" siap pakai; harus diagregasi sendiri dari
+IDX Equity & Derivative Log Data (Rp3jt/bln, ada kode broker) atau Real Time Order
+(Rp19,8–22jt/bln). Detail & tabel harga lengkap: `INVENTARIS-SUMBER-DATA.md` §6bis.
 `ForeignBuy/Sell` cakupan papan? Vendor: kedalaman sejarah broker-level + hak redistribusi
-turunan untuk pelanggan berbayar? (Pertanyaan lengkap: [PERTANYAAN-IDX-KSEI.md](PERTANYAAN-IDX-KSEI.md).)
+turunan untuk pelanggan berbayar? **Invezgo dicek 2026-09-05: dibatasi 2 tahun historis
+di dokumentasi API-nya sendiri (bertentangan dgn klaim marketing 15+ tahun) dan melarang
+eksplisit redistribusi/jual-ulang data.** (Pertanyaan lengkap: [PERTANYAAN-IDX-KSEI.md](PERTANYAAN-IDX-KSEI.md).)
 
 ---
 
