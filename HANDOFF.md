@@ -1,6 +1,56 @@
 # Handoff — status & next steps
 
-_State as of 2026-09-03 (session 2). Phase 1 is **running**._
+_State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock is on._
+
+## Status at a glance (read this first)
+
+- **Gate ("Decision point" below) is not reached yet.** Forward-test clock started
+  `VG_FORWARD_SINCE=2026-09-04`. Re-read the forward block of `vg eval` /
+  `vg digest --weekly` **on or after ~2026-11-04** (~2 months) before deciding
+  anything about paid data or Phase 2. Don't spend money before then.
+- **Candidates actually being watched:** `FLOAT-ASING-PADAT`, `TIKET-BESAR-AKUM`
+  (long side), `TIKET-KECIL-MARKUP` (avoid filter). `AKUM-ASING` and the raw
+  quadrant tags (MARKUP/AKUMULASI/DISTRIBUSI/MARKDOWN) are confirmed **no edge**
+  in-sample (3.5y research pass + Phase 1 recompute) — they still fire in the
+  digest (legacy/context), but they are not what decides the gate.
+- **EOD driver:** Windows Task Scheduler `VektorGauss-EOD`, daily 19:15 WIB. The
+  GitHub Actions self-hosted-runner cutover was tried and reverted 2026-09-04
+  (WSL2 VM doesn't survive between sessions on this box) — see
+  `INFRA-GITHUB-ACTIONS.md` if revisiting this.
+- **Open from HANDOFF #2, still not done:** `VG_HOLDINGS` and `VG_ACCOUNT_BALANCE`
+  are blank/0 in `.env` — every watchlist ticker digests as "not held" (BUY/WATCH/
+  AVOID, never ADD/HOLD/REDUCE) and the BUY/ADD line has no lot-size suggestion.
+  Needs the user's real portfolio numbers; not something to fill in blind.
+- **Data-vendor research is done and filed, but paid data is explicitly on hold**
+  until the gate above — see `INVENTARIS-SUMBER-DATA.md` §6bis for the official
+  IDX price catalogue and vendor findings (Invezgo, Wiguna Investment, NeoBDM).
+
+## Session 5 update (2026-09-05)
+
+- **Telegram digest reformatted** — watchlist/RADAR were a dense wall of
+  abbreviated text (`NFF D0`/`W1`, quadrant duplicated with the primary tag,
+  "tgt" instead of "target"). Redesigned for scannability: blank line between
+  every ticker, emoji state marker per quadrant, spelled-out flow labels
+  ("Asing bersih — hari ini X · 1 minggu terakhir Y"), sorted monospace
+  tag-count footer instead of a `TAG:n · TAG:n` run-on line. Verified against
+  real 2026-09-04 data via `vg digest --dry-run` and a live sample sent to
+  Telegram. Committed `6c21bba`.
+- **Official IDX Data Service price catalogue found** — public PDF, no login:
+  `idx.co.id/media/2qalvu4z/20240923_idx-data-catalogue-pricelist-2024.pdf`.
+  Resolves the old "fee table empty, contact IDX" gap: IDX sells **no
+  ready-made "broker summary per emiten"** product (only raw order/trade data
+  with broker codes to self-aggregate, or a Domestic/Foreign-only aggregate —
+  confirms `IDX Equity EoD Recapitulation` is NOT broker-level). Also corrects
+  a standing wrong assumption: broker codes are **not anonymized in licensed
+  feeds** (Log Data, Real Time Order, ITCH all carry `Brokers Code`) —
+  anonymization only applies to the free public feed. Vendor checks (Invezgo —
+  2yr API lookback cap + explicit no-redistribution clause; Wiguna Investment —
+  login-gated, founder works at an IDX-member broker; NeoBDM — now blocks
+  ClaudeBot in robots.txt) also logged. Full detail in
+  `INVENTARIS-SUMBER-DATA.md` §6bis, `PERTANYAAN-IDX-KSEI.md`. **Decision:
+  none of this is acted on until the gate above.** Committed `4688b13`.
+- `.env` audited per HANDOFF item #2 below — still open, see "Status at a
+  glance".
 
 ## Session 4 update (2026-09-04)
 
