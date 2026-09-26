@@ -61,6 +61,15 @@ def main(argv: list[str] | None = None) -> int:
     gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
     gd.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    cb = sub.add_parser(
+        "collect-broker-summary",
+        help="broker summary (arjum_idxedge, Tier 3, forward-only) -> broker_flows",
+    )
+    gb = cb.add_mutually_exclusive_group(required=True)
+    gb.add_argument("--latest", action="store_true",
+                    help="watchlist + holdings, stamped to the latest trading day")
+    gb.add_argument("--ticker", metavar="CODE", help="one ticker (e.g. BBCA)")
+
     ch = sub.add_parser("collect-halts",
                         help="IDX trading-halt announcements -> trading_halts")
     gh_ = ch.add_mutually_exclusive_group(required=True)
@@ -199,6 +208,23 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with filings")
+        return 0
+
+    if args.cmd == "collect-broker-summary":
+        if args.ticker:
+            with connect() as conn, conn.cursor() as cur:
+                cur.execute("SELECT max(session_date) FROM trading_calendar")
+                latest = cur.fetchone()[0]
+            if latest is None:
+                print("no trading_calendar rows — run collect-price first")
+                return 1
+            _print(collect.collect_broker_summary_ticker(latest, args.ticker))
+        else:
+            outs = collect.collect_broker_summary_latest()
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} tickers with data")
         return 0
 
     if args.cmd == "collect-halts":

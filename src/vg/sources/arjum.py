@@ -1,0 +1,159 @@
+"""Broker summary via the "IDX Edge PRO" REST API (Tier 3).
+
+    GET {base}/api/broker-summary/{TICKER}      header: X-API-Key: <key>
+
+Response: {"stock_code": "BBCA", "brokers": [
+    {"broker_code":"YU","broker_name":"CGS ...","bval":..,"bvol":..,"bfrq":..,
+     "sfrq":..,"sval":..,"svol":..,"nval":..,"nvol":..}, ...]}
+
+IMPORTANT properties, verified live 2026-09-27:
+  * FORWARD-ONLY. The `?date=` param is silently ignored — the endpoint always
+    returns the latest published trading day. There is no historical backfill;
+    the collector stamps rows with the latest confirmed trading day and can only
+    accumulate going forward. This is why there is no `--backfill` here.
+  * NO origin/cohort field. The feed gives per-broker value/volume/frequency
+    only. Foreign-vs-domestic (`side_flag`) is assigned from FOREIGN_BROKERS
+    below — a static, hand-maintained map, which is exactly the analytical layer
+    NeoBDM/Sectors sell. Keep it auditable (PRINSIP-DATA.md).
+  * Tier 3: a free, almost-certainly-scraped feed from a solo operator. Fine as a
+    Phase-1 personal cross-check; never a production/redistribution source. Cross-
+    validate anything surprising against IDX-direct fields before trusting it.
+
+Unlike the IDX sources this is a plain REST endpoint (no Cloudflare), so it uses
+httpx directly and needs no curl_cffi / residential IP.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from decimal import Decimal, InvalidOperation
+
+import httpx
+
+from ..config import CONFIG
+from .base import BrokerFlowRow, BrokerSummaryFetchResult, BrokerSummarySource
+
+# ---------------------------------------------------------------------------
+# STATIC broker -> origin map. Codes NOT listed here are treated as domestic.
+#
+# This is the one piece the feed cannot give you and the place your domain
+# knowledge shapes the signal (net-foreign, foreign concentration). The default
+# set below = foreign INSTITUTIONAL houses conventionally read as "asing" /
+# smart-money in IDX bandarmology. Audit each code against the `broker_name` that
+# appears in your own feed and adjust — codes can be reassigned over time.
+#
+# NOT included on purpose — "foreign-owned but RETAIL-flow" brokers, whose parent
+# is foreign but whose order flow is overwhelmingly domestic retail. Tagging them
+# 'F' would pollute the net-foreign signal. Decide per your own method before
+# moving any of these up:
+#     YP Mirae Asset (KR) · AG Kiwoom (KR) · XA/XC KB Valbury (KR) ·
+#     SS Samuel (part KR) — the classic Korean-owned retail houses.
+FOREIGN_BROKERS: frozenset[str] = frozenset({
+    "AK",   # UBS Sekuritas Indonesia
+    "KZ",   # CLSA Sekuritas Indonesia
+    "YU",   # CGS International Sekuritas Indonesia (ex CGS-CIMB)
+    "ML",   # Merrill Lynch (BofA) Sekuritas Indonesia
+    "DB",   # Deutsche Sekuritas Indonesia
+    "RX",   # Macquarie Sekuritas Indonesia
+    "ZP",   # Maybank Sekuritas Indonesia (ex Maybank Kim Eng)
+    "BK",   # J.P. Morgan Sekuritas Indonesia
+    "MS",   # Morgan Stanley Sekuritas Indonesia
+    "CG",   # Citigroup Sekuritas Indonesia
+    "CS",   # Credit Suisse Sekuritas Indonesia (merged into UBS 2023; historical)
+    "AI",   # UOB Kay Hian Sekuritas (SG) — confirmed "KAY HIAN SEKURITAS" in feed
+    "DP",   # DBS Vickers Sekuritas Indonesia (SG)
+})
+# ---------------------------------------------------------------------------
+
+_PATH = "/api/broker-summary/{ticker}"
+
+
+def _dec(v) -> Decimal | None:
+    if v is None:
+        return None
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _div(num: Decimal | None, den: Decimal | None) -> Decimal | None:
+    if num is None or not den:
+        return None
+    return num / den
+
+
+def _origin(broker_code: str) -> str:
+    return "F" if broker_code in FOREIGN_BROKERS else "D"
+
+
+class ArjumBrokerSummarySource(BrokerSummarySource):
+    """Latest-day broker summary for one ticker from stock.arjum.com."""
+
+    name = "arjum_idxedge"
+    tier = 3
+
+    @staticmethod
+    def _parse(raw: bytes) -> list[BrokerFlowRow]:
+        doc = json.loads(raw)
+        rows: list[BrokerFlowRow] = []
+        for b in doc.get("brokers", []):
+            code = (b.get("broker_code") or "").strip().upper()
+            if not code:
+                continue
+            buy_val, buy_vol = _dec(b.get("bval")), _dec(b.get("bvol"))
+            sell_val, sell_vol = _dec(b.get("sval")), _dec(b.get("svol"))
+            rows.append(BrokerFlowRow(
+                broker_code=code,
+                broker_name=b.get("broker_name"),
+                buy_val=buy_val,
+                buy_vol=buy_vol,
+                buy_freq=_dec(b.get("bfrq")),
+                sell_val=sell_val,
+                sell_vol=sell_vol,
+                sell_freq=_dec(b.get("sfrq")),
+                net_val=_dec(b.get("nval")),
+                net_vol=_dec(b.get("nvol")),
+                buy_avg=_div(buy_val, buy_vol),
+                sell_avg=_div(sell_val, sell_vol),
+                side_flag=_origin(code),
+                board="ALL",
+            ))
+        return rows
+
+    def _download(self, ticker: str) -> bytes:
+        if not CONFIG.arjum_base_url or not CONFIG.arjum_api_key:
+            raise RuntimeError(
+                "VG_ARJUM_BASE_URL / VG_ARJUM_API_KEY not set — see .env"
+            )
+        url = CONFIG.arjum_base_url + _PATH.format(ticker=ticker.upper())
+        resp = httpx.get(
+            url,
+            headers={"accept": "application/json", "X-API-Key": CONFIG.arjum_api_key},
+            timeout=CONFIG.http_timeout,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    def fetch(self, session_date: date, ticker: str) -> BrokerSummaryFetchResult:
+        ticker = ticker.upper()
+        try:
+            raw = self._download(ticker)
+        except Exception as exc:
+            return BrokerSummaryFetchResult(
+                "error", session_date, ticker, self.name, self.tier,
+                detail=f"{type(exc).__name__}: {exc}",
+            )
+        try:
+            rows = self._parse(raw)
+        except Exception as exc:
+            return BrokerSummaryFetchResult(
+                "error", session_date, ticker, self.name, self.tier, raw_bytes=raw,
+                detail=f"parse: {type(exc).__name__}: {exc}",
+            )
+        status = "ok" if rows else "no_data"
+        return BrokerSummaryFetchResult(
+            status, session_date, ticker, self.name, self.tier,
+            raw_bytes=raw, rows=rows,
+        )

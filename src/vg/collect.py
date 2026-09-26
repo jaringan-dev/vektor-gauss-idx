@@ -33,6 +33,8 @@ from .sources.base import (
 )
 from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
+from .sources.arjum import ArjumBrokerSummarySource
+from .sources.base import BrokerSummaryFetchResult
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
@@ -785,4 +787,86 @@ def collect_trading_halts_range(start: date, end: date) -> list[CollectOutcome]:
             out.append(collect_trading_halts_day(d))
             time.sleep(CONFIG.request_delay_seconds)
         d += timedelta(days=1)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Broker summary (Phase 1.5, arjum_idxedge, Tier 3). FORWARD-ONLY: the feed
+# ignores any date and always returns the latest published trading day, so rows
+# are stamped with the session_date the caller passes (the latest confirmed
+# trading day) and there is no backfill. Per-ticker; the default universe is the
+# watchlist + holdings, not the full ~950-name market (quota + relevance).
+# ---------------------------------------------------------------------------
+
+_BROKER_COLS = (
+    "session_date", "ticker", "broker_code", "side_flag", "buy_val", "sell_val",
+    "buy_vol", "sell_vol", "buy_avg", "sell_avg", "buy_freq", "sell_freq",
+    "net_val", "net_vol", "board", "source", "source_tier",
+)
+_BROKER_UPDATE = tuple(
+    c for c in _BROKER_COLS
+    if c not in ("session_date", "ticker", "broker_code", "board")
+)
+
+
+def _persist_broker(cur: psycopg.Cursor, res: BrokerSummaryFetchResult) -> int:
+    rows = [
+        (res.session_date, res.ticker, r.broker_code, r.side_flag, r.buy_val,
+         r.sell_val, r.buy_vol, r.sell_vol, r.buy_avg, r.sell_avg, r.buy_freq,
+         r.sell_freq, r.net_val, r.net_vol, r.board, res.source, res.source_tier)
+        for r in res.rows
+    ]
+    return upsert_many(
+        cur, "broker_flows", _BROKER_COLS, rows,
+        conflict=("session_date", "ticker", "broker_code", "board"),
+        update=_BROKER_UPDATE,
+    )
+
+
+def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
+    art = (
+        artifacts.store(res.source, res.session_date, res.raw_bytes, stem=res.ticker)
+        if res.raw_bytes else None
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if art:
+                artifacts.record(cur, res.source, res.session_date, *art)
+            rows = _persist_broker(cur, res) if res.status == "ok" else 0
+            _log(cur, res.session_date, res.status, rows,
+                 (res.detail or f"{res.ticker}"), "collect_broker")
+        return CollectOutcome(res.session_date, res.status, rows, res.ticker)
+    except Exception as exc:
+        _log_error(res.session_date, exc, "collect_broker")
+        return CollectOutcome(res.session_date, "error", 0, f"{res.ticker}: {exc}")
+
+
+def collect_broker_summary_ticker(session_date: date, ticker: str) -> CollectOutcome:
+    try:
+        res = ArjumBrokerSummarySource().fetch(session_date, ticker)
+    except Exception as exc:
+        _log_error(session_date, exc, "collect_broker")
+        return CollectOutcome(session_date, "error", 0, f"{ticker}: {exc}")
+    return _collect_broker(res)
+
+
+def collect_broker_summary_latest(tickers: list[str] | None = None) -> list[CollectOutcome]:
+    """Latest trading day, one call per ticker. `tickers` defaults to the
+    watchlist + holdings (deduped, order preserved)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM trading_calendar")
+        latest = cur.fetchone()[0]
+    if latest is None:
+        return [CollectOutcome(date.today(), "error", 0,
+                               "no trading_calendar rows — run collect-price first")]
+    if tickers is None:
+        seen: dict[str, None] = {}
+        for t in (*CONFIG.watchlist, *CONFIG.holdings):
+            seen.setdefault(t, None)
+        tickers = list(seen)
+    out: list[CollectOutcome] = []
+    for i, t in enumerate(tickers):
+        out.append(collect_broker_summary_ticker(latest, t))
+        if i < len(tickers) - 1:
+            time.sleep(CONFIG.request_delay_seconds)
     return out

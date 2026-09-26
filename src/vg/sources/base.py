@@ -222,13 +222,54 @@ class DisclosureSource(ABC):
         ...
 
 
+@dataclass(slots=True)
+class BrokerFlowRow:
+    """One broker's buy/sell on one ticker for one trading day (all boards).
+
+    The feed gives value/volume/frequency per side; `buy_avg`/`sell_avg` (IDR per
+    share) and `side_flag` (D/F origin) are derived — the feed carries neither.
+    `side_flag` comes from a static broker->origin map, NOT from the data itself.
+    """
+
+    broker_code: str
+    broker_name: str | None = None
+    buy_val: Num = None
+    buy_vol: Num = None
+    buy_freq: Num = None
+    sell_val: Num = None
+    sell_vol: Num = None
+    sell_freq: Num = None
+    net_val: Num = None
+    net_vol: Num = None
+    buy_avg: Num = None            # buy_val / buy_vol
+    sell_avg: Num = None           # sell_val / sell_vol
+    side_flag: str | None = None   # 'D' | 'F' | None — from the static origin map
+    board: str = "ALL"             # this feed does not split RG/NG/TN
+
+
+@dataclass(slots=True)
+class BrokerSummaryFetchResult:
+    status: FetchStatus
+    session_date: date
+    ticker: str
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    raw_ext: str = "json"
+    rows: list[BrokerFlowRow] = field(default_factory=list)
+    detail: str = ""
+
+
 class BrokerSummarySource(ABC):
-    """Per-ticker per-broker buy/sell. NOT used in Phase 1 — Tier 1 feed only.
-    Implement in Phase 1.5 behind this same interface."""
+    """Per-ticker per-broker buy/sell for one trading day.
+
+    Phase 1.5 feed. The free stock.arjum.com implementation is forward-only
+    (no historical date param) and Tier 3 (scraped retail platform) — treat as a
+    cross-check, never as a production source. See RENCANA-FASE-1.md."""
 
     name: str
     tier: int
 
     @abstractmethod
-    def fetch(self, session_date: date):  # pragma: no cover
-        raise NotImplementedError("Broker summary is a Phase 1.5 concern — see RENCANA-FASE-1.md")
+    def fetch(self, session_date: date, ticker: str) -> BrokerSummaryFetchResult:
+        ...
