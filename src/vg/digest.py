@@ -294,7 +294,8 @@ def build_daily(session_date: date | None = None) -> str:
                 """
                 SELECT sl.ticker,
                        string_agg(DISTINCT sl.tag, ', ' ORDER BY sl.tag) AS tags,
-                       sc.nff_w1, sc.atr14, pb.close, pb.prev
+                       sc.nff_w1, sc.atr14, pb.close, pb.prev,
+                       sc.bkr_foreign_net_d0, sc.bkr_cr3
                 FROM signal_log sl
                 JOIN signal_components sc
                   ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
@@ -302,7 +303,8 @@ def build_daily(session_date: date | None = None) -> str:
                   ON pb.session_date = sl.session_date AND pb.ticker = sl.ticker
                 WHERE sl.session_date = %s AND sl.tag = ANY(%s)
                   AND NOT (sl.ticker = ANY(%s))
-                GROUP BY sl.ticker, sc.nff_w1, sc.atr14, pb.close, pb.prev
+                GROUP BY sl.ticker, sc.nff_w1, sc.atr14, pb.close, pb.prev,
+                         sc.bkr_foreign_net_d0, sc.bkr_cr3
                 ORDER BY sc.nff_w1 DESC NULLS LAST
                 LIMIT 12
                 """,
@@ -313,12 +315,21 @@ def build_daily(session_date: date | None = None) -> str:
                 L.append("")
                 L.append(_hr("RADAR"))
                 L.append("<i>" + " / ".join(radar_tags) + "  ·  di luar watchlist</i>")
-                for t, tags, nff1, atr, close, prv in radar:
+                for t, tags, nff1, atr, close, prv, bkr_net, bkr_cr3 in radar:
                     cf, af = _f(close), _f(atr)
                     chg1 = (cf / float(prv) - 1) if (cf and prv) else None
                     L.append("")
                     L.append(f"<b>{t}</b>   {_price(close)}   <b>{_pct(chg1)}</b>")
                     sub = f"   Asing bersih 1 minggu terakhir {_idr(_f(nff1))}   ·   {tags}"
+                    # Broker-house foreign net + concentration (arjum, Tier 3) —
+                    # the measure that fires BROKER-ASING-AKUM; distinct from nff.
+                    bn = _f(bkr_net)
+                    if bn is not None:
+                        line = f"\n   Broker asing net {_idr(bn)}"
+                        cr = _f(bkr_cr3)
+                        if cr is not None:
+                            line += f"  ·  CR3 {cr * 100:.0f}%"
+                        sub += line
                     if CONFIG.digest_trade_calls and cf and af:
                         p = calc.plan(cf, calc.atr_stop(cf, af, CONFIG.atr_sl_mult),
                                       target_r=CONFIG.target_r, fee_pct=CONFIG.fee_pct)

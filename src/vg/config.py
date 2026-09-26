@@ -23,7 +23,7 @@ DEFAULT_UA = (
 # Which probation tags the digest RADAR section surfaces (names outside the
 # watchlist). The old default was AKUM-ASING; the first `vg eval` read (HANDOFF)
 # showed it has no edge, so the default is now the two candidates that do.
-DEFAULT_RADAR_TAGS = ("FLOAT-ASING-PADAT", "TIKET-BESAR-AKUM")
+DEFAULT_RADAR_TAGS = ("FLOAT-ASING-PADAT", "TIKET-BESAR-AKUM", "BROKER-ASING-AKUM")
 
 
 def _parse_date(s: str | None) -> date | None:
