@@ -398,3 +398,10 @@ ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS buy_freq  NUMERIC;
 ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS sell_freq NUMERIC;
 ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS net_val   NUMERIC;
 ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS net_vol   NUMERIC;
+
+-- Broker-house foreign flow signals (engine.py). Foreign-BROKER net (IDR) is a
+-- different measure than the domicile-based nff_* columns above — cross-checked,
+-- never summed. bkr_cr3 = top-3 net buyers / all net buyers (0..1).
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_d0 NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_5d NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_cr3            NUMERIC;

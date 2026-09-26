@@ -47,6 +47,13 @@ _MIN_FREQ_FOR_TICKET = 20    # skip avg-ticket z below this many trades (too noi
 DISCLOSURE_MIN_5D = 3         # absolute filing cluster in the trailing 5 td
 DISCLOSURE_SURGE_MULT = 2.0   # ... AND >= this x the trailing-20 td rate (per 5 td)
 
+# Broker-summary signals (arjum_idxedge, Tier 3, forward-only). Broker-house
+# foreign flow (SUM net_val of foreign-broker houses) is a DIFFERENT measure than
+# IDX account-domicile foreign flow (nff_*) — never summed, only cross-checked.
+# Only populated for tickers actually collected (watchlist + holdings). Guesses.
+BROKER_FOREIGN_BAND = 0.05    # |foreign-broker net| >= 5% of day's value => meaningful
+BROKER_XCHECK_BAND = 0.01     # each measure >= 1% of value to enter the konfirm/divergen check
+
 
 @dataclass(slots=True)
 class _Bar:
@@ -111,6 +118,12 @@ class Components:
     foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
     disclosure_5d: int | None = None         # ownership-disclosure filings, trailing 5 td
     disclosure_20d: int | None = None        # ... trailing 20 td (baseline)
+    # Broker-summary (arjum_idxedge, Tier 3). Foreign-BROKER net in IDR — a
+    # different measure than nff_* (account domicile); cross-checked, never summed.
+    bkr_foreign_net_d0: float | None = None   # SUM net_val of side_flag='F' brokers today
+    bkr_foreign_net_5d: float | None = None   # ... trailing 5 td that have broker data
+    bkr_cr3: float | None = None              # top-3 net buyers / all net buyers today (0..1)
+    day_value: float | None = None            # today's traded value (IDR), transient — for ratios
     # Phase B (disclosure_pdf.py parse of the archived KSEI forms) — direction
     # for *today's* filings only, from the header's reliably-parsed shares
     # before/after (not the fragile per-row transaction-type breakdown).
@@ -331,6 +344,49 @@ def _ksei_metrics(cur: psycopg.Cursor, ticker: str, session_date: date) -> _Ksei
     )
 
 
+@dataclass(slots=True)
+class _BrokerSnap:
+    foreign_net_d0: float | None = None
+    foreign_net_5d: float | None = None
+    cr3: float | None = None
+    has_d0: bool = False
+
+
+def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _BrokerSnap:
+    """Broker-house foreign net (side_flag='F') + net-buyer concentration from
+    broker_flows. Forward-only Tier-3 feed: only tickers that were collected have
+    rows, and the trailing window only spans days that were collected."""
+    d0 = cal[-1]
+    cur.execute(
+        "SELECT session_date, COALESCE(SUM(net_val) FILTER (WHERE side_flag = 'F'), 0) "
+        "FROM broker_flows WHERE ticker = %s AND session_date = ANY(%s) "
+        "GROUP BY session_date",
+        (ticker, cal),
+    )
+    by_date = {d: float(v) for d, v in cur.fetchall()}
+    snap = _BrokerSnap()
+    if d0 in by_date:
+        snap.has_d0 = True
+        snap.foreign_net_d0 = by_date[d0]
+    vals5 = [by_date[d] for d in cal[-5:] if d in by_date]
+    if vals5:
+        snap.foreign_net_5d = sum(vals5)
+
+    # CR3 today: top-3 net buyers as a share of all net buying (0..1). High =>
+    # accumulation concentrated in a few houses. Uses only the brokers the feed
+    # reports (top ~20), not the full market — a floor on true concentration.
+    cur.execute(
+        "SELECT net_val FROM broker_flows WHERE ticker = %s AND session_date = %s "
+        "AND net_val > 0 ORDER BY net_val DESC",
+        (ticker, d0),
+    )
+    pos = [float(r[0]) for r in cur.fetchall()]
+    tot = sum(pos)
+    if tot > 0:
+        snap.cr3 = sum(pos[:3]) / tot
+    return snap
+
+
 # ---------------------------------------------------------------------------
 # component maths
 # ---------------------------------------------------------------------------
@@ -350,6 +406,7 @@ def _components(
 
     c = Components(ticker=ticker, close=b0.close)
     c.nff_d0 = b0.nff_idr
+    c.day_value = float(b0.value) if b0.value else None
     if share_change_in_window:
         c.data_flags.append("SHARE_COUNT_CHANGE")
 
@@ -543,6 +600,26 @@ def _classify(c: Components) -> list[str]:
         if c.avg_ticket_z < TICKET_Z_LOW and direction == "up":
             tags.append("TIKET-KECIL-MARKUP")
 
+    # Broker-house foreign flow (arjum_idxedge, Tier 3). A DIFFERENT lens than
+    # nff_* (account domicile): here 'foreign' = trades executed via foreign-broker
+    # houses (see FOREIGN_BROKERS). Net-buy into weakness = accumulation; the
+    # cross-check flags when the two foreign measures disagree.
+    if c.bkr_foreign_net_d0 is not None and c.day_value:
+        rb = c.bkr_foreign_net_d0 / c.day_value
+        if rb >= BROKER_FOREIGN_BAND and direction in ("flat", "down"):
+            tags.append("BROKER-ASING-AKUM")
+        if rb <= -BROKER_FOREIGN_BAND and direction == "up":
+            tags.append("BROKER-ASING-DIST")
+        # cross-check vs account-domicile foreign flow (nff_d0), both normalized
+        if c.nff_d0 is not None:
+            rd = c.nff_d0 / c.day_value
+            if abs(rb) >= BROKER_XCHECK_BAND and abs(rd) >= BROKER_XCHECK_BAND:
+                if (rb > 0) == (rd > 0):
+                    tags.append("BROKER-DOMISILI-KONFIRM")
+                else:
+                    tags.append("BROKER-DOMISILI-DIVERGEN")
+                    c.data_flags.append("BROKER-DOMISILI-DIVERGEN")
+
     return tags
 
 
@@ -557,6 +634,7 @@ _COMP_COLS = (
     "ksei_retail_trend_3m", "ksei_foreign_d3m", "ksei_inst_d3m", "ksei_indiv_d3m",
     "avg_ticket", "avg_ticket_z", "bid_offer_imb", "float_ratio", "foreign_float_5d",
     "disclosure_5d", "disclosure_20d",
+    "bkr_foreign_net_d0", "bkr_foreign_net_5d", "bkr_cr3",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -570,6 +648,7 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.ksei_retail_trend_3m, c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m,
         c.avg_ticket, c.avg_ticket_z, c.bid_offer_imb, c.float_ratio, c.foreign_float_5d,
         c.disclosure_5d, c.disclosure_20d,
+        c.bkr_foreign_net_d0, c.bkr_foreign_net_5d, c.bkr_cr3,
         c.quadrant, sorted(set(c.data_flags)),
     )
 
@@ -605,6 +684,10 @@ def compute_day(session_date: date) -> ComputeSummary:
                 snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
             )
             c.disclosure_5d, c.disclosure_20d = disc.get(t, (0, 0))
+            bsnap = _broker_metrics(cur, t, cal)
+            c.bkr_foreign_net_d0 = bsnap.foreign_net_d0
+            c.bkr_foreign_net_5d = bsnap.foreign_net_5d
+            c.bkr_cr3 = bsnap.cr3
             dflags = dirn.get(t, {})
             c.insider_akum = dflags.get("insider_akum")
             c.insider_dist = dflags.get("insider_dist")

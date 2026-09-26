@@ -131,6 +131,42 @@ def test_classify_tiket_and_float_tags():
     assert _classify(c) == ["FLOAT-ASING-PADAT"]
 
 
+def test_classify_broker_foreign_akum_and_konfirm():
+    # foreign-broker net-buy = 10% of the day's value into flat price, and the
+    # domicile measure (nff_d0) agrees in sign -> AKUM + KONFIRM.
+    c = Components(
+        ticker="BBCA", close=8000.0, price_chg_5d=0.0, nff_w1=0.0,
+        day_value=1_000_000_000.0, bkr_foreign_net_d0=100_000_000.0,
+        nff_d0=50_000_000.0,
+    )
+    tags = _classify(c)
+    assert "BROKER-ASING-AKUM" in tags
+    assert "BROKER-DOMISILI-KONFIRM" in tags
+    assert "BROKER-DOMISILI-DIVERGEN" not in tags
+
+
+def test_classify_broker_domicile_divergen():
+    # foreign-BROKER net-buy but account-domicile foreign net-sell -> the two
+    # foreign measures disagree; annotate DIVERGEN (never sum them).
+    c = Components(
+        ticker="BBCA", close=8000.0, price_chg_5d=0.0, nff_w1=0.0,
+        day_value=1_000_000_000.0, bkr_foreign_net_d0=80_000_000.0,
+        nff_d0=-60_000_000.0,
+    )
+    tags = _classify(c)
+    assert "BROKER-DOMISILI-DIVERGEN" in tags
+    assert "BROKER-DOMISILI-DIVERGEN" in c.data_flags
+
+
+def test_classify_no_broker_tag_below_band():
+    # net-buy only 1% of value (< BROKER_FOREIGN_BAND) -> no AKUM tag
+    c = Components(
+        ticker="BBCA", close=8000.0, price_chg_5d=0.0, nff_w1=0.0,
+        day_value=1_000_000_000.0, bkr_foreign_net_d0=10_000_000.0, nff_d0=0.0,
+    )
+    assert "BROKER-ASING-AKUM" not in _classify(c)
+
+
 def test_classify_akum_asing():
     c = Components(
         ticker="BBRI", close=1000.0, price_chg_5d=-0.01,   # down/flat
