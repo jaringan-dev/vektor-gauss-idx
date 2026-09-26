@@ -835,7 +835,8 @@ def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
             rows = _persist_broker(cur, res) if res.status == "ok" else 0
             _log(cur, res.session_date, res.status, rows,
                  (res.detail or f"{res.ticker}"), "collect_broker")
-        return CollectOutcome(res.session_date, res.status, rows, res.ticker)
+        detail = res.ticker if res.status == "ok" or not res.detail else f"{res.ticker}: {res.detail}"
+        return CollectOutcome(res.session_date, res.status, rows, detail)
     except Exception as exc:
         _log_error(res.session_date, exc, "collect_broker")
         return CollectOutcome(res.session_date, "error", 0, f"{res.ticker}: {exc}")
