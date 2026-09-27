@@ -25,6 +25,7 @@ from decimal import Decimal
 import psycopg
 
 from .db import connect, upsert_many
+from .sources.vektorgauss import is_retail
 
 # -- tunables (all guesses — the forward test decides) -----------------------
 PRICE_FLAT_BAND = 0.02          # |5d return| < 2% counts as "sideways"
@@ -53,6 +54,11 @@ DISCLOSURE_SURGE_MULT = 2.0   # ... AND >= this x the trailing-20 td rate (per 5
 # Only populated for tickers actually collected (watchlist + holdings). Guesses.
 BROKER_FOREIGN_BAND = 0.05    # |foreign-broker net| >= 5% of day's value => meaningful
 BROKER_XCHECK_BAND = 0.01     # each measure >= 1% of value to enter the konfirm/divergen check
+
+# Heuristic participant classifier (INFERENCE, forward-tested). Bands vs day value.
+PARTICIPANT_BAND = 0.05       # cohort net-buy >= 5% of day's value => that cohort is active
+BANDAR_CR1_HIGH = 0.40        # one broker >= 40% of all net buying => concentration
+BANDAR_TICKET_MIN = 50_000_000  # dominant buyer avg ticket >= Rp50jt/trade (institutional footprint)
 
 
 @dataclass(slots=True)
@@ -124,6 +130,13 @@ class Components:
     bkr_foreign_net_5d: float | None = None   # ... trailing 5 td that have broker data
     bkr_cr3: float | None = None              # top-3 net buyers / all net buyers today (0..1)
     day_value: float | None = None            # today's traded value (IDR), transient — for ratios
+    # Heuristic participant classifier (INFERENCE — RETAIL_BROKERS + avg-ticket).
+    bkr_foreign_inst_net: float | None = None # F & not-retail net (IDR)
+    bkr_dom_retail_net: float | None = None   # D & retail net (IDR)
+    bkr_cr1: float | None = None              # top net buyer share (0..1)
+    bkr_top_buyer: str | None = None          # dominant net-buyer broker (transient)
+    bkr_top_buyer_ticket: float | None = None # its avg ticket (transient)
+    bkr_top_buyer_inv_rising: bool | None = None  # its inventory rising (transient)
     # Phase B (disclosure_pdf.py parse of the archived KSEI forms) — direction
     # for *today's* filings only, from the header's reliably-parsed shares
     # before/after (not the fragile per-row transaction-type breakdown).
@@ -350,12 +363,19 @@ class _BrokerSnap:
     foreign_net_5d: float | None = None
     cr3: float | None = None
     has_d0: bool = False
+    # Heuristic participant breakdown (INFERENCE — see RETAIL_BROKERS). All IDR net.
+    foreign_inst_net: float | None = None    # side_flag='F' AND not retail
+    dom_retail_net: float | None = None      # side_flag='D' AND retail cohort
+    cr1: float | None = None                 # top net buyer / all net buying (0..1)
+    top_buyer: str | None = None             # dominant net-buyer broker code
+    top_buyer_ticket: float | None = None    # its avg ticket (buy_val/buy_freq)
+    top_buyer_inv_rising: bool | None = None # its cum_net_val rising over the window
 
 
 def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _BrokerSnap:
-    """Broker-house foreign net (side_flag='F') + net-buyer concentration from
-    broker_flows. Forward-only Tier-3 feed: only tickers that were collected have
-    rows, and the trailing window only spans days that were collected."""
+    """Broker-house foreign net + concentration + a HEURISTIC participant breakdown
+    (foreign-institution vs domestic-retail, dominant "bandar" candidate) from
+    broker_flows + broker_inventory. Tier-3, inference only — forward-tested."""
     d0 = cal[-1]
     cur.execute(
         "SELECT session_date, COALESCE(SUM(net_val) FILTER (WHERE side_flag = 'F'), 0) "
@@ -372,18 +392,48 @@ def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _Broke
     if vals5:
         snap.foreign_net_5d = sum(vals5)
 
-    # CR3 today: top-3 net buyers as a share of all net buying (0..1). High =>
-    # accumulation concentrated in a few houses. Uses only the brokers the feed
-    # reports (top ~20), not the full market — a floor on true concentration.
+    # Full per-broker rows for d0 → concentration + participant cohorts in one pass.
     cur.execute(
-        "SELECT net_val FROM broker_flows WHERE ticker = %s AND session_date = %s "
-        "AND net_val > 0 ORDER BY net_val DESC",
+        "SELECT broker_code, side_flag, net_val, buy_val, buy_freq "
+        "FROM broker_flows WHERE ticker = %s AND session_date = %s",
         (ticker, d0),
     )
-    pos = [float(r[0]) for r in cur.fetchall()]
-    tot = sum(pos)
-    if tot > 0:
-        snap.cr3 = sum(pos[:3]) / tot
+    rows = cur.fetchall()
+    if rows:
+        f_inst = d_retail = 0.0
+        buyers: list[tuple[float, str, float | None]] = []  # (net, code, avg_ticket)
+        for code, sf, net_val, buy_val, buy_freq in rows:
+            net = float(net_val) if net_val is not None else 0.0
+            retail = is_retail(code)
+            if sf == "F" and not retail:
+                f_inst += net
+            if sf == "D" and retail:
+                d_retail += net
+            if net > 0:
+                tkt = (float(buy_val) / float(buy_freq)) if (buy_val and buy_freq) else None
+                buyers.append((net, code, tkt))
+        snap.foreign_inst_net = f_inst
+        snap.dom_retail_net = d_retail
+        buyers.sort(reverse=True)
+        total_buy = sum(b[0] for b in buyers)
+        if total_buy > 0:
+            snap.cr3 = sum(b[0] for b in buyers[:3]) / total_buy
+            snap.cr1 = buyers[0][0] / total_buy
+            snap.top_buyer = buyers[0][1]
+            snap.top_buyer_ticket = buyers[0][2]
+
+    # "Bandar" persistence: is the dominant buyer's inventory (cum_net_val) rising
+    # across the window? Needs broker_inventory (collected for the harvest set).
+    if snap.top_buyer:
+        cur.execute(
+            "SELECT cum_net_val FROM broker_inventory "
+            "WHERE ticker = %s AND broker_code = %s AND session_date = ANY(%s) "
+            "ORDER BY session_date",
+            (ticker, snap.top_buyer, cal),
+        )
+        cums = [float(r[0]) for r in cur.fetchall() if r[0] is not None]
+        if len(cums) >= 2:
+            snap.top_buyer_inv_rising = cums[-1] > cums[0]
     return snap
 
 
@@ -620,6 +670,24 @@ def _classify(c: Components) -> list[str]:
                     tags.append("BROKER-DOMISILI-DIVERGEN")
                     c.data_flags.append("BROKER-DOMISILI-DIVERGEN")
 
+    # HEURISTIC participant classifier (INFERENCE — RETAIL_BROKERS + avg-ticket +
+    # concentration; a broker aggregates many clients, so these are model labels,
+    # never ground truth). All probation, forward-tested.
+    if c.day_value:
+        if (c.bkr_foreign_inst_net is not None
+                and c.bkr_foreign_inst_net / c.day_value >= PARTICIPANT_BAND):
+            tags.append("FOREIGN-INST")          # foreign institutional houses net-buying hard
+        if (c.bkr_dom_retail_net is not None
+                and c.bkr_dom_retail_net / c.day_value >= PARTICIPANT_BAND):
+            tags.append("DOM-RETAIL")            # domestic retail crowding the buy side (caution)
+        # "Bandar" candidate: one broker dominates the net buying, with an
+        # institutional-size ticket, and (where inventory data exists) a rising
+        # position. Concentration + big ticket + persistence.
+        if (c.bkr_cr1 is not None and c.bkr_cr1 >= BANDAR_CR1_HIGH
+                and (c.bkr_top_buyer_ticket or 0) >= BANDAR_TICKET_MIN
+                and c.bkr_top_buyer_inv_rising is not False):
+            tags.append("BANDAR-CANDIDATE")
+
     return tags
 
 
@@ -635,6 +703,7 @@ _COMP_COLS = (
     "avg_ticket", "avg_ticket_z", "bid_offer_imb", "float_ratio", "foreign_float_5d",
     "disclosure_5d", "disclosure_20d",
     "bkr_foreign_net_d0", "bkr_foreign_net_5d", "bkr_cr3",
+    "bkr_foreign_inst_net", "bkr_dom_retail_net", "bkr_cr1", "bkr_top_buyer",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -649,6 +718,7 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.avg_ticket, c.avg_ticket_z, c.bid_offer_imb, c.float_ratio, c.foreign_float_5d,
         c.disclosure_5d, c.disclosure_20d,
         c.bkr_foreign_net_d0, c.bkr_foreign_net_5d, c.bkr_cr3,
+        c.bkr_foreign_inst_net, c.bkr_dom_retail_net, c.bkr_cr1, c.bkr_top_buyer,
         c.quadrant, sorted(set(c.data_flags)),
     )
 
@@ -688,6 +758,12 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.bkr_foreign_net_d0 = bsnap.foreign_net_d0
             c.bkr_foreign_net_5d = bsnap.foreign_net_5d
             c.bkr_cr3 = bsnap.cr3
+            c.bkr_foreign_inst_net = bsnap.foreign_inst_net
+            c.bkr_dom_retail_net = bsnap.dom_retail_net
+            c.bkr_cr1 = bsnap.cr1
+            c.bkr_top_buyer = bsnap.top_buyer
+            c.bkr_top_buyer_ticket = bsnap.top_buyer_ticket
+            c.bkr_top_buyer_inv_rising = bsnap.top_buyer_inv_rising
             dflags = dirn.get(t, {})
             c.insider_akum = dflags.get("insider_akum")
             c.insider_dist = dflags.get("insider_dist")

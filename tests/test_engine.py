@@ -259,3 +259,27 @@ def test_comp_columns_align():
         if col in ("session_date",):
             continue
         assert col in attrs, f"signal_components column {col!r} missing on Components"
+
+
+def test_classify_participant_heuristics():
+    from vg.engine import Components, _classify, BANDAR_TICKET_MIN
+    # foreign-institution net-buy = 8% of value, domestic retail also crowding = 6%
+    c = Components(
+        ticker="X", close=1000.0, price_chg_5d=0.0, nff_w1=0.0, day_value=1_000_000_000.0,
+        bkr_foreign_inst_net=80_000_000.0, bkr_dom_retail_net=60_000_000.0,
+        bkr_cr1=0.5, bkr_top_buyer="YU", bkr_top_buyer_ticket=BANDAR_TICKET_MIN + 1,
+        bkr_top_buyer_inv_rising=True,
+    )
+    tags = _classify(c)
+    assert "FOREIGN-INST" in tags
+    assert "DOM-RETAIL" in tags
+    assert "BANDAR-CANDIDATE" in tags
+
+
+def test_bandar_needs_concentration_and_ticket():
+    from vg.engine import Components, _classify
+    # concentrated (cr1 high) but tiny ticket -> NOT a bandar
+    c = Components(ticker="X", close=100.0, price_chg_5d=0.0, nff_w1=0.0,
+                   day_value=1_000_000_000.0, bkr_cr1=0.8, bkr_top_buyer="XL",
+                   bkr_top_buyer_ticket=1_000_000, bkr_top_buyer_inv_rising=True)
+    assert "BANDAR-CANDIDATE" not in _classify(c)

@@ -80,6 +80,28 @@ FOREIGN_BROKERS: frozenset[str] = frozenset({
 })
 # ---------------------------------------------------------------------------
 
+# STATIC broker -> cohort map. Codes here are treated as RETAIL-dominated order
+# flow (retail-app / mass-retail brokers). Everything else = institution-leaning.
+# This is a HEURISTIC (a broker code aggregates many clients — one broker serves
+# both retail and institutions), so the participant classifier built on it is an
+# INFERENCE, forward-tested, never ground truth. EXTEND with codes you judge retail.
+# Seeded conservatively with the clearest retail-app / mass-retail houses:
+RETAIL_BROKERS: frozenset[str] = frozenset({
+    "YP",   # Mirae Asset Sekuritas (largest retail broker)
+    "XL",   # Stockbit Sekuritas Digital
+    "XC",   # Ajaib Sekuritas Asia
+    "PD",   # Indo Premier Sekuritas (IPOT)
+    "AG",   # Kiwoom Sekuritas Indonesia
+    "CP",   # KB Valbury Sekuritas
+})
+# Fuzzy (bank-backed, serve BOTH retail & institution — left OUT on purpose; add
+# if your read says retail): NI BNI · SQ BCA · EP MNC · GR Panin · DH Sinarmas.
+
+
+def is_retail(broker_code: str) -> bool:
+    return broker_code.upper() in RETAIL_BROKERS
+
+
 _PATH = "/api/broker-summary/{ticker}"
 
 

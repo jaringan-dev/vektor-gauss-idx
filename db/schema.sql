@@ -450,3 +450,11 @@ ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS net_vol   NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_d0 NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_5d NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_cr3            NUMERIC;
+
+-- Heuristic participant classifier (INFERENCE — see RETAIL_BROKERS). Foreign-inst
+-- vs domestic-retail net (IDR), top-buyer concentration, and who the dominant
+-- net-buyer ("bandar candidate") broker is.
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_inst_net NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_dom_retail_net   NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_cr1              NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_top_buyer        TEXT;
