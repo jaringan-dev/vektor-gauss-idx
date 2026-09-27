@@ -66,6 +66,8 @@ FOREIGN_BROKERS: frozenset[str] = frozenset({
     "RX",   # Macquarie Sekuritas Indonesia
     "ZP",   # Maybank Sekuritas Indonesia (ex Maybank Kim Eng)
     "BK",   # J.P. Morgan Sekuritas Indonesia
+    "BB",   # Verdhana Sekuritas Indonesia (Nomura, JP)
+    "DR",   # RHB Sekuritas Indonesia (MY)
     "MS",   # Morgan Stanley Sekuritas Indonesia
     "CG",   # Citigroup Sekuritas Indonesia
     "CS",   # Credit Suisse Sekuritas Indonesia (merged into UBS 2023; historical)
