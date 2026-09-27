@@ -1,8 +1,15 @@
 # Handoff — status & next steps
 
-_State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock is on._
+_State as of 2026-09-27 (session 6). Phase 1 is **running**, forward-test clock is on._
 
 ## Status at a glance (read this first)
+
+- **NEW (session 6):** a free per-ticker broker/price/done feed ("`vektorgauss`",
+  Tier 3) is wired — broker summary, broker inventory, price-history fallback,
+  done-by-price, and a heuristic participant classifier (FOREIGN-INST / DOM-RETAIL
+  / BANDAR-CANDIDATE). All probation, forward-tested. See **Session 6 update** below.
+  Not pushed — GitHub account suspended; canonical branch is the WSL clone's
+  `claude/project-ini-progress-blwa3y`.
 
 - **Gate ("Decision point" below) is not reached yet.** Forward-test clock started
   `VG_FORWARD_SINCE=2026-09-04`. Re-read the forward block of `vg eval` /
@@ -39,6 +46,66 @@ _State as of 2026-09-05 (session 5). Phase 1 is **running**, forward-test clock 
 - **Data-vendor research is done and filed, but paid data is explicitly on hold**
   until the gate above — see `INVENTARIS-SUMBER-DATA.md` §6bis for the official
   IDX price catalogue and vendor findings (Invezgo, Wiguna Investment, NeoBDM).
+
+## Session 6 update (2026-09-27) — VG data feed + participant classifier
+
+**A free per-ticker broker/price feed was found and wired.** Vendor is a solo dev's
+"IDX EDGE PRO" (`stock.arjum.com`, freemium, daily quota reset 00:00 WIB). In code
+and DB it is called **`vektorgauss` / `vektorgauss_history` / `vektorgauss_inventory`
+/ `vektorgauss_done`**, env `VG_FEED_BASE_URL` / `VG_FEED_API_KEY` — deliberately NO
+third-party name anywhere in code/DB/output (endpoint + key live only in `.env`).
+It is **Tier 3** (free/scraped, undisclosed sourcing) → cross-check only, never
+production; high bus-factor. Backup if it dies: price/sector/ownership/seasonality
+are IDX/KSEI-direct (independent); broker/inventory/done are VG-unique → fall back
+to Sectors.app ($59/mo) or IDX Equity & Derivative Log Data (Rp3jt/mo). `raw_artifacts`
+archives every response, so collected data survives feed death — **harvest while free**.
+
+New collectors (all Tier 3, `.env` key required):
+- `vg collect-broker-summary --latest|--radar|--ticker` → `broker_flows` (per-broker
+  buy/sell/freq/net, `side_flag` F/D from the static `FOREIGN_BROKERS` map).
+- `vg collect-broker-inventory --universe|--ticker` → `broker_inventory` (~80 td
+  per-broker daily net + running `cum_net_val`; the historical layer).
+- `vg collect-price-history --universe|--ticker` → gap-fills `price_bars` from the
+  Cloudflare-free `/api/history` (~120 td); source_tier-guarded so it NEVER
+  overwrites Tier-0 IDX rows, only fills gaps + confirms trading_calendar. This is
+  the fallback for the IDX 403/Cloudflare block (proven: recovered 2026-09-25).
+- `vg collect-done-details --ticker [--date] [--max-pages]` → `done_by_price`
+  (tick order-flow aggregated LOCALLY into price levels + aggressor BUY/SELL +
+  foreign F/D split). Expensive (~130 pages/liquid stock/day) → on-demand, NOT EOD.
+
+Engine signals (all probation, weight 0, forward-tested):
+- `BROKER-ASING-AKUM`/`-DIST`, `BROKER-DOMISILI-KONFIRM`/`-DIVERGEN` (broker-house
+  foreign net vs account-domicile nff — different measures, cross-checked not summed).
+- **Participant classifier (INFERENCE):** `FOREIGN-INST`, `DOM-RETAIL`,
+  `BANDAR-CANDIDATE` from `broker_flows`+`broker_inventory` via static
+  `RETAIL_BROKERS` map + avg-ticket + net-buyer concentration (`bkr_cr1`,
+  `bkr_top_buyer` = who the dominant broker is). Honest limits: Foreign/Domestic
+  solid; Institution/Retail weak proxy (no daily label); Market Maker heuristic
+  only. Bandar ≠ foreign (a retail broker can concentrate a gorengan).
+
+Digest: watchlist + RADAR now show "Broker asing net … · CR3 …"; RADAR tags now
+include `BROKER-ASING-AKUM` and `BANDAR-CANDIDATE`. EOD `eod.sh` runs the two-pass
+(compute → `collect-broker-summary --radar` → compute) + `collect-broker-inventory
+--universe` + `collect-price-history --universe`, all best-effort. Call-minimization:
+**skip_existing** (default) on the harvest collectors makes idempotent re-runs cost
+0 API calls; `VG_HARVEST_TICKERS` widens the harvest universe without code changes.
+
+10 planned website features — data coverage: 9/10 have a source now (Sector Activity,
+Rotation, Broker Stalker, Transaction Chart, Seasonality, Balance Position, Broker
+Summary, Inventory, Compare Inventory). Done Detail = `done_by_price` (on-demand).
+Sector was NOT a gap — `collect-profiles` already fills `tickers.sector` (Indonesian
+IDX-IC); a static English sector map was built then reverted to avoid clobbering it.
+
+**REPO STATE / GOTCHA:** work is on branch `claude/project-ini-progress-blwa3y`
+(WSL runtime clone) — cherry-picked from a Windows/OneDrive worktree branch.
+**Not pushed: the GitHub account (jaringan-bot) is SUSPENDED** (push/pull 403).
+The two clones sync via `/mnt/c` only (fetch + cherry-pick); the WSL clone is the
+canonical one (also holds collect-margin/collect-profiles/probe-idx not in the
+worktree base). Push `git push -u origin claude/project-ini-progress-blwa3y` once
+the account is restored. Runtime is still **LOCAL (WSL2 home PC), not VPS** — IDX
+Cloudflare still blocks datacenter IPs, so only the VG feed (Cloudflare-free) could
+move to a VPS, not the IDX-direct sources. Rotate `VG_FEED_API_KEY` (it appeared in
+a chat transcript). pytest 174/174.
 
 ## Session 5 update (2026-09-05)
 

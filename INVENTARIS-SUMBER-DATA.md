@@ -135,6 +135,9 @@ Kalau jalur lisensi IDX langsung terlalu berat, broker summary per emiten + fore
 | **Twelve Data** | Asing | XIDX EOD/intraday | Harga saja, bukan broker summary |
 | Bloomberg / Refinitiv / FactSet / Morningstar | Asing | Redistributor resmi IDX | Mahal, untuk institusi |
 | Wrapper GitHub / RapidAPI (mis. "IDX-API", "indexalpha-api") | — | Scrape situs IDX | **Jangan untuk produksi** — melanggar ToS, rapuh, tanpa lisensi |
+| **VG feed** ("IDX EDGE PRO", solo dev, freemium) | Lokal | Broker summary, akumulasi (~80hr `cum`), OHLCV (~120hr), done-details (tick + agresor + F/D), seasonality, insider, lapkeu, market-cap | **TERINTEGRASI (Tier 3)** sebagai `vektorgauss*` — gratis, sumber tak diungkap, tanpa SLA, ToS larang redistribusi. Cross-check/backfill saja, **jangan produksi/redistribusi**. Kunci di `.env` (`VG_FEED_*`). |
+
+**Catatan integrasi VG feed (2026-09-27):** dipakai untuk mengisi gap broker summary + sebagai fallback harga bebas-Cloudflare (IDX 403). 13 endpoint REST + MCP. Karena Tier 3 & bus-factor tinggi: `raw_artifacts` mengarsipkan tiap respons (data terkumpul selamat bila feed mati), source class mengabstraksi vendor (ganti = 1 class baru), dan fitur inti (harga/sektor/ownership) tetap IDX/KSEI-langsung. Fallback bila mati: **Sectors.app** ($59/bln) atau **IDX Equity & Derivative Log Data** (Rp3jt/bln, §6bis). Jangan jadikan sumber tunggal produk.
 
 **[perlu konfirmasi] untuk tiap vendor:** (a) broker summary **per emiten** dengan split beli/jual + flag D/F? (b) kedalaman histori (tahun)? (c) lisensi memperbolehkan **menampilkan ulang data turunan ke publik**? (d) harga.
 
