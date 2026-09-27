@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     gb = cb.add_mutually_exclusive_group(required=True)
     gb.add_argument("--latest", action="store_true",
                     help="watchlist + holdings, stamped to the latest trading day")
+    gb.add_argument("--radar", action="store_true",
+                    help="watchlist + holdings + today's radar-tagged names (two-pass EOD)")
     gb.add_argument("--ticker", metavar="CODE", help="one ticker (e.g. BBCA)")
 
     ch = sub.add_parser("collect-halts",
@@ -220,7 +222,10 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             _print(collect.collect_broker_summary_ticker(latest, args.ticker))
         else:
-            outs = collect.collect_broker_summary_latest()
+            outs = (
+                collect.collect_broker_summary_radar() if args.radar
+                else collect.collect_broker_summary_latest()
+            )
             for o in outs:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")

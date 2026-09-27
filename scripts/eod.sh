@@ -34,7 +34,13 @@ vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usually 0-15/day)
 vg collect-halts       --backfill "$BACK" "$TODAY"
 vg detect-ca
-vg compute             --backfill "$BACK" "$TODAY"
+vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the radar candidates
+# Broker summary (arjum_idxedge, Tier 3, forward-only) for watchlist + holdings +
+# today's radar-tagged names, then recompute so the broker signals + the RADAR
+# broker line land. Two-pass: needs pass-1 `compute` above. Best-effort — a Tier-3
+# outage must never abort EOD.
+vg collect-broker-summary --radar || true
+vg compute             --backfill "$BACK" "$TODAY" || true   # pass 2 — broker signals land
 vg backfill-outcomes
 vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 

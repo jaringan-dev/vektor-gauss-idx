@@ -871,3 +871,41 @@ def collect_broker_summary_latest(tickers: list[str] | None = None) -> list[Coll
         if i < len(tickers) - 1:
             time.sleep(CONFIG.request_delay_seconds)
     return out
+
+
+# Cap on how many radar-flagged names to pull broker summary for in one EOD pass,
+# so a busy radar day can't blow the free daily quota. Watchlist + holdings are
+# always collected; this bounds only the extra radar candidates.
+_BROKER_RADAR_CAP = 60
+
+
+def collect_broker_summary_radar() -> list[CollectOutcome]:
+    """Two-pass EOD helper: broker summary for watchlist + holdings + the names
+    flagged by today's radar tags (CONFIG.radar_tags), ranked by weekly NFF and
+    capped. Run AFTER the first `compute` (which produces the radar tags), then
+    run `compute` again so the broker signals + the RADAR broker line land."""
+    base = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM trading_calendar")
+        latest = cur.fetchone()[0]
+        if latest is None:
+            return [CollectOutcome(date.today(), "error", 0,
+                                   "no trading_calendar rows — run collect-price first")]
+        extra: list[str] = []
+        if CONFIG.radar_tags:
+            cur.execute(
+                """
+                SELECT sl.ticker
+                FROM signal_log sl
+                JOIN signal_components sc
+                  ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
+                WHERE sl.session_date = %s AND sl.tag = ANY(%s)
+                GROUP BY sl.ticker, sc.nff_w1
+                ORDER BY sc.nff_w1 DESC NULLS LAST
+                LIMIT %s
+                """,
+                (latest, list(CONFIG.radar_tags), _BROKER_RADAR_CAP),
+            )
+            extra = [r[0] for r in cur.fetchall()]
+    tickers = list(dict.fromkeys([*base, *extra]))
+    return collect_broker_summary_latest(tickers=tickers)
