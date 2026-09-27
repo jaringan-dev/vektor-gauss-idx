@@ -42,6 +42,14 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--latest", action="store_true", help="most recent published day")
     g.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    cph = sub.add_parser(
+        "collect-price-history",
+        help="VG feed daily OHLCV+flow (Tier 3, Cloudflare-free) -> price_bars (gap-fill only)",
+    )
+    gph = cph.add_mutually_exclusive_group(required=True)
+    gph.add_argument("--universe", action="store_true", help="watchlist + holdings")
+    gph.add_argument("--ticker", metavar="CODE", help="one ticker (~120 td window)")
+
     co = sub.add_parser("collect-ownership", help="KSEI month-end balance -> ownership_monthly")
     go = co.add_mutually_exclusive_group(required=True)
     go.add_argument("--month", metavar="YYYY-MM", help="one month-end snapshot")
@@ -63,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cb = sub.add_parser(
         "collect-broker-summary",
-        help="broker summary (arjum_idxedge, Tier 3, forward-only) -> broker_flows",
+        help="broker summary (vektorgauss, Tier 3, forward-only) -> broker_flows",
     )
     gb = cb.add_mutually_exclusive_group(required=True)
     gb.add_argument("--latest", action="store_true",
@@ -158,6 +166,17 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with data")
+        return 0
+
+    if args.cmd == "collect-price-history":
+        if args.ticker:
+            _print(collect.collect_price_history_ticker(args.ticker))
+        else:
+            outs = collect.collect_price_history_universe()
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} tickers with data")
         return 0
 
     if args.cmd == "collect-ownership":

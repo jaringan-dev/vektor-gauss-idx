@@ -33,8 +33,8 @@ from .sources.base import (
 )
 from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
-from .sources.arjum import ArjumBrokerSummarySource
-from .sources.base import BrokerSummaryFetchResult
+from .sources.vektorgauss import VgBrokerSummarySource, VgHistoryPriceSource
+from .sources.base import BrokerSummaryFetchResult, PriceBar
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
@@ -791,7 +791,7 @@ def collect_trading_halts_range(start: date, end: date) -> list[CollectOutcome]:
 
 
 # ---------------------------------------------------------------------------
-# Broker summary (Phase 1.5, arjum_idxedge, Tier 3). FORWARD-ONLY: the feed
+# Broker summary (Phase 1.5, vektorgauss, Tier 3). FORWARD-ONLY: the feed
 # ignores any date and always returns the latest published trading day, so rows
 # are stamped with the session_date the caller passes (the latest confirmed
 # trading day) and there is no backfill. Per-ticker; the default universe is the
@@ -844,7 +844,7 @@ def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
 
 def collect_broker_summary_ticker(session_date: date, ticker: str) -> CollectOutcome:
     try:
-        res = ArjumBrokerSummarySource().fetch(session_date, ticker)
+        res = VgBrokerSummarySource().fetch(session_date, ticker)
     except Exception as exc:
         _log_error(session_date, exc, "collect_broker")
         return CollectOutcome(session_date, "error", 0, f"{ticker}: {exc}")
@@ -909,3 +909,83 @@ def collect_broker_summary_radar() -> list[CollectOutcome]:
             extra = [r[0] for r in cur.fetchall()]
     tickers = list(dict.fromkeys([*base, *extra]))
     return collect_broker_summary_latest(tickers=tickers)
+
+
+# ---------------------------------------------------------------------------
+# Price history fallback (vektorgauss_history, Tier 3). Cloudflare-free per-ticker
+# OHLCV + foreign flow (~120 td/call). GAP-FILLS price_bars: a DO UPDATE guarded
+# by source_tier means it fills missing days and refreshes its own Tier-3 rows but
+# NEVER overwrites Tier-0 (IDX-direct) data. Also confirms those days in
+# trading_calendar so `compute` can run even when the IDX price feed is 403-blocked.
+# ---------------------------------------------------------------------------
+
+def _persist_price_history(
+    cur: psycopg.Cursor, ticker: str, bars: list[PriceBar], source: str, tier: int
+) -> int:
+    rows = [_price_row(b.bar_date, b, source, tier) for b in bars if b.bar_date]
+    if not rows:
+        return 0
+    cols = ", ".join(_PRICE_COLS)
+    ph = "(" + ", ".join(["%s"] * len(_PRICE_COLS)) + ")"
+    setc = ", ".join(f"{c} = EXCLUDED.{c}" for c in _PRICE_UPDATE)
+    cur.executemany(
+        f"INSERT INTO price_bars ({cols}) VALUES {ph} "
+        f"ON CONFLICT (session_date, ticker) DO UPDATE SET {setc} "
+        f"WHERE price_bars.source_tier >= EXCLUDED.source_tier",  # never downgrade Tier-0
+        rows,
+    )
+    dates = sorted({b.bar_date for b in bars if b.bar_date})
+    if dates:
+        cur.execute(
+            "INSERT INTO tickers (ticker, first_seen, last_seen) VALUES (%s, %s, %s) "
+            "ON CONFLICT (ticker) DO UPDATE SET "
+            "first_seen = LEAST(tickers.first_seen, EXCLUDED.first_seen), "
+            "last_seen = GREATEST(tickers.last_seen, EXCLUDED.last_seen), updated_at = now()",
+            (ticker, dates[0], dates[-1]),
+        )
+        cur.executemany(
+            "INSERT INTO trading_calendar (session_date, confirmed_by) VALUES (%s, %s) "
+            "ON CONFLICT (session_date) DO NOTHING",
+            [(d, source) for d in dates],
+        )
+    return len(rows)
+
+
+def collect_price_history_ticker(ticker: str) -> CollectOutcome:
+    try:
+        res = VgHistoryPriceSource().fetch(ticker)
+    except Exception as exc:
+        _log_error(date.today(), exc, "collect_price_history")
+        return CollectOutcome(date.today(), "error", 0, f"{ticker}: {exc}")
+    latest = max((b.bar_date for b in res.bars if b.bar_date), default=date.today())
+    art = (
+        artifacts.store(res.source, latest, res.raw_bytes, stem=f"{ticker}-hist")
+        if res.raw_bytes else None
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if art:
+                artifacts.record(cur, res.source, latest, *art)
+            rows = (
+                _persist_price_history(cur, ticker, res.bars, res.source, res.source_tier)
+                if res.status == "ok" else 0
+            )
+            _log(cur, latest, res.status, rows, res.detail or ticker, "collect_price_history")
+        detail = ticker if res.status == "ok" else f"{ticker}: {res.detail}"
+        return CollectOutcome(latest, res.status, rows, detail)
+    except Exception as exc:
+        _log_error(latest, exc, "collect_price_history")
+        return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
+
+
+def collect_price_history_universe(tickers: list[str] | None = None) -> list[CollectOutcome]:
+    """Gap-fill OHLCV + foreign flow for a set of tickers (default watchlist +
+    holdings) from the Cloudflare-free VG feed. One call per ticker (~120 td each)."""
+    if tickers is None:
+        tickers = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+    out: list[CollectOutcome] = []
+    for i, t in enumerate(tickers):
+        out.append(collect_price_history_ticker(t))
+        if i < len(tickers) - 1:
+            time.sleep(CONFIG.request_delay_seconds)
+    return out

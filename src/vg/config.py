@@ -43,8 +43,8 @@ class Config:
     http_timeout: float
     request_delay_seconds: float
     idx_base_url: str
-    arjum_base_url: str
-    arjum_api_key: str
+    feed_base_url: str
+    feed_api_key: str
     telegram_bot_token: str
     telegram_chat_id: str
     watchlist: tuple[str, ...]
@@ -73,10 +73,10 @@ class Config:
             http_timeout=float(os.environ.get("VG_HTTP_TIMEOUT", "30")),
             request_delay_seconds=float(os.environ.get("VG_REQUEST_DELAY_SECONDS", "4")),
             idx_base_url=os.environ.get("VG_IDX_BASE_URL", "https://www.idx.co.id").rstrip("/"),
-            # Broker-summary vendor (Phase 1.5, Tier 3). Endpoint + key both live in
-            # .env, never in source — set VG_ARJUM_BASE_URL and VG_ARJUM_API_KEY.
-            arjum_base_url=os.environ.get("VG_ARJUM_BASE_URL", "").rstrip("/"),
-            arjum_api_key=os.environ.get("VG_ARJUM_API_KEY", ""),
+            # VG data feed (Phase 1.5, Tier 3): broker summary + Cloudflare-free price
+            # history. Endpoint + key live in .env only, never in source.
+            feed_base_url=os.environ.get("VG_FEED_BASE_URL", "").rstrip("/"),
+            feed_api_key=os.environ.get("VG_FEED_API_KEY", ""),
             telegram_bot_token=os.environ.get("VG_TELEGRAM_BOT_TOKEN", ""),
             telegram_chat_id=os.environ.get("VG_TELEGRAM_CHAT_ID", ""),
             watchlist=tuple(t.strip().upper() for t in wl.split(",") if t.strip()),

@@ -1,12 +1,12 @@
-"""Offline tests for the arjum_idxedge broker-summary source."""
+"""Offline tests for the vektorgauss broker-summary source."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
-from vg.sources import arjum
-from vg.sources.arjum import ArjumBrokerSummarySource
+from vg.sources import vektorgauss
+from vg.sources.vektorgauss import VgBrokerSummarySource
 
 # Trimmed from a real 2026-09-27 response: one foreign house (YU=CGS, in the seed
 # FOREIGN_BROKERS set) and one domestic (NI=BNI). nval = bval - sval.
@@ -22,7 +22,7 @@ _SAMPLE = (
 
 
 def test_parse_maps_fields_and_derives_avg():
-    rows = ArjumBrokerSummarySource._parse(_SAMPLE)
+    rows = VgBrokerSummarySource._parse(_SAMPLE)
     assert len(rows) == 2
     yu = next(r for r in rows if r.broker_code == "YU")
     assert yu.buy_val == Decimal("245992925000")
@@ -33,19 +33,19 @@ def test_parse_maps_fields_and_derives_avg():
 
 
 def test_origin_flag_from_static_map():
-    rows = {r.broker_code: r for r in ArjumBrokerSummarySource._parse(_SAMPLE)}
-    assert "YU" in arjum.FOREIGN_BROKERS
+    rows = {r.broker_code: r for r in VgBrokerSummarySource._parse(_SAMPLE)}
+    assert "YU" in vektorgauss.FOREIGN_BROKERS
     assert rows["YU"].side_flag == "F"      # seeded foreign house
     assert rows["NI"].side_flag == "D"      # not in the map -> domestic
 
 
 def test_all_rows_are_all_board():
-    for r in ArjumBrokerSummarySource._parse(_SAMPLE):
+    for r in VgBrokerSummarySource._parse(_SAMPLE):
         assert r.board == "ALL"             # feed does not split RG/NG/TN
 
 
 def test_fetch_injected_ok():
-    src = ArjumBrokerSummarySource()
+    src = VgBrokerSummarySource()
     src._download = lambda ticker: _SAMPLE
     res = src.fetch(date(2026, 9, 27), "bbca")
     assert res.status == "ok"
@@ -55,7 +55,7 @@ def test_fetch_injected_ok():
 
 
 def test_fetch_empty_is_no_data():
-    src = ArjumBrokerSummarySource()
+    src = VgBrokerSummarySource()
     src._download = lambda ticker: b'{"stock_code":"XXXX","brokers":[]}'
     res = src.fetch(date(2026, 9, 27), "XXXX")
     assert res.status == "no_data"

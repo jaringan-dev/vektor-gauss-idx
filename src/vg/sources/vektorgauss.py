@@ -1,4 +1,4 @@
-"""Broker summary via the "IDX Edge PRO" REST API (Tier 3).
+"""Broker summary via the the configured data feed REST API (Tier 3).
 
     GET {base}/api/broker-summary/{TICKER}      header: X-API-Key: <key>
 
@@ -31,8 +31,16 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
+from datetime import date as _date
+
 from ..config import CONFIG
-from .base import BrokerFlowRow, BrokerSummaryFetchResult, BrokerSummarySource
+from .base import (
+    BrokerFlowRow,
+    BrokerSummaryFetchResult,
+    BrokerSummarySource,
+    PriceBar,
+    PriceHistoryResult,
+)
 
 # ---------------------------------------------------------------------------
 # STATIC broker -> origin map. Codes NOT listed here are treated as domestic.
@@ -88,10 +96,10 @@ def _origin(broker_code: str) -> str:
     return "F" if broker_code in FOREIGN_BROKERS else "D"
 
 
-class ArjumBrokerSummarySource(BrokerSummarySource):
-    """Latest-day broker summary for one ticker from stock.arjum.com."""
+class VgBrokerSummarySource(BrokerSummarySource):
+    """Latest-day broker summary for one ticker from VG_FEED_BASE_URL."""
 
-    name = "arjum_idxedge"
+    name = "vektorgauss"
     tier = 3
 
     @staticmethod
@@ -123,14 +131,14 @@ class ArjumBrokerSummarySource(BrokerSummarySource):
         return rows
 
     def _download(self, ticker: str) -> bytes:
-        if not CONFIG.arjum_base_url or not CONFIG.arjum_api_key:
+        if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
             raise RuntimeError(
-                "VG_ARJUM_BASE_URL / VG_ARJUM_API_KEY not set — see .env"
+                "VG_FEED_BASE_URL / VG_FEED_API_KEY not set — see .env"
             )
-        url = CONFIG.arjum_base_url + _PATH.format(ticker=ticker.upper())
+        url = CONFIG.feed_base_url + _PATH.format(ticker=ticker.upper())
         resp = httpx.get(
             url,
-            headers={"accept": "application/json", "X-API-Key": CONFIG.arjum_api_key},
+            headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
             timeout=CONFIG.http_timeout,
         )
         resp.raise_for_status()
@@ -157,3 +165,78 @@ class ArjumBrokerSummarySource(BrokerSummarySource):
             status, session_date, ticker, self.name, self.tier,
             raw_bytes=raw, rows=rows,
         )
+
+
+_HISTORY_PATH = "/api/history/{ticker}"
+
+
+class VgHistoryPriceSource:
+    """Per-ticker daily OHLCV + foreign flow from VG_FEED_BASE_URL /api/history.
+
+    A Cloudflare-free fallback for IdxStockSummarySource (which gets 403'd on
+    non-residential IPs). One call returns a fixed ~120-trading-day rolling window
+    (NO deeper history — every paging/date param is ignored by the feed). Tier 3.
+
+    Units verified live 2026-09-27: value = IDR; volume / f_buy / f_sell / n_foreign
+    = SHARES; n_foreign = f_buy - f_sell (net foreign shares); avg = value/volume;
+    prev = close - change. Fields the endpoint does NOT carry (nonreg board split,
+    listed/tradable shares, bid/offer) stay None -> the float/crossing/order-book
+    signals simply don't fire on history-sourced days; the transaction-analysis
+    core (net foreign flow, avg-ticket, foreign consistency, RS, ATR) does.
+    """
+
+    name = "vektorgauss_history"
+    tier = 3
+
+    @staticmethod
+    def _parse(raw: bytes) -> list[PriceBar]:
+        doc = json.loads(raw)
+        code = (doc.get("stock_code") or "").strip().upper()
+        bars: list[PriceBar] = []
+        for r in doc.get("rows", []):
+            d = r.get("date")
+            if not d:
+                continue
+            close, change = _dec(r.get("close")), _dec(r.get("change"))
+            bar = PriceBar(ticker=code, name=None)
+            bar.bar_date = _date.fromisoformat(d)
+            bar.close = close
+            bar.open = _dec(r.get("open"))
+            bar.high = _dec(r.get("high"))
+            bar.low = _dec(r.get("low"))
+            bar.change = change
+            bar.prev = (close - change) if (close is not None and change is not None) else None
+            bar.volume = _dec(r.get("volume"))
+            bar.value = _dec(r.get("value"))
+            bar.frequency = _dec(r.get("freq"))
+            bar.foreign_buy_vol = _dec(r.get("f_buy"))
+            bar.foreign_sell_vol = _dec(r.get("f_sell"))
+            bars.append(bar)
+        return bars
+
+    def _download(self, ticker: str) -> bytes:
+        if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
+            raise RuntimeError("VG_FEED_BASE_URL / VG_FEED_API_KEY not set — see .env")
+        url = CONFIG.feed_base_url + _HISTORY_PATH.format(ticker=ticker.upper())
+        resp = httpx.get(
+            url,
+            headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
+            timeout=CONFIG.http_timeout,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    def fetch(self, ticker: str) -> PriceHistoryResult:
+        ticker = ticker.upper()
+        try:
+            raw = self._download(ticker)
+        except Exception as exc:
+            return PriceHistoryResult("error", ticker, self.name, self.tier,
+                                      detail=f"{type(exc).__name__}: {exc}")
+        try:
+            bars = self._parse(raw)
+        except Exception as exc:
+            return PriceHistoryResult("error", ticker, self.name, self.tier, raw_bytes=raw,
+                                      detail=f"parse: {type(exc).__name__}: {exc}")
+        status = "ok" if bars else "no_data"
+        return PriceHistoryResult(status, ticker, self.name, self.tier, raw_bytes=raw, bars=bars)

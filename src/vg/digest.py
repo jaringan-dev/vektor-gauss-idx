@@ -321,7 +321,7 @@ def build_daily(session_date: date | None = None) -> str:
                     L.append("")
                     L.append(f"<b>{t}</b>   {_price(close)}   <b>{_pct(chg1)}</b>")
                     sub = f"   Asing bersih 1 minggu terakhir {_idr(_f(nff1))}   ·   {tags}"
-                    # Broker-house foreign net + concentration (arjum, Tier 3) —
+                    # Broker-house foreign net + concentration (vektorgauss, Tier 3) —
                     # the measure that fires BROKER-ASING-AKUM; distinct from nff.
                     bn = _f(bkr_net)
                     if bn is not None:

@@ -15,10 +15,16 @@ Num = Optional[Decimal]
 
 @dataclass(slots=True)
 class PriceBar:
-    """Normalized daily bar for one ticker. Numeric fields are Decimal|None."""
+    """Normalized daily bar for one ticker. Numeric fields are Decimal|None.
+
+    `bar_date` is normally None: the day comes from the fetch's session_date at
+    persist time (IDX Stock Summary = one day, all tickers). A per-ticker history
+    source (vektorgauss /api/history = one ticker, many days) sets it so each bar
+    carries its own day."""
 
     ticker: str
     name: str | None
+    bar_date: date | None = None
     prev: Num = None
     open: Num = None
     first_trade: Num = None
@@ -66,6 +72,21 @@ class PriceSource(ABC):
     @abstractmethod
     def fetch(self, session_date: date) -> PriceFetchResult:
         ...
+
+
+@dataclass(slots=True)
+class PriceHistoryResult:
+    """One ticker's multi-day OHLCV+flow window (each bar carries its own
+    bar_date). The inverse shape of PriceFetchResult — used by a per-ticker
+    history source that backfills / gap-fills price_bars."""
+
+    status: FetchStatus
+    ticker: str
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    bars: list[PriceBar] = field(default_factory=list)
+    detail: str = ""
 
 
 @dataclass(slots=True)
@@ -263,7 +284,7 @@ class BrokerSummaryFetchResult:
 class BrokerSummarySource(ABC):
     """Per-ticker per-broker buy/sell for one trading day.
 
-    Phase 1.5 feed. The free stock.arjum.com implementation is forward-only
+    Phase 1.5 feed. The free VG_FEED_BASE_URL implementation is forward-only
     (no historical date param) and Tier 3 (scraped retail platform) — treat as a
     cross-check, never as a production source. See RENCANA-FASE-1.md."""
 

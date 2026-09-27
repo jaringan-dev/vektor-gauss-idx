@@ -30,12 +30,16 @@ echo "===================== EOD $(date -Is) ====================="
 echo "-- window $BACK .. $TODAY --"
 vg collect-price       --backfill "$BACK" "$TODAY"
 vg collect-index       --backfill "$BACK" "$TODAY"
+# Cloudflare-free fallback: gap-fill watchlist+holdings OHLCV+foreign flow from the
+# VG feed (Tier 3) so a 403 on the IDX price feed above never starves the pipeline.
+# Never overwrites Tier-0 rows; also confirms trading days so `compute` can still run.
+vg collect-price-history --universe || true
 vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usually 0-15/day)
 vg collect-halts       --backfill "$BACK" "$TODAY"
 vg detect-ca
 vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the radar candidates
-# Broker summary (arjum_idxedge, Tier 3, forward-only) for watchlist + holdings +
+# Broker summary (vektorgauss, Tier 3, forward-only) for watchlist + holdings +
 # today's radar-tagged names, then recompute so the broker signals + the RADAR
 # broker line land. Two-pass: needs pass-1 `compute` above. Best-effort — a Tier-3
 # outage must never abort EOD.

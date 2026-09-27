@@ -391,7 +391,7 @@ ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS foreign_float_5d  NUMERIC
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS disclosure_5d     SMALLINT;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS disclosure_20d    SMALLINT;
 
--- Phase 1.5 — the broker-summary feed (arjum_idxedge) carries per-side transaction
+-- Phase 1.5 — the broker-summary feed (vektorgauss) carries per-side transaction
 -- FREQUENCY, which the original broker_flows shape omitted. freq enables avg-ticket
 -- (buy_val/buy_freq) — the "positioning vs churn" signal. net_* stored as reported.
 ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS buy_freq  NUMERIC;

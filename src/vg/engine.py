@@ -47,7 +47,7 @@ _MIN_FREQ_FOR_TICKET = 20    # skip avg-ticket z below this many trades (too noi
 DISCLOSURE_MIN_5D = 3         # absolute filing cluster in the trailing 5 td
 DISCLOSURE_SURGE_MULT = 2.0   # ... AND >= this x the trailing-20 td rate (per 5 td)
 
-# Broker-summary signals (arjum_idxedge, Tier 3, forward-only). Broker-house
+# Broker-summary signals (vektorgauss, Tier 3, forward-only). Broker-house
 # foreign flow (SUM net_val of foreign-broker houses) is a DIFFERENT measure than
 # IDX account-domicile foreign flow (nff_*) — never summed, only cross-checked.
 # Only populated for tickers actually collected (watchlist + holdings). Guesses.
@@ -118,7 +118,7 @@ class Components:
     foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
     disclosure_5d: int | None = None         # ownership-disclosure filings, trailing 5 td
     disclosure_20d: int | None = None        # ... trailing 20 td (baseline)
-    # Broker-summary (arjum_idxedge, Tier 3). Foreign-BROKER net in IDR — a
+    # Broker-summary (vektorgauss, Tier 3). Foreign-BROKER net in IDR — a
     # different measure than nff_* (account domicile); cross-checked, never summed.
     bkr_foreign_net_d0: float | None = None   # SUM net_val of side_flag='F' brokers today
     bkr_foreign_net_5d: float | None = None   # ... trailing 5 td that have broker data
@@ -600,7 +600,7 @@ def _classify(c: Components) -> list[str]:
         if c.avg_ticket_z < TICKET_Z_LOW and direction == "up":
             tags.append("TIKET-KECIL-MARKUP")
 
-    # Broker-house foreign flow (arjum_idxedge, Tier 3). A DIFFERENT lens than
+    # Broker-house foreign flow (vektorgauss, Tier 3). A DIFFERENT lens than
     # nff_* (account domicile): here 'foreign' = trades executed via foreign-broker
     # houses (see FOREIGN_BROKERS). Net-buy into weakness = accumulation; the
     # cross-check flags when the two foreign measures disagree.
