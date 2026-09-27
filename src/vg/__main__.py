@@ -80,6 +80,14 @@ def main(argv: list[str] | None = None) -> int:
                     help="watchlist + holdings + today's radar-tagged names (two-pass EOD)")
     gb.add_argument("--ticker", metavar="CODE", help="one ticker (e.g. BBCA)")
 
+    cbi = sub.add_parser(
+        "collect-broker-inventory",
+        help="VG feed broker-accumulation (~80 td cum net, Tier 3) -> broker_inventory",
+    )
+    gbi = cbi.add_mutually_exclusive_group(required=True)
+    gbi.add_argument("--universe", action="store_true", help="watchlist + holdings")
+    gbi.add_argument("--ticker", metavar="CODE", help="one ticker (~80 td history)")
+
     ch = sub.add_parser("collect-halts",
                         help="IDX trading-halt announcements -> trading_halts")
     gh_ = ch.add_mutually_exclusive_group(required=True)
@@ -245,6 +253,17 @@ def main(argv: list[str] | None = None) -> int:
                 collect.collect_broker_summary_radar() if args.radar
                 else collect.collect_broker_summary_latest()
             )
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            print(f"done: {ok}/{len(outs)} tickers with data")
+        return 0
+
+    if args.cmd == "collect-broker-inventory":
+        if args.ticker:
+            _print(collect.collect_broker_inventory_ticker(args.ticker))
+        else:
+            outs = collect.collect_broker_inventory_universe()
             for o in outs:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")

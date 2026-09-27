@@ -269,6 +269,27 @@ CREATE TABLE IF NOT EXISTS broker_flows (
     PRIMARY KEY (session_date, ticker, broker_code, board)
 );
 
+-- Per-broker daily net + running inventory (cum_net_val) over a trailing window,
+-- from the VG feed's broker-accumulation endpoint (~80 td, top brokers per ticker,
+-- Tier 3). HISTORICAL (unlike broker_flows which is latest-day only). Powers the
+-- Transaction / Inventory / Compare-Inventory charts and Broker-Stalker views.
+CREATE TABLE IF NOT EXISTS broker_inventory (
+    session_date  DATE NOT NULL,
+    ticker        TEXT NOT NULL,
+    broker_code   TEXT NOT NULL,
+    broker_name   TEXT,
+    net_val       NUMERIC,               -- that day's net value (IDR)
+    net_vol       NUMERIC,               -- that day's net volume (shares)
+    cum_net_val   NUMERIC,               -- running inventory = cumulative net value
+    buy_avg       NUMERIC,               -- avg buy price that day
+    sell_avg      NUMERIC,               -- avg sell price that day
+    source        TEXT NOT NULL,
+    source_tier   SMALLINT NOT NULL,
+    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_date, ticker, broker_code)
+);
+CREATE INDEX IF NOT EXISTS idx_broker_inventory_ticker ON broker_inventory (ticker, broker_code, session_date);
+
 CREATE TABLE IF NOT EXISTS broker_affiliation_groups (
     group_id     TEXT NOT NULL,
     broker_code  TEXT NOT NULL,

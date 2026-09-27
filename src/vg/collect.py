@@ -33,8 +33,12 @@ from .sources.base import (
 )
 from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
-from .sources.vektorgauss import VgBrokerSummarySource, VgHistoryPriceSource
-from .sources.base import BrokerSummaryFetchResult, PriceBar
+from .sources.vektorgauss import (
+    VgBrokerInventorySource,
+    VgBrokerSummarySource,
+    VgHistoryPriceSource,
+)
+from .sources.base import BrokerInventoryResult, BrokerSummaryFetchResult, PriceBar
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
@@ -986,6 +990,69 @@ def collect_price_history_universe(tickers: list[str] | None = None) -> list[Col
     out: list[CollectOutcome] = []
     for i, t in enumerate(tickers):
         out.append(collect_price_history_ticker(t))
+        if i < len(tickers) - 1:
+            time.sleep(CONFIG.request_delay_seconds)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Broker inventory (vektorgauss_inventory, Tier 3). Historical per-broker daily
+# net + running cum_net_val (~80 td, top brokers/ticker) -> broker_inventory.
+# Powers the Transaction / Inventory / Compare-Inventory charts. Per-ticker.
+# ---------------------------------------------------------------------------
+
+_INV_COLS = (
+    "session_date", "ticker", "broker_code", "broker_name", "net_val", "net_vol",
+    "cum_net_val", "buy_avg", "sell_avg", "source", "source_tier",
+)
+_INV_UPDATE = tuple(
+    c for c in _INV_COLS if c not in ("session_date", "ticker", "broker_code")
+)
+
+
+def _persist_broker_inventory(cur: psycopg.Cursor, res: BrokerInventoryResult) -> int:
+    rows = [
+        (r.bar_date, res.ticker, r.broker_code, r.broker_name, r.net_val, r.net_vol,
+         r.cum_net_val, r.buy_avg, r.sell_avg, res.source, res.source_tier)
+        for r in res.rows
+    ]
+    return upsert_many(
+        cur, "broker_inventory", _INV_COLS, rows,
+        conflict=("session_date", "ticker", "broker_code"), update=_INV_UPDATE,
+    )
+
+
+def collect_broker_inventory_ticker(ticker: str) -> CollectOutcome:
+    try:
+        res = VgBrokerInventorySource().fetch(ticker)
+    except Exception as exc:
+        _log_error(date.today(), exc, "collect_broker_inventory")
+        return CollectOutcome(date.today(), "error", 0, f"{ticker}: {exc}")
+    latest = max((r.bar_date for r in res.rows), default=date.today())
+    art = (
+        artifacts.store(res.source, latest, res.raw_bytes, stem=ticker)
+        if res.raw_bytes else None
+    )
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            if art:
+                artifacts.record(cur, res.source, latest, *art)
+            rows = _persist_broker_inventory(cur, res) if res.status == "ok" else 0
+            _log(cur, latest, res.status, rows, res.detail or ticker, "collect_broker_inventory")
+        detail = ticker if res.status == "ok" else f"{ticker}: {res.detail}"
+        return CollectOutcome(latest, res.status, rows, detail)
+    except Exception as exc:
+        _log_error(latest, exc, "collect_broker_inventory")
+        return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
+
+
+def collect_broker_inventory_universe(tickers: list[str] | None = None) -> list[CollectOutcome]:
+    """~80 td per-broker inventory for a set of tickers (default watchlist + holdings)."""
+    if tickers is None:
+        tickers = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+    out: list[CollectOutcome] = []
+    for i, t in enumerate(tickers):
+        out.append(collect_broker_inventory_ticker(t))
         if i < len(tickers) - 1:
             time.sleep(CONFIG.request_delay_seconds)
     return out

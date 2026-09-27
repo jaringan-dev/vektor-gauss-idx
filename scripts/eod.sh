@@ -45,6 +45,9 @@ vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the r
 # outage must never abort EOD.
 vg collect-broker-summary --radar || true
 vg compute             --backfill "$BACK" "$TODAY" || true   # pass 2 — broker signals land
+# Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
+# feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.
+vg collect-broker-inventory --universe || true
 vg backfill-outcomes
 vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 

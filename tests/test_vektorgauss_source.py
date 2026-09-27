@@ -60,3 +60,35 @@ def test_fetch_empty_is_no_data():
     res = src.fetch(date(2026, 9, 27), "XXXX")
     assert res.status == "no_data"
     assert res.rows == []
+
+
+# --- broker inventory (broker-accumulation) ---------------------------------
+_INV = (
+    b'{"stock_code":"BBCA","start_date":"2026-06-03","end_date":"2026-06-04",'
+    b'"series":[{"broker_code":"AK","broker_name":"UBS","points":['
+    b'{"date":"2026-06-03","nval":-99362772500,"nvol":-17556000,"cum_nval":-99362772500,"bavg":5646.05,"savg":5650.26},'
+    b'{"date":"2026-06-04","nval":10000000,"nvol":1600,"cum_nval":-99352772500,"bavg":5660.0,"savg":5655.0}]}]}'
+)
+
+
+def test_inventory_parse_cumulative_and_fields():
+    from vg.sources.vektorgauss import VgBrokerInventorySource
+    rows = VgBrokerInventorySource._parse(_INV)
+    assert len(rows) == 2
+    r0, r1 = rows
+    assert r0.broker_code == "AK"
+    assert str(r0.bar_date) == "2026-06-03"
+    assert r0.net_val == Decimal("-99362772500")
+    assert r0.cum_net_val == Decimal("-99362772500")
+    # running inventory carries forward
+    assert r1.cum_net_val == Decimal("-99352772500")
+
+
+def test_inventory_fetch_injected():
+    from datetime import date
+    from vg.sources.vektorgauss import VgBrokerInventorySource
+    src = VgBrokerInventorySource()
+    src._download = lambda t: _INV
+    res = src.fetch("bbca")
+    assert res.status == "ok" and res.ticker == "BBCA" and res.source_tier == 3
+    assert len(res.rows) == 2

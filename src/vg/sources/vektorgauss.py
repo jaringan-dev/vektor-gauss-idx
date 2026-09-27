@@ -36,6 +36,8 @@ from datetime import date as _date
 from ..config import CONFIG
 from .base import (
     BrokerFlowRow,
+    BrokerInventoryResult,
+    BrokerInventoryRow,
     BrokerSummaryFetchResult,
     BrokerSummarySource,
     PriceBar,
@@ -242,3 +244,71 @@ class VgHistoryPriceSource:
                                       detail=f"parse: {type(exc).__name__}: {exc}")
         status = "ok" if bars else "no_data"
         return PriceHistoryResult(status, ticker, self.name, self.tier, raw_bytes=raw, bars=bars)
+
+
+_ACCUM_PATH = "/api/broker-accumulation/{ticker}"
+
+
+class VgBrokerInventorySource:
+    """Per-broker daily net + running inventory (cum_net_val) over a trailing
+    window (~80 td, top brokers per ticker) from the VG feed's broker-accumulation
+    endpoint. HISTORICAL — unlike the latest-day-only broker summary. Tier 3.
+
+    Response: {stock_code, start_date, end_date, series:[{broker_code, broker_name,
+    points:[{date, nval, nvol, cum_nval, bavg, savg}]}], top_buyers, top_sellers}.
+    """
+
+    name = "vektorgauss_inventory"
+    tier = 3
+
+    @staticmethod
+    def _parse(raw: bytes) -> list[BrokerInventoryRow]:
+        doc = json.loads(raw)
+        rows: list[BrokerInventoryRow] = []
+        for s in doc.get("series", []):
+            code = (s.get("broker_code") or "").strip().upper()
+            if not code:
+                continue
+            bname = s.get("broker_name")
+            for p in s.get("points", []):
+                d = p.get("date")
+                if not d:
+                    continue
+                rows.append(BrokerInventoryRow(
+                    bar_date=_date.fromisoformat(d),
+                    broker_code=code,
+                    broker_name=bname,
+                    net_val=_dec(p.get("nval")),
+                    net_vol=_dec(p.get("nvol")),
+                    cum_net_val=_dec(p.get("cum_nval")),
+                    buy_avg=_dec(p.get("bavg")),
+                    sell_avg=_dec(p.get("savg")),
+                ))
+        return rows
+
+    def _download(self, ticker: str) -> bytes:
+        if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
+            raise RuntimeError("VG_FEED_BASE_URL / VG_FEED_API_KEY not set — see .env")
+        url = CONFIG.feed_base_url + _ACCUM_PATH.format(ticker=ticker.upper())
+        resp = httpx.get(
+            url,
+            headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
+            timeout=CONFIG.http_timeout,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    def fetch(self, ticker: str) -> BrokerInventoryResult:
+        ticker = ticker.upper()
+        try:
+            raw = self._download(ticker)
+        except Exception as exc:
+            return BrokerInventoryResult("error", ticker, self.name, self.tier,
+                                         detail=f"{type(exc).__name__}: {exc}")
+        try:
+            rows = self._parse(raw)
+        except Exception as exc:
+            return BrokerInventoryResult("error", ticker, self.name, self.tier, raw_bytes=raw,
+                                         detail=f"parse: {type(exc).__name__}: {exc}")
+        status = "ok" if rows else "no_data"
+        return BrokerInventoryResult(status, ticker, self.name, self.tier, raw_bytes=raw, rows=rows)

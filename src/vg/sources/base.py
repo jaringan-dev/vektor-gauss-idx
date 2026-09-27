@@ -281,6 +281,31 @@ class BrokerSummaryFetchResult:
     detail: str = ""
 
 
+@dataclass(slots=True)
+class BrokerInventoryRow:
+    """One broker's net + running inventory on one day for one ticker."""
+
+    bar_date: date
+    broker_code: str
+    broker_name: str | None = None
+    net_val: Num = None
+    net_vol: Num = None
+    cum_net_val: Num = None      # running cumulative net value = "inventory"
+    buy_avg: Num = None
+    sell_avg: Num = None
+
+
+@dataclass(slots=True)
+class BrokerInventoryResult:
+    status: FetchStatus
+    ticker: str
+    source: str
+    source_tier: int
+    raw_bytes: bytes | None = None
+    rows: list[BrokerInventoryRow] = field(default_factory=list)
+    detail: str = ""
+
+
 class BrokerSummarySource(ABC):
     """Per-ticker per-broker buy/sell for one trading day.
 
