@@ -213,7 +213,7 @@ def build_daily(session_date: date | None = None) -> str:
                 """
                 SELECT pb.ticker, pb.close, pb.prev, sc.atr14, sc.nff_d0, sc.nff_w1,
                        sc.foreign_consistency_10d, sc.quadrant, sc.ksei_foreign_trend_3m,
-                       sc.avg_ticket_z, sc.data_flags
+                       sc.avg_ticket_z, sc.data_flags, sc.bkr_foreign_net_d0, sc.bkr_cr3
                 FROM price_bars pb
                 LEFT JOIN signal_components sc
                        ON sc.session_date = pb.session_date AND sc.ticker = pb.ticker
@@ -242,7 +242,7 @@ def build_daily(session_date: date | None = None) -> str:
                     else:
                         L.append(f"▪️ <b>{t}</b>  — tidak diperdagangkan")
                     continue
-                _, close, prv, atr, nff0, nff1, cons, quad, kf, atz, flags = r
+                _, close, prv, atr, nff0, nff1, cons, quad, kf, atz, flags, bkr_net, bkr_cr3 = r
                 chg1 = (float(close) / float(prv) - 1) if (close and prv) else None
                 tset = tags_today.get(t, set())
                 prim = _primary(tset)
@@ -275,6 +275,16 @@ def build_daily(session_date: date | None = None) -> str:
                     f"   Asing bersih — hari ini {_idr(_f(nff0))}"
                     f"   ·   1 minggu terakhir {_idr(_f(nff1))}"
                 )
+
+                # Broker-house foreign net + concentration (vektorgauss feed) — a
+                # different lens than the domicile-based "Asing bersih" above.
+                bn = _f(bkr_net)
+                if bn is not None:
+                    bline = f"   Broker asing net {_idr(bn)}"
+                    cr = _f(bkr_cr3)
+                    if cr is not None:
+                        bline += f"  ·  CR3 {cr * 100:.0f}%"
+                    L.append(bline)
 
                 marks = [_annot(a) for a in ann]
                 for fl in flags or []:
