@@ -92,3 +92,23 @@ def test_inventory_fetch_injected():
     res = src.fetch("bbca")
     assert res.status == "ok" and res.ticker == "BBCA" and res.source_tier == 3
     assert len(res.rows) == 2
+
+
+# --- done-details local aggregation ----------------------------------------
+def test_done_ticks_aggregate_by_price_with_aggressor_and_foreign():
+    from vg.sources.vektorgauss import _agg_done_ticks
+    ticks = [
+        {"market_board": "RG", "price_num": 6225, "qty_num": 10, "value_raw": 6_225_000,
+         "action": "BUY", "buyer_type": "F", "seller_type": "D"},
+        {"market_board": "RG", "price_num": 6225, "qty_num": 5, "value_raw": 3_112_500,
+         "action": "SELL", "buyer_type": "D", "seller_type": "F"},
+        {"market_board": "NG", "price_num": 6200, "qty_num": 100, "value_raw": 62_000_000,
+         "action": "BUY", "buyer_type": "D", "seller_type": "D"},
+    ]
+    agg: dict = {}
+    _agg_done_ticks(ticks, agg)
+    rg = agg[("RG", 6225)]
+    assert rg["qty"] == 15 and rg["trades"] == 2
+    assert rg["ba"] == 10 and rg["sa"] == 5          # aggressor split
+    assert rg["fb"] == 10 and rg["fs"] == 5          # foreign buy/sell split
+    assert agg[("NG", 6200)]["qty"] == 100

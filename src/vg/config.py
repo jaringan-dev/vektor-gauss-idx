@@ -49,6 +49,7 @@ class Config:
     telegram_chat_id: str
     watchlist: tuple[str, ...]
     holdings: tuple[str, ...]
+    harvest_tickers: tuple[str, ...]
     radar_tags: tuple[str, ...]
     forward_since: date | None
     digest_trade_calls: bool
@@ -61,6 +62,7 @@ class Config:
     @staticmethod
     def load() -> "Config":
         wl = os.environ.get("VG_WATCHLIST", "")
+        hv = os.environ.get("VG_HARVEST_TICKERS", "")
         hd = os.environ.get("VG_HOLDINGS", "")
         rt = os.environ.get("VG_RADAR_TAGS", "").strip()
         return Config(
@@ -81,6 +83,9 @@ class Config:
             telegram_chat_id=os.environ.get("VG_TELEGRAM_CHAT_ID", ""),
             watchlist=tuple(t.strip().upper() for t in wl.split(",") if t.strip()),
             holdings=tuple(t.strip().upper() for t in hd.split(",") if t.strip()),
+            # Extra tickers to harvest VG-feed data for beyond watchlist+holdings
+            # (broker summary/inventory, done-by-price). Widen the "panen" without code.
+            harvest_tickers=tuple(t.strip().upper() for t in hv.split(",") if t.strip()),
             radar_tags=(
                 tuple(t.strip().upper() for t in rt.split(",") if t.strip())
                 if rt else DEFAULT_RADAR_TAGS

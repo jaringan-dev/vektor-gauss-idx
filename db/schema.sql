@@ -290,6 +290,30 @@ CREATE TABLE IF NOT EXISTS broker_inventory (
 );
 CREATE INDEX IF NOT EXISTS idx_broker_inventory_ticker ON broker_inventory (ticker, broker_code, session_date);
 
+-- Done-by-price aggregate (Tier 3). One done-details fetch (paginated, expensive)
+-- is aggregated LOCALLY into price-level buckets so it is paid for once and never
+-- re-fetched. Per (day, ticker, board, price): volume/value/trades + aggressor
+-- split (action BUY/SELL = HAKA/HAKI) + foreign split (buyer/seller_type F).
+-- This is the compact data layer for the Done Detail Visualization.
+CREATE TABLE IF NOT EXISTS done_by_price (
+    session_date        DATE NOT NULL,
+    ticker              TEXT NOT NULL,
+    board               TEXT NOT NULL,          -- RG | NG | TN
+    price_num           BIGINT NOT NULL,
+    qty                 NUMERIC,                -- total lots done at this price
+    value               NUMERIC,                -- IDR
+    trades              INT,                    -- number of done ticks
+    buy_aggressor_qty   NUMERIC,                -- action=BUY (offer lifted, HAKA)
+    sell_aggressor_qty  NUMERIC,                -- action=SELL (bid hit, HAKI)
+    foreign_buy_qty     NUMERIC,                -- buyer_type=F
+    foreign_sell_qty    NUMERIC,                -- seller_type=F
+    source              TEXT NOT NULL,
+    source_tier         SMALLINT NOT NULL,
+    fetched_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_date, ticker, board, price_num)
+);
+CREATE INDEX IF NOT EXISTS idx_done_by_price_ticker ON done_by_price (ticker, session_date);
+
 CREATE TABLE IF NOT EXISTS broker_affiliation_groups (
     group_id     TEXT NOT NULL,
     broker_code  TEXT NOT NULL,

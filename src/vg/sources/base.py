@@ -282,6 +282,34 @@ class BrokerSummaryFetchResult:
 
 
 @dataclass(slots=True)
+class DoneByPriceRow:
+    """Done-details aggregated to one price level on one board for one day."""
+
+    board: str
+    price_num: int
+    qty: Num = None
+    value: Num = None
+    trades: int = 0
+    buy_aggressor_qty: Num = None
+    sell_aggressor_qty: Num = None
+    foreign_buy_qty: Num = None
+    foreign_sell_qty: Num = None
+
+
+@dataclass(slots=True)
+class DoneByPriceResult:
+    status: FetchStatus
+    ticker: str
+    session_date: date | None
+    source: str
+    source_tier: int
+    rows: list[DoneByPriceRow] = field(default_factory=list)
+    pages_fetched: int = 0
+    total_pages: int = 0
+    detail: str = ""
+
+
+@dataclass(slots=True)
 class BrokerInventoryRow:
     """One broker's net + running inventory on one day for one ticker."""
 

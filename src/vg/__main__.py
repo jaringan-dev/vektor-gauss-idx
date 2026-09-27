@@ -88,6 +88,15 @@ def main(argv: list[str] | None = None) -> int:
     gbi.add_argument("--universe", action="store_true", help="watchlist + holdings")
     gbi.add_argument("--ticker", metavar="CODE", help="one ticker (~80 td history)")
 
+    cdd = sub.add_parser(
+        "collect-done-details",
+        help="VG feed done-details -> done_by_price aggregate (Tier 3, on-demand, expensive)",
+    )
+    cdd.add_argument("--ticker", metavar="CODE", required=True, help="one ticker")
+    cdd.add_argument("--date", metavar="YYYY-MM-DD", help="one day (default: latest trading day)")
+    cdd.add_argument("--max-pages", type=int, default=200, help="page cap (100 ticks/page)")
+    cdd.add_argument("--force", action="store_true", help="re-fetch even if already stored")
+
     ch = sub.add_parser("collect-halts",
                         help="IDX trading-halt announcements -> trading_halts")
     gh_ = ch.add_mutually_exclusive_group(required=True)
@@ -268,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
                 _print(o)
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} tickers with data")
+        return 0
+
+    if args.cmd == "collect-done-details":
+        _print(collect.collect_done_details_ticker(
+            args.ticker, _d(args.date) if args.date else None,
+            max_pages=args.max_pages, force=args.force,
+        ))
         return 0
 
     if args.cmd == "collect-halts":

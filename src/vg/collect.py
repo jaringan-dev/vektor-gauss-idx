@@ -36,9 +36,15 @@ from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
 from .sources.vektorgauss import (
     VgBrokerInventorySource,
     VgBrokerSummarySource,
+    VgDoneDetailsSource,
     VgHistoryPriceSource,
 )
-from .sources.base import BrokerInventoryResult, BrokerSummaryFetchResult, PriceBar
+from .sources.base import (
+    BrokerInventoryResult,
+    BrokerSummaryFetchResult,
+    DoneByPriceResult,
+    PriceBar,
+)
 from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
 from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
 from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
@@ -846,6 +852,23 @@ def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
         return CollectOutcome(res.session_date, "error", 0, f"{res.ticker}: {exc}")
 
 
+def _harvest_universe() -> list[str]:
+    """The default 'panen' set: watchlist + holdings + VG_HARVEST_TICKERS, deduped."""
+    return list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings, *CONFIG.harvest_tickers)))
+
+
+def _have_for_date(cur: psycopg.Cursor, table: str, tickers: list[str], d: date) -> set[str]:
+    """Tickers that already have >=1 row in `table` on session_date d — used to
+    skip API calls for data we already hold (quota saver). Idempotent re-runs cost 0."""
+    if not tickers:
+        return set()
+    cur.execute(
+        f"SELECT DISTINCT ticker FROM {table} WHERE session_date = %s AND ticker = ANY(%s)",
+        (d, tickers),
+    )
+    return {r[0] for r in cur.fetchall()}
+
+
 def collect_broker_summary_ticker(session_date: date, ticker: str) -> CollectOutcome:
     try:
         res = VgBrokerSummarySource().fetch(session_date, ticker)
@@ -855,25 +878,28 @@ def collect_broker_summary_ticker(session_date: date, ticker: str) -> CollectOut
     return _collect_broker(res)
 
 
-def collect_broker_summary_latest(tickers: list[str] | None = None) -> list[CollectOutcome]:
-    """Latest trading day, one call per ticker. `tickers` defaults to the
-    watchlist + holdings (deduped, order preserved)."""
+def collect_broker_summary_latest(
+    tickers: list[str] | None = None, *, skip_existing: bool = True
+) -> list[CollectOutcome]:
+    """Latest trading day, one call per ticker. `tickers` defaults to the harvest
+    universe (watchlist + holdings + VG_HARVEST_TICKERS). With skip_existing (default),
+    tickers that already have broker_flows for that day are skipped — no wasted call."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT max(session_date) FROM trading_calendar")
         latest = cur.fetchone()[0]
-    if latest is None:
-        return [CollectOutcome(date.today(), "error", 0,
-                               "no trading_calendar rows — run collect-price first")]
-    if tickers is None:
-        seen: dict[str, None] = {}
-        for t in (*CONFIG.watchlist, *CONFIG.holdings):
-            seen.setdefault(t, None)
-        tickers = list(seen)
+        if latest is None:
+            return [CollectOutcome(date.today(), "error", 0,
+                                   "no trading_calendar rows — run collect-price first")]
+        tickers = tickers or _harvest_universe()
+        have = _have_for_date(cur, "broker_flows", tickers, latest) if skip_existing else set()
+    todo = [t for t in tickers if t not in have]
     out: list[CollectOutcome] = []
-    for i, t in enumerate(tickers):
+    for i, t in enumerate(todo):
         out.append(collect_broker_summary_ticker(latest, t))
-        if i < len(tickers) - 1:
+        if i < len(todo) - 1:
             time.sleep(CONFIG.request_delay_seconds)
+    if have:
+        out.append(CollectOutcome(latest, "ok", 0, f"skipped {len(have)} already-have"))
     return out
 
 
@@ -982,16 +1008,29 @@ def collect_price_history_ticker(ticker: str) -> CollectOutcome:
         return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
 
 
-def collect_price_history_universe(tickers: list[str] | None = None) -> list[CollectOutcome]:
-    """Gap-fill OHLCV + foreign flow for a set of tickers (default watchlist +
-    holdings) from the Cloudflare-free VG feed. One call per ticker (~120 td each)."""
-    if tickers is None:
-        tickers = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+def collect_price_history_universe(
+    tickers: list[str] | None = None, *, skip_existing: bool = True
+) -> list[CollectOutcome]:
+    """Gap-fill OHLCV + foreign flow for the harvest universe from the VG feed
+    (~120 td/call). With skip_existing, a ticker that already has the latest
+    trading day in price_bars (from ANY source, e.g. IDX Tier-0) is skipped — the
+    history call would only duplicate it."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM trading_calendar")
+        latest = cur.fetchone()[0]
+        tickers = tickers or _harvest_universe()
+        have = (
+            _have_for_date(cur, "price_bars", tickers, latest)
+            if (skip_existing and latest) else set()
+        )
+    todo = [t for t in tickers if t not in have]
     out: list[CollectOutcome] = []
-    for i, t in enumerate(tickers):
+    for i, t in enumerate(todo):
         out.append(collect_price_history_ticker(t))
-        if i < len(tickers) - 1:
+        if i < len(todo) - 1:
             time.sleep(CONFIG.request_delay_seconds)
+    if have:
+        out.append(CollectOutcome(latest, "ok", 0, f"skipped {len(have)} already-have"))
     return out
 
 
@@ -1046,13 +1085,95 @@ def collect_broker_inventory_ticker(ticker: str) -> CollectOutcome:
         return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
 
 
-def collect_broker_inventory_universe(tickers: list[str] | None = None) -> list[CollectOutcome]:
-    """~80 td per-broker inventory for a set of tickers (default watchlist + holdings)."""
-    if tickers is None:
-        tickers = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+def collect_broker_inventory_universe(
+    tickers: list[str] | None = None, *, skip_existing: bool = True
+) -> list[CollectOutcome]:
+    """~80 td per-broker inventory for the harvest universe. With skip_existing, a
+    ticker that already has broker_inventory for the latest trading day is skipped
+    (the ~80 td window barely moves day-to-day — re-pull only when stale)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM trading_calendar")
+        latest = cur.fetchone()[0]
+        tickers = tickers or _harvest_universe()
+        have = (
+            _have_for_date(cur, "broker_inventory", tickers, latest)
+            if (skip_existing and latest) else set()
+        )
+    todo = [t for t in tickers if t not in have]
     out: list[CollectOutcome] = []
-    for i, t in enumerate(tickers):
+    for i, t in enumerate(todo):
         out.append(collect_broker_inventory_ticker(t))
-        if i < len(tickers) - 1:
+        if i < len(todo) - 1:
             time.sleep(CONFIG.request_delay_seconds)
+    if have:
+        out.append(CollectOutcome(latest, "ok", 0, f"skipped {len(have)} already-have"))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Done-by-price (vektorgauss_done, Tier 3). Done-details is paginated & expensive
+# (~130 pages for a liquid stock/day), so we fetch ONCE, aggregate LOCALLY into
+# price-level buckets, and never re-fetch (freshness guard). On-demand, not EOD.
+# ---------------------------------------------------------------------------
+
+_DONE_COLS = (
+    "session_date", "ticker", "board", "price_num", "qty", "value", "trades",
+    "buy_aggressor_qty", "sell_aggressor_qty", "foreign_buy_qty", "foreign_sell_qty",
+    "source", "source_tier",
+)
+_DONE_UPDATE = tuple(
+    c for c in _DONE_COLS if c not in ("session_date", "ticker", "board", "price_num")
+)
+
+
+def _persist_done_by_price(cur: psycopg.Cursor, res: DoneByPriceResult) -> int:
+    sd = res.session_date
+    rows = [
+        (sd, res.ticker, r.board, r.price_num, r.qty, r.value, r.trades,
+         r.buy_aggressor_qty, r.sell_aggressor_qty, r.foreign_buy_qty, r.foreign_sell_qty,
+         res.source, res.source_tier)
+        for r in res.rows
+    ]
+    return upsert_many(
+        cur, "done_by_price", _DONE_COLS, rows,
+        conflict=("session_date", "ticker", "board", "price_num"), update=_DONE_UPDATE,
+    )
+
+
+def collect_done_details_ticker(
+    ticker: str, session_date: date | None = None, *, max_pages: int = 200, force: bool = False
+) -> CollectOutcome:
+    """Fetch + aggregate one ticker's done-details for one day into done_by_price.
+    Skips (0 API calls) if that day is already stored, unless force=True."""
+    ticker = ticker.upper()
+    # Freshness guard — resolve the target day and skip if we already have it.
+    with connect() as conn, conn.cursor() as cur:
+        target = session_date
+        if target is None:
+            cur.execute("SELECT max(session_date) FROM trading_calendar")
+            target = cur.fetchone()[0]
+        if target is not None and not force:
+            cur.execute(
+                "SELECT 1 FROM done_by_price WHERE ticker = %s AND session_date = %s LIMIT 1",
+                (ticker, target),
+            )
+            if cur.fetchone():
+                return CollectOutcome(target, "ok", 0, f"{ticker}: already have (skipped)")
+    try:
+        res = VgDoneDetailsSource().fetch(ticker, target, max_pages=max_pages)
+    except Exception as exc:
+        _log_error(target or date.today(), exc, "collect_done_details")
+        return CollectOutcome(target or date.today(), "error", 0, f"{ticker}: {exc}")
+    sd = res.session_date or target or date.today()
+    res.session_date = sd
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            rows = _persist_done_by_price(cur, res) if res.status == "ok" else 0
+            _log(cur, sd, res.status, rows, res.detail or ticker, "collect_done_details")
+        detail = f"{ticker} ({res.pages_fetched}/{res.total_pages} pg)"
+        if res.detail:
+            detail += f" — {res.detail}"
+        return CollectOutcome(sd, res.status, rows, detail)
+    except Exception as exc:
+        _log_error(sd, exc, "collect_done_details")
+        return CollectOutcome(sd, "error", 0, f"{ticker}: {exc}")

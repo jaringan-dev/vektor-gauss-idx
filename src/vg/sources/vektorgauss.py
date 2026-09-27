@@ -40,6 +40,8 @@ from .base import (
     BrokerInventoryRow,
     BrokerSummaryFetchResult,
     BrokerSummarySource,
+    DoneByPriceResult,
+    DoneByPriceRow,
     PriceBar,
     PriceHistoryResult,
 )
@@ -312,3 +314,99 @@ class VgBrokerInventorySource:
                                          detail=f"parse: {type(exc).__name__}: {exc}")
         status = "ok" if rows else "no_data"
         return BrokerInventoryResult(status, ticker, self.name, self.tier, raw_bytes=raw, rows=rows)
+
+
+_DONE_PATH = "/api/done-details"
+_DONE_PER_PAGE = 100
+_DONE_MAX_PAGES = 200        # hard ceiling; a liquid stock/day is ~130 pages
+
+
+def _agg_done_ticks(ticks: list[dict], agg: dict) -> None:
+    """Fold a page of done ticks into agg keyed by (board, price_num). In-place, so
+    12k ticks never all live in memory — we keep only the compact price-level map."""
+    for t in ticks:
+        board = (t.get("market_board") or "").strip().upper() or "RG"
+        price = t.get("price_num")
+        if price is None:
+            continue
+        qty = t.get("qty_num") or 0
+        val = t.get("value_raw") or 0
+        key = (board, int(price))
+        a = agg.get(key)
+        if a is None:
+            a = agg[key] = {"qty": 0, "value": 0, "trades": 0, "ba": 0, "sa": 0, "fb": 0, "fs": 0}
+        a["qty"] += qty
+        a["value"] += val
+        a["trades"] += 1
+        if (t.get("action") or "").upper() == "BUY":
+            a["ba"] += qty          # buy aggressor (offer lifted)
+        elif (t.get("action") or "").upper() == "SELL":
+            a["sa"] += qty          # sell aggressor (bid hit)
+        if (t.get("buyer_type") or "").upper() == "F":
+            a["fb"] += qty
+        if (t.get("seller_type") or "").upper() == "F":
+            a["fs"] += qty
+
+
+class VgDoneDetailsSource:
+    """Done-details (tick order-flow) for one ticker+day, aggregated LOCALLY into
+    a compact per-price-level map. The endpoint is paginated (per_page=100) and a
+    liquid name is ~130 pages/day — expensive — so this is an on-demand,
+    page-capped harvest that is paid ONCE (freshness guard in collect prevents
+    re-fetching). Tier 3. Each tick: {market_board, price_num, qty_num(lots),
+    value_raw, buyer, seller, buyer_type/seller_type (F/D), action (BUY/SELL aggressor)}.
+    """
+
+    name = "vektorgauss_done"
+    tier = 3
+
+    def _get(self, ticker: str, session_date, page: int) -> dict:
+        params = {"code": ticker.upper(), "page": page, "per_page": _DONE_PER_PAGE}
+        if session_date is not None:
+            params["date"] = session_date.isoformat()
+        resp = httpx.get(
+            CONFIG.feed_base_url + _DONE_PATH,
+            headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
+            params=params, timeout=CONFIG.http_timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def fetch(self, ticker: str, session_date, max_pages: int = _DONE_MAX_PAGES) -> DoneByPriceResult:
+        ticker = ticker.upper()
+        if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
+            return DoneByPriceResult("error", ticker, session_date, self.name, self.tier,
+                                     detail="VG_FEED_BASE_URL / VG_FEED_API_KEY not set")
+        agg: dict = {}
+        got = 0
+        total_pages = 0
+        resolved_date = session_date
+        try:
+            first = self._get(ticker, session_date, 1)
+            total_pages = int(first.get("total_pages") or 0)
+            if first.get("date") and resolved_date is None:
+                resolved_date = _date.fromisoformat(first["date"])
+            _agg_done_ticks(first.get("data", []), agg)
+            got = 1
+            last = min(total_pages, max_pages)
+            for pg in range(2, last + 1):
+                _agg_done_ticks(self._get(ticker, resolved_date, pg).get("data", []), agg)
+                got += 1
+        except Exception as exc:
+            if not agg:
+                return DoneByPriceResult("error", ticker, resolved_date, self.name, self.tier,
+                                         detail=f"{type(exc).__name__}: {exc}")
+            # partial: keep what we aggregated, flag it
+        rows = [
+            DoneByPriceRow(
+                board=b, price_num=p,
+                qty=_dec(a["qty"]), value=_dec(a["value"]), trades=a["trades"],
+                buy_aggressor_qty=_dec(a["ba"]), sell_aggressor_qty=_dec(a["sa"]),
+                foreign_buy_qty=_dec(a["fb"]), foreign_sell_qty=_dec(a["fs"]),
+            )
+            for (b, p), a in agg.items()
+        ]
+        status = "ok" if rows else "no_data"
+        detail = "" if got >= total_pages else f"partial: {got}/{total_pages} pages (cap {max_pages})"
+        return DoneByPriceResult(status, ticker, resolved_date, self.name, self.tier,
+                                 rows=rows, pages_fetched=got, total_pages=total_pages, detail=detail)
