@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Vektor Gauss — Superadmin{% endblock %}</title>
+  <style>
+    :root {
+      --bg:#f7f7f8; --panel:#fff; --fg:#1a1a1a; --muted:#6b7280; --border:#e5e7eb;
+      --ready-bg:#dcfce7; --ready-fg:#166534;
+      --fail-bg:#fee2e2; --fail-fg:#991b1b;
+      --prob-bg:#f3f4f6; --prob-fg:#6b7280;
+      --pos:#15803d; --neg:#b91c1c;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg:#0e0f12; --panel:#17181c; --fg:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
+        --ready-bg:#14341f; --ready-fg:#4ade80;
+        --fail-bg:#3a1618; --fail-fg:#f87171;
+        --prob-bg:#1f2227; --prob-fg:#9ca3af;
+        --pos:#4ade80; --neg:#f87171;
+      }
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
+    header { padding:20px 16px; border-bottom:1px solid var(--border); }
+    header h1 { margin:0; font-size:18px; }
+    header .sub { color:var(--muted); font-size:13px; margin-top:4px; }
+    main { max-width:1100px; margin:0 auto; padding:16px; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px;
+             padding:16px; margin-bottom:20px; overflow-x:auto; }
+    .panel h2 { margin:0 0 4px; font-size:15px; }
+    .panel .note { color:var(--muted); font-size:12px; margin:0 0 12px; }
+    table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    th, td { text-align:right; padding:7px 10px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    th:first-child, td:first-child { text-align:left; }
+    th { color:var(--muted); font-weight:600; font-size:12px; }
+    .pos { color:var(--pos); }
+    .neg { color:var(--neg); }
+    .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; }
+    .badge.ready { background:var(--ready-bg); color:var(--ready-fg); }
+    .badge.failing { background:var(--fail-bg); color:var(--fail-fg); }
+    .badge.probation { background:var(--prob-bg); color:var(--prob-fg); }
+    .err { background:var(--fail-bg); color:var(--fail-fg); padding:12px; border-radius:8px;
+           font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; }
+    .disclaimer { color:var(--muted); font-size:11px; margin-top:8px; }
+    footer { max-width:1100px; margin:0 auto; padding:16px; color:var(--muted); font-size:12px; }
+    code { background:var(--prob-bg); padding:1px 5px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Vektor Gauss — Superadmin</h1>
+    <div class="sub">{% block subtitle %}{% endblock %}</div>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer>{% block footer %}{% endblock %}</footer>
+</body>
+</html>

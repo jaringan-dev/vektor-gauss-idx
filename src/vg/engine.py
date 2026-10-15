@@ -1017,6 +1017,8 @@ def eval_tags(since: date | None = None) -> list[dict]:
             f"""
             SELECT s.tag,
                    count(*)                                       AS n,
+                   min(s.session_date)                            AS first_date,
+                   max(s.session_date)                            AS last_date,
                    avg(s.ret_h5)                                  AS avg_h5,
                    avg(s.ret_h1  - m.ret_h1_all)                  AS edge_h1,
                    avg(s.ret_h5  - m.ret_h5_all)                  AS edge_h5,

@@ -163,6 +163,11 @@ def main(argv: list[str] | None = None) -> int:
     ow.add_argument("ticker")
     ow.add_argument("--months", type=int, default=12)
 
+    sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
+    sv.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only, §3.6)")
+    sv.add_argument("--port", type=int, default=8787)
+    sv.add_argument("--reload", action="store_true", help="auto-reload on code change (dev)")
+
     args = p.parse_args(argv)
 
     if args.cmd == "init-db":
@@ -546,6 +551,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {r['month'].isoformat():<10}{_p(r['foreign_pct']):>10}"
                   f"{_p(r['inst_pct']):>10}{_p(r['indiv_pct']):>11}"
                   f"{_p(r['scripless_pct']):>11}{hc:>10}")
+        return 0
+
+    if args.cmd == "serve":
+        try:
+            import uvicorn
+        except ModuleNotFoundError:
+            print('web extra not installed. Run:  pip install -e ".[web]"')
+            return 1
+        print(f"superadmin dashboard → http://{args.host}:{args.port}  (Ctrl-C to stop)")
+        uvicorn.run("vg.web.app:app", host=args.host, port=args.port, reload=args.reload)
         return 0
 
     return 1

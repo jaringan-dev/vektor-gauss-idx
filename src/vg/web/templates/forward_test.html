@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block subtitle %}Layar 3 — Forward-test / gate tracker{% endblock %}
+
+{% macro eval_table(rows, show_status) %}
+  <table>
+    <thead>
+      <tr>
+        <th>tag</th><th>n</th><th>span</th>
+        <th>edge H1</th><th>edge H5</th><th>edge H10</th>
+        <th>hit</th><th>uHit</th>
+        <th>nLiq</th><th>edge H5 (liq)</th>
+        {% if show_status %}<th>edge−biaya</th><th>status</th>{% endif %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ r.tag }}</td>
+        <td>{{ r.n }}</td>
+        <td>{{ r.span_days }}h</td>
+        <td class="{{ r.edge_h1.c }}">{{ r.edge_h1.t }}</td>
+        <td class="{{ r.edge_h5.c }}">{{ r.edge_h5.t }}</td>
+        <td class="{{ r.edge_h10.c }}">{{ r.edge_h10.t }}</td>
+        <td>{{ r.hit }}</td>
+        <td>{{ r.univ_hit }}</td>
+        <td>{{ r.n_liquid }}</td>
+        <td class="{{ r.edge_h5_liquid.c }}">{{ r.edge_h5_liquid.t }}</td>
+        {% if show_status %}
+        <td class="{{ r.edge_after_cost.c }}">{{ r.edge_after_cost.t }}</td>
+        <td><span class="badge {{ r.status.code }}">{{ r.status.label }}</span></td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endmacro %}
+
+{% block content %}
+  {% if error %}
+    <div class="panel">
+      <h2>Tidak bisa membaca data</h2>
+      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
+         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
+      <div class="err">{{ error }}</div>
+    </div>
+  {% else %}
+    <div class="panel">
+      <h2>Forward-test{% if forward_since %} — sejak {{ forward_since }}{% endif %}</h2>
+      <p class="note">
+        Jendela out-of-sample — satu-satunya angka yang menentukan promosi. Gate:
+        n &ge; {{ min_n }}, span &ge; {{ min_span }} hari, dan edge H5 tetap positif
+        setelah biaya ~{{ cost_bp }}bp. Tag yang gagal ditampilkan sama jelasnya dengan yang lolos.
+      </p>
+      {% if forward %}
+        {{ eval_table(forward, true) }}
+      {% elif forward_since %}
+        <p class="note">Belum ada baris matang sejak {{ forward_since }}
+           (butuh ~2 minggu data + <code>vg backfill-outcomes</code>).</p>
+      {% else %}
+        <p class="note">VG_FORWARD_SINCE belum diset — jendela forward tidak aktif.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>In-sample (seluruh riwayat)</h2>
+      <p class="note">Konteks saja — in-sample cenderung over-optimistic, jadi TIDAK pernah
+         dipakai untuk promosi dan sengaja tidak diberi status.</p>
+      {% if insample %}
+        {{ eval_table(insample, false) }}
+      {% else %}
+        <p class="note">Belum ada baris signal_log yang matang.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>edge H5 = return 5 hari tag dikurangi rata-rata universe hari yang sama.
+     hit/uHit = % hari positif tag vs universe. nLiq/edge H5 (liq) = idem untuk saham &gt;Rp5B/hari.</p>
+  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
+     Tidak ada perintah beli/jual.</p>
+{% endblock %}
