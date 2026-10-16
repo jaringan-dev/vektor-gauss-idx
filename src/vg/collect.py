@@ -869,9 +869,13 @@ def _have_for_date(cur: psycopg.Cursor, table: str, tickers: list[str], d: date)
     return {r[0] for r in cur.fetchall()}
 
 
-def collect_broker_summary_ticker(session_date: date, ticker: str) -> CollectOutcome:
+def collect_broker_summary_ticker(
+    session_date: date, ticker: str, *, use_date: bool = False
+) -> CollectOutcome:
+    """Broker summary for one ticker. use_date=True pins the API to session_date
+    (start==end) for HISTORICAL backfill; default False = latest published day."""
     try:
-        res = VgBrokerSummarySource().fetch(session_date, ticker)
+        res = VgBrokerSummarySource().fetch(session_date, ticker, use_date=use_date)
     except Exception as exc:
         _log_error(session_date, exc, "collect_broker")
         return CollectOutcome(session_date, "error", 0, f"{ticker}: {exc}")

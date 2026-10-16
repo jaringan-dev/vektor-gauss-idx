@@ -158,24 +158,35 @@ class VgBrokerSummarySource(BrokerSummarySource):
             ))
         return rows
 
-    def _download(self, ticker: str) -> bytes:
+    def _download(self, ticker: str, on_date: date | None = None) -> bytes:
         if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
             raise RuntimeError(
                 "VG_FEED_BASE_URL / VG_FEED_API_KEY not set — see .env"
             )
         url = CONFIG.feed_base_url + _PATH.format(ticker=ticker.upper())
+        params: dict = {}
+        if on_date is not None:
+            # The feed now honours a date range (verified live 2026-10-16: different
+            # dates return genuinely different broker data, back to 2020). start==end
+            # pins ONE trading day -> enables historical backfill. Without it the
+            # endpoint returns only the latest published day.
+            d = on_date.isoformat()
+            params["start_date"] = params["end_date"] = d
         resp = httpx.get(
             url,
             headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
+            params=params or None,
             timeout=CONFIG.http_timeout,
         )
         resp.raise_for_status()
         return resp.content
 
-    def fetch(self, session_date: date, ticker: str) -> BrokerSummaryFetchResult:
+    def fetch(
+        self, session_date: date, ticker: str, *, use_date: bool = False
+    ) -> BrokerSummaryFetchResult:
         ticker = ticker.upper()
         try:
-            raw = self._download(ticker)
+            raw = self._download(ticker, on_date=session_date if use_date else None)
         except Exception as exc:
             return BrokerSummaryFetchResult(
                 "error", session_date, ticker, self.name, self.tier,
