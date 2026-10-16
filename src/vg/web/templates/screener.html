@@ -21,7 +21,12 @@
         {{ rows|length }} saham kena minimal satu tag pada sesi terakhir yang punya sinyal.
         ★ = watchlist Anda · 📌 = sedang dipegang. Diurut arus asing 1 minggu (terbesar dulu).
       </p>
-      <table>
+      <p>
+        <input id="q" class="filter" type="search" autocomplete="off"
+               placeholder="Cari saham atau tag…  (mis. BBRI, BROKER-ASING-AKUM)">
+        <span id="count" class="count"></span>
+      </p>
+      <table id="screener">
         <thead>
           <tr>
             <th>saham</th><th></th><th>harga</th><th>chg</th>
@@ -32,7 +37,7 @@
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr>
+          <tr data-search="{{ r.ticker }} {{ r.tags }}">
             <td>{% if r.in_wl %}★ {% endif %}<b>{{ r.ticker }}</b>{% if r.held %} 📌{% endif %}</td>
             <td title="{{ r.quad }}">{{ r.quad_emoji }}</td>
             <td>{{ r.price }}</td>
@@ -46,9 +51,35 @@
             <td style="text-align:left">{{ r.tags }}</td>
           </tr>
           {% endfor %}
+          <tr id="nomatch" style="display:none"><td colspan="11" class="note">Tidak ada yang cocok.</td></tr>
         </tbody>
       </table>
     </div>
+
+    <script>
+      (function () {
+        var q = document.getElementById("q");
+        var count = document.getElementById("count");
+        var nomatch = document.getElementById("nomatch");
+        var rows = Array.prototype.slice.call(
+          document.querySelectorAll("#screener tbody tr[data-search]")
+        );
+        function apply() {
+          var term = q.value.trim().toUpperCase();
+          var vis = 0;
+          for (var i = 0; i < rows.length; i++) {
+            var hay = (rows[i].getAttribute("data-search") || "").toUpperCase();
+            var show = !term || hay.indexOf(term) !== -1;
+            rows[i].style.display = show ? "" : "none";
+            if (show) vis++;
+          }
+          if (nomatch) nomatch.style.display = vis === 0 ? "" : "none";
+          count.textContent = vis + " / " + rows.length + " saham";
+        }
+        q.addEventListener("input", apply);
+        apply();
+      })();
+    </script>
   {% endif %}
 {% endblock %}
 
