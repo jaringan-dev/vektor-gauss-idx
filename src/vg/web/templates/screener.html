@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block subtitle %}Saham hari ini — screener per-saham{% endblock %}
+
+{% block content %}
+  {% if error %}
+    <div class="panel">
+      <h2>Tidak bisa membaca data</h2>
+      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
+         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
+      <div class="err">{{ error }}</div>
+    </div>
+  {% elif not session_date %}
+    <div class="panel">
+      <h2>Belum ada sinyal</h2>
+      <p class="note">Belum ada baris di <code>signal_log</code> — jalankan <code>vg compute</code> dulu.</p>
+    </div>
+  {% else %}
+    <div class="panel">
+      <h2>Saham ber-tag — sesi {{ session_date }}</h2>
+      <p class="note">
+        {{ rows|length }} saham kena minimal satu tag pada sesi terakhir yang punya sinyal.
+        ★ = watchlist Anda · 📌 = sedang dipegang. Diurut arus asing 1 minggu (terbesar dulu).
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>saham</th><th></th><th>harga</th><th>chg</th>
+            <th>asing hari ini</th><th>asing 1mg</th>
+            <th>broker net</th><th>CR3</th><th>konsist.</th><th>KSEI</th>
+            <th style="text-align:left">tag</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{% if r.in_wl %}★ {% endif %}<b>{{ r.ticker }}</b>{% if r.held %} 📌{% endif %}</td>
+            <td title="{{ r.quad }}">{{ r.quad_emoji }}</td>
+            <td>{{ r.price }}</td>
+            <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td class="{{ r.nff_d0_c }}">{{ r.nff_d0 }}</td>
+            <td class="{{ r.nff_w1_c }}">{{ r.nff_w1 }}</td>
+            <td class="{{ r.bkr_net_c }}">{{ r.bkr_net }}</td>
+            <td>{{ r.cr3 }}</td>
+            <td>{{ r.cons }}</td>
+            <td>{{ r.ksei }}</td>
+            <td style="text-align:left">{{ r.tags }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>asing = net foreign flow (domisili), hari ini &amp; 1 minggu. broker net = net broker asing
+     (feed vektorgauss, Tier 3). CR3 = konsentrasi 3 broker teratas. konsist. = berapa dari 10 hari
+     arus asing searah. KSEI = arah %asing 3 bulan (↑/↓/→).</p>
+  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
+     Tidak ada perintah beli/jual.</p>
+{% endblock %}

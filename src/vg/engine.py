@@ -1044,3 +1044,47 @@ def eval_tags(since: date | None = None) -> list[dict]:
             {k: (float(v) if isinstance(v, Decimal) else v) for k, v in zip(cols, r)}
             for r in cur.fetchall()
         ]
+
+
+def latest_signal_date() -> date | None:
+    """Most recent session_date that has any signal_log rows (may trail price)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM signal_log")
+        return cur.fetchone()[0]
+
+
+def screener_rows(session_date: date) -> list[dict]:
+    """Every ticker tagged on `session_date`, with price + flow + broker context.
+
+    One row per ticker (tags string_agg'd), joining signal_log x price_bars x
+    signal_components — the per-stock "which names today" view behind the web
+    Screener (RENCANA-UI-UX, inspired by NeoBDM). Read-only; reuses the exact
+    columns the digest watchlist/RADAR already read, no new methodology.
+    """
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT sl.ticker,
+                   string_agg(DISTINCT sl.tag, ', ' ORDER BY sl.tag)   AS tags,
+                   pb.close, pb.prev,
+                   sc.nff_d0, sc.nff_w1, sc.quadrant,
+                   sc.foreign_consistency_10d, sc.ksei_foreign_trend_3m,
+                   sc.bkr_foreign_net_d0, sc.bkr_cr3
+            FROM signal_log sl
+            JOIN price_bars pb
+              ON pb.session_date = sl.session_date AND pb.ticker = sl.ticker
+            LEFT JOIN signal_components sc
+              ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
+            WHERE sl.session_date = %s
+            GROUP BY sl.ticker, pb.close, pb.prev, sc.nff_d0, sc.nff_w1, sc.quadrant,
+                     sc.foreign_consistency_10d, sc.ksei_foreign_trend_3m,
+                     sc.bkr_foreign_net_d0, sc.bkr_cr3
+            ORDER BY sc.nff_w1 DESC NULLS LAST, sl.ticker
+            """,
+            (session_date,),
+        )
+        cols = [d[0] for d in cur.description]
+        return [
+            {k: (float(v) if isinstance(v, Decimal) else v) for k, v in zip(cols, r)}
+            for r in cur.fetchall()
+        ]
