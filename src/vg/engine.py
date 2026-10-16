@@ -1053,6 +1053,63 @@ def latest_signal_date() -> date | None:
         return cur.fetchone()[0]
 
 
+# Columns that may be ranked by the web /ranking view. Whitelist — the column name
+# is interpolated into SQL, so it must never come from untrusted input.
+_RANKABLE = {
+    "nff_d0", "nff_w1",                       # net foreign flow (market-wide, ~834)
+    "bkr_foreign_net_d0", "bkr_foreign_net_5d",  # broker-foreign net (~64 only)
+    "bkr_dom_retail_net",                     # broker domestic-retail net (~64, 1D only)
+}
+
+
+def rank_components(
+    column: str, *, desc: bool = True, limit: int = 15, session_date: date | None = None
+) -> tuple[date | None, int, list[dict]]:
+    """Top-N tickers on the latest session ranked by a signal_components column.
+
+    Returns (session_date, total_with_value, rows). `total_with_value` is how many
+    tickers have that column non-null that day — the honest coverage figure
+    (foreign ~market-wide, broker/retail only the thin vektorgauss universe).
+    Column is whitelisted; order is a literal. Read-only, no new methodology.
+    """
+    if column not in _RANKABLE:
+        raise ValueError(f"unrankable column: {column!r}")
+    order = "DESC" if desc else "ASC"
+    with connect() as conn, conn.cursor() as cur:
+        if session_date is None:
+            cur.execute("SELECT max(session_date) FROM signal_components")
+            session_date = cur.fetchone()[0]
+        if session_date is None:
+            return None, 0, []
+        cur.execute(
+            f"SELECT count(*) FROM signal_components "
+            f"WHERE session_date = %s AND {column} IS NOT NULL",
+            (session_date,),
+        )
+        total = cur.fetchone()[0]
+        cur.execute(
+            f"""
+            SELECT sc.ticker, sc.{column} AS val, pb.close, pb.prev, sc.quadrant,
+                   (SELECT string_agg(DISTINCT sl.tag, ', ' ORDER BY sl.tag)
+                      FROM signal_log sl
+                     WHERE sl.session_date = sc.session_date AND sl.ticker = sc.ticker) AS tags
+            FROM signal_components sc
+            JOIN price_bars pb
+              ON pb.session_date = sc.session_date AND pb.ticker = sc.ticker
+            WHERE sc.session_date = %s AND sc.{column} IS NOT NULL
+            ORDER BY sc.{column} {order}
+            LIMIT %s
+            """,
+            (session_date, limit),
+        )
+        cols = [d[0] for d in cur.description]
+        rows = [
+            {k: (float(v) if isinstance(v, Decimal) else v) for k, v in zip(cols, r)}
+            for r in cur.fetchall()
+        ]
+        return session_date, total, rows
+
+
 def screener_rows(session_date: date) -> list[dict]:
     """Every ticker tagged on `session_date`, with price + flow + broker context.
 

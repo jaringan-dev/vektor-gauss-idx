@@ -156,6 +156,57 @@ def screener() -> HTMLResponse:
     return HTMLResponse(_TEMPLATES.get_template("screener.html").render(ctx))
 
 
+def _rank_rows(column: str, desc: bool) -> tuple:
+    sd, total, raw = engine.rank_components(column, desc=desc, limit=15)
+    rows = []
+    for i, r in enumerate(raw, 1):
+        close, prev = r.get("close"), r.get("prev")
+        chg = (close / prev - 1) if (close and prev) else None
+        rows.append(
+            {
+                "rank": i,
+                "ticker": r["ticker"],
+                "quad_emoji": _QUAD_EMOJI.get(r.get("quadrant") or "", "▪️"),
+                "val": _idr(r.get("val")), "val_c": _signcls(r.get("val")),
+                "price": _price(close), "chg": _cell(chg, 1),
+                "tags": r.get("tags") or "",
+            }
+        )
+    return sd, total, rows
+
+
+def _ranking_view(h: str) -> tuple:
+    """Build the four ranked panels for horizon h ('1d' or '5d')."""
+    h = "1d" if h == "1d" else "5d"
+    fcol = "nff_d0" if h == "1d" else "nff_w1"
+    bcol = "bkr_foreign_net_d0" if h == "1d" else "bkr_foreign_net_5d"
+    # (title, column, desc, note)
+    spec = [
+        ("Top Akum Asing", fcol, True, "arus asing bersih — akumulasi tertinggi (se-pasar)"),
+        ("Top Distribusi Asing", fcol, False, "arus asing bersih — distribusi terbesar (se-pasar)"),
+        ("Top Akum Bandar", bcol, True, "net broker asing — hanya universe broker vektorgauss"),
+        ("Top Retail Jualan", "bkr_dom_retail_net", False,
+         "net retail broker, jual terbesar — universe broker, selalu 1D"),
+    ]
+    sd = None
+    panels = []
+    for title, col, desc, note in spec:
+        s, total, rows = _rank_rows(col, desc)
+        sd = sd or s
+        panels.append({"title": title, "note": note, "total": total, "rows": rows})
+    return sd, h, panels
+
+
+@app.get("/ranking", response_class=HTMLResponse)
+def ranking(h: str = "5d") -> HTMLResponse:
+    ctx: dict = {"active_page": "ranking", "error": None, "session_date": None, "h": "5d", "panels": []}
+    try:
+        ctx["session_date"], ctx["h"], ctx["panels"] = _ranking_view(h)
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return HTMLResponse(_TEMPLATES.get_template("ranking.html").render(ctx))
+
+
 @app.get("/healthz")
 def healthz():
     return {"ok": True}

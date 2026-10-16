@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block subtitle %}Top / Ranking — peringkat per metrik{% endblock %}
+
+{% block content %}
+  {% if error %}
+    <div class="panel">
+      <h2>Tidak bisa membaca data</h2>
+      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
+         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
+      <div class="err">{{ error }}</div>
+    </div>
+  {% elif not session_date %}
+    <div class="panel">
+      <h2>Belum ada data</h2>
+      <p class="note">Belum ada baris <code>signal_components</code> — jalankan <code>vg compute</code> dulu.</p>
+    </div>
+  {% else %}
+    <div class="panel">
+      <h2>Peringkat — sesi {{ session_date }}</h2>
+      <p class="note">
+        Arus asing se-pasar (~ribuan saham, IDX gratis); <b>bandar &amp; retail hanya mencakup
+        universe broker vektorgauss (~puluhan saham)</b> — jadi bukan peringkat seluruh pasar.
+      </p>
+      <nav class="nav" style="margin-top:8px">
+        <a href="/ranking?h=1d" class="{{ 'active' if h == '1d' else '' }}">1 hari (1D)</a>
+        <a href="/ranking?h=5d" class="{{ 'active' if h == '5d' else '' }}">5 hari (5D)</a>
+      </nav>
+    </div>
+
+    {% for p in panels %}
+    <div class="panel">
+      <h2>{{ p.title }}</h2>
+      <p class="note">{{ p.note }} · dari {{ p.total }} saham dengan data.</p>
+      {% if p.rows %}
+      <table>
+        <thead>
+          <tr><th>#</th><th>saham</th><th></th><th>nilai</th><th>harga</th><th>chg</th>
+              <th style="text-align:left">tag</th></tr>
+        </thead>
+        <tbody>
+          {% for r in p.rows %}
+          <tr>
+            <td>{{ r.rank }}</td>
+            <td><b>{{ r.ticker }}</b></td>
+            <td>{{ r.quad_emoji }}</td>
+            <td class="{{ r.val_c }}">{{ r.val }}</td>
+            <td>{{ r.price }}</td>
+            <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td style="text-align:left">{{ r.tags }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">Tidak ada data untuk metrik ini pada sesi terakhir.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>nilai = net flow (Rp) metrik terkait. "arus asing" dari IDX Stock Summary gratis (hampir
+     seluruh saham). "bandar"/"retail" dari feed broker vektorgauss (Tier 3) yang hanya mencakup
+     sebagian saham — bukan peringkat seluruh pasar, beda dari platform berbayar.</p>
+  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
+     Tidak ada perintah beli/jual.</p>
+{% endblock %}
