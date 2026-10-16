@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
@@ -64,9 +64,8 @@ def _view_rows(since) -> list[dict]:
 
 
 @app.get("/", response_class=HTMLResponse)
-def forward_tracker(request: Request):
+def forward_tracker() -> HTMLResponse:
     ctx: dict = {
-        "request": request,
         "forward_since": CONFIG.forward_since,
         "cost_bp": round(gate.ROUND_TRIP_COST * 10000),
         "min_n": gate.MIN_SIGNALS,
@@ -80,7 +79,9 @@ def forward_tracker(request: Request):
         ctx["forward"] = _view_rows(CONFIG.forward_since) if CONFIG.forward_since else []
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
-    return _TEMPLATES.TemplateResponse("forward_test.html", ctx)
+    # Render manually + wrap in HTMLResponse: avoids depending on the TemplateResponse
+    # positional signature, which changed across Starlette versions (request-first).
+    return HTMLResponse(_TEMPLATES.get_template("forward_test.html").render(ctx))
 
 
 @app.get("/healthz")
