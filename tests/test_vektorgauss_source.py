@@ -46,7 +46,7 @@ def test_all_rows_are_all_board():
 
 def test_fetch_injected_ok():
     src = VgBrokerSummarySource()
-    src._download = lambda ticker: _SAMPLE
+    src._download = lambda ticker, on_date=None: _SAMPLE
     res = src.fetch(date(2026, 9, 27), "bbca")
     assert res.status == "ok"
     assert res.ticker == "BBCA"             # normalized upper
@@ -56,7 +56,7 @@ def test_fetch_injected_ok():
 
 def test_fetch_empty_is_no_data():
     src = VgBrokerSummarySource()
-    src._download = lambda ticker: b'{"stock_code":"XXXX","brokers":[]}'
+    src._download = lambda ticker, on_date=None: b'{"stock_code":"XXXX","brokers":[]}'
     res = src.fetch(date(2026, 9, 27), "XXXX")
     assert res.status == "no_data"
     assert res.rows == []
