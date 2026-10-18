@@ -7,9 +7,9 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from . import calc, collect, digest, engine, paper
+from . import calc, collect, digest, engine, paper, season
 from .config import CONFIG
-from .db import connect, run_sql_file
+from .db import connect, latest_trading_day, run_sql_file
 from .telegram import TelegramSender
 
 _SCHEMA = Path(__file__).resolve().parents[2] / "db" / "schema.sql"
@@ -28,6 +28,30 @@ def _print(o: collect.CollectOutcome) -> None:
     if o.detail:
         line += f"  ({o.detail})"
     print(line)
+
+
+# no_data / date_mismatch are holidays or quiet days, not failures.
+_FAILED = frozenset({"error", "blocked", "partial"})
+
+
+def _report(outs: list[collect.CollectOutcome], summary: str | None = None) -> int:
+    """Print outcomes; exit code 1 if any failed, so eod.sh / CI can see it."""
+    for o in outs:
+        _print(o)
+    if summary:
+        ok = sum(1 for o in outs if o.status == "ok")
+        print(f"done: {ok}/{len(outs)} {summary}")
+    failed = sum(1 for o in outs if o.status in _FAILED)
+    if failed:
+        print(f"FAILED: {failed}/{len(outs)}", file=sys.stderr)
+    return 1 if failed else 0
+
+
+def _latest() -> date | None:
+    latest = latest_trading_day()
+    if latest is None:
+        print("no trading_calendar rows — run collect-price first")
+    return latest
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -63,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     gi.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
     cd_ = sub.add_parser("collect-disclosure",
-                         help="IDX ownership-disclosure filings (>5% + insider) -> disclosure_filings")
+                         help="IDX ownership-disclosure filings (>5%% + insider) -> disclosure_filings")
     gd = cd_.add_mutually_exclusive_group(required=True)
     gd.add_argument("--date", metavar="YYYY-MM-DD", help="one filing day")
     gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
@@ -177,157 +201,95 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "collect-price":
         if args.latest:
-            _print(collect.collect_price_latest())
-        elif args.date:
-            _print(collect.collect_price_day(_d(args.date)))
-        else:
-            start, end = _d(args.backfill[0]), _d(args.backfill[1])
-            print(f"backfill {start} .. {end}")
-            outs = collect.collect_price_range(start, end)
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} days with data")
-        return 0
+            return _report([collect.collect_price_latest()])
+        if args.date:
+            return _report([collect.collect_price_day(_d(args.date))])
+        start, end = _d(args.backfill[0]), _d(args.backfill[1])
+        print(f"backfill {start} .. {end}")
+        return _report(collect.collect_price_range(start, end), "days with data")
 
     if args.cmd == "collect-price-history":
         if args.ticker:
-            _print(collect.collect_price_history_ticker(args.ticker))
-        else:
-            outs = collect.collect_price_history_universe()
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} tickers with data")
-        return 0
+            return _report([collect.collect_price_history_ticker(args.ticker)])
+        return _report(collect.collect_price_history_universe(), "tickers with data")
 
     if args.cmd == "collect-ownership":
         if args.latest:
-            for o in collect.collect_ownership_latest():
-                _print(o)
-        elif args.month:
-            _print(collect.collect_ownership_month(_m(args.month)))
-        else:
-            start, end = _m(args.backfill[0]), _m(args.backfill[1])
-            print(f"backfill {start:%Y-%m} .. {end:%Y-%m}")
-            outs = collect.collect_ownership_range(start, end)
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} months with data")
-        return 0
+            return _report(collect.collect_ownership_latest())
+        if args.month:
+            return _report([collect.collect_ownership_month(_m(args.month))])
+        start, end = _m(args.backfill[0]), _m(args.backfill[1])
+        print(f"backfill {start:%Y-%m} .. {end:%Y-%m}")
+        return _report(collect.collect_ownership_range(start, end), "months with data")
 
     if args.cmd == "collect-index":
         if args.latest:
-            _print(collect.collect_index_latest())
-        elif args.date:
-            _print(collect.collect_index_day(_d(args.date)))
-        else:
-            start, end = _d(args.backfill[0]), _d(args.backfill[1])
-            print(f"backfill {start} .. {end}")
-            outs = collect.collect_index_range(start, end)
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} days with data")
-        return 0
+            return _report([collect.collect_index_latest()])
+        if args.date:
+            return _report([collect.collect_index_day(_d(args.date))])
+        start, end = _d(args.backfill[0]), _d(args.backfill[1])
+        print(f"backfill {start} .. {end}")
+        return _report(collect.collect_index_range(start, end), "days with data")
 
     if args.cmd == "collect-disclosure":
         if args.latest:
-            with connect() as conn, conn.cursor() as cur:
-                cur.execute("SELECT max(session_date) FROM trading_calendar")
-                latest = cur.fetchone()[0]
+            latest = _latest()
             if latest is None:
-                print("no trading_calendar rows — run collect-price first")
                 return 1
-            _print(collect.collect_disclosure_day(latest))
-        elif args.date:
-            _print(collect.collect_disclosure_day(_d(args.date)))
-        else:
-            start, end = _d(args.backfill[0]), _d(args.backfill[1])
-            print(f"backfill {start} .. {end}")
-            outs = collect.collect_disclosure_range(start, end)
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} days with filings")
-        return 0
+            return _report([collect.collect_disclosure_day(latest)])
+        if args.date:
+            return _report([collect.collect_disclosure_day(_d(args.date))])
+        start, end = _d(args.backfill[0]), _d(args.backfill[1])
+        print(f"backfill {start} .. {end}")
+        return _report(collect.collect_disclosure_range(start, end), "days with filings")
 
     if args.cmd == "collect-broker-summary":
         if args.ticker:
-            with connect() as conn, conn.cursor() as cur:
-                cur.execute("SELECT max(session_date) FROM trading_calendar")
-                latest = cur.fetchone()[0]
+            latest = _latest()
             if latest is None:
-                print("no trading_calendar rows — run collect-price first")
                 return 1
-            _print(collect.collect_broker_summary_ticker(latest, args.ticker))
-        else:
-            outs = (
-                collect.collect_broker_summary_radar() if args.radar
-                else collect.collect_broker_summary_latest()
-            )
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} tickers with data")
-        return 0
+            return _report([collect.collect_broker_summary_ticker(latest, args.ticker)])
+        outs = (
+            collect.collect_broker_summary_radar() if args.radar
+            else collect.collect_broker_summary_latest()
+        )
+        return _report(outs, "tickers with data")
 
     if args.cmd == "collect-broker-inventory":
         if args.ticker:
-            _print(collect.collect_broker_inventory_ticker(args.ticker))
-        else:
-            outs = collect.collect_broker_inventory_universe()
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} tickers with data")
-        return 0
+            return _report([collect.collect_broker_inventory_ticker(args.ticker)])
+        return _report(collect.collect_broker_inventory_universe(), "tickers with data")
 
     if args.cmd == "collect-done-details":
-        _print(collect.collect_done_details_ticker(
+        return _report([collect.collect_done_details_ticker(
             args.ticker, _d(args.date) if args.date else None,
             max_pages=args.max_pages, force=args.force,
-        ))
-        return 0
+        )])
 
     if args.cmd == "collect-halts":
         if args.latest:
-            with connect() as conn, conn.cursor() as cur:
-                cur.execute("SELECT max(session_date) FROM trading_calendar")
-                latest = cur.fetchone()[0]
+            latest = _latest()
             if latest is None:
-                print("no trading_calendar rows — run collect-price first")
                 return 1
-            _print(collect.collect_trading_halts_day(latest))
-        elif args.date:
-            _print(collect.collect_trading_halts_day(_d(args.date)))
-        else:
-            start, end = _d(args.backfill[0]), _d(args.backfill[1])
-            print(f"backfill {start} .. {end}")
-            outs = collect.collect_trading_halts_range(start, end)
-            for o in outs:
-                _print(o)
-            ok = sum(1 for o in outs if o.status == "ok")
-            print(f"done: {ok}/{len(outs)} days with halt announcements")
-        return 0
+            return _report([collect.collect_trading_halts_day(latest)])
+        if args.date:
+            return _report([collect.collect_trading_halts_day(_d(args.date))])
+        start, end = _d(args.backfill[0]), _d(args.backfill[1])
+        print(f"backfill {start} .. {end}")
+        return _report(
+            collect.collect_trading_halts_range(start, end), "days with halt announcements"
+        )
 
     if args.cmd == "parse-disclosure":
         if args.backfill:
             start, end = _d(args.backfill[0]), _d(args.backfill[1])
-            _print(collect.parse_disclosure_pdfs(start, end))
-        else:
-            _print(collect.parse_disclosure_pdfs())
-        return 0
+            return _report([collect.parse_disclosure_pdfs(start, end)])
+        return _report([collect.parse_disclosure_pdfs()])
 
     if args.cmd == "collect-corpactions":
         if args.year:
-            _print(collect.collect_corpactions_year(args.year))
-        else:
-            outs = collect.collect_corpactions_range(args.backfill[0], args.backfill[1])
-            for o in outs:
-                _print(o)
-        return 0
+            return _report([collect.collect_corpactions_year(args.year)])
+        return _report(collect.collect_corpactions_range(args.backfill[0], args.backfill[1]))
 
     if args.cmd == "detect-ca":
         n = collect.detect_share_count_changes()
@@ -340,11 +302,8 @@ def main(argv: list[str] | None = None) -> int:
             print(line + (f"  ({s.detail})" if s.detail else ""))
 
         if args.latest:
-            with connect() as conn, conn.cursor() as cur:
-                cur.execute("SELECT max(session_date) FROM trading_calendar")
-                latest = cur.fetchone()[0]
+            latest = _latest()
             if latest is None:
-                print("no trading_calendar rows — run collect-price first")
                 return 1
             _cs(engine.compute_day(latest))
         elif args.date:
@@ -511,8 +470,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "season":
-        from . import season
-
         s = season.seasonality(args.ticker, args.years)
         if not s["n_days"]:
             print(f"no price history for {s['ticker']}")

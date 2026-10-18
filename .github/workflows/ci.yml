@@ -15,7 +15,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: pytest -q
-      # ruff is not wired as a gate yet — the tree has pre-existing lint debt.
       - run: ruff check . --output-format=github
-        continue-on-error: true
+      - run: pytest -q

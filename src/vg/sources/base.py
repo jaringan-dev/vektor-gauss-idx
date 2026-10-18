@@ -6,11 +6,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Literal
 
 FetchStatus = Literal["ok", "no_data", "date_mismatch", "blocked", "error"]
 
-Num = Optional[Decimal]
+Num = Decimal | None
 
 
 @dataclass(slots=True)

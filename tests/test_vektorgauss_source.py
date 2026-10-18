@@ -85,7 +85,6 @@ def test_inventory_parse_cumulative_and_fields():
 
 
 def test_inventory_fetch_injected():
-    from datetime import date
     from vg.sources.vektorgauss import VgBrokerInventorySource
     src = VgBrokerInventorySource()
     src._download = lambda t: _INV

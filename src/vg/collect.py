@@ -17,13 +17,16 @@ from psycopg.types.json import Jsonb
 
 from . import artifacts
 from .config import CONFIG
-from .db import connect, upsert_many
+from .db import connect, latest_trading_day, upsert_many
 from .sources.base import (
     KSEI_CATEGORIES,
+    BrokerInventoryResult,
+    BrokerSummaryFetchResult,
     CaFetchResult,
     CorpAction,
     DisclosureFetchResult,
     DisclosureFiling,
+    DoneByPriceResult,
     IndexBar,
     IndexFetchResult,
     OwnershipFetchResult,
@@ -33,21 +36,15 @@ from .sources.base import (
 )
 from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
+from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
+from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
+from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
 from .sources.vektorgauss import (
     VgBrokerInventorySource,
     VgBrokerSummarySource,
     VgDoneDetailsSource,
     VgHistoryPriceSource,
 )
-from .sources.base import (
-    BrokerInventoryResult,
-    BrokerSummaryFetchResult,
-    DoneByPriceResult,
-    PriceBar,
-)
-from .sources.idx import IdxIndexSummarySource, IdxStockSummarySource
-from .sources.ksei import KseiCaScheduleSource, KseiOwnershipSource
-from .sources.trading_halt import IdxTradingHaltSource, TradingHaltEvent, TradingHaltFetchResult
 
 _PRICE_COLS = (
     "session_date", "ticker", "prev", "open", "first_trade", "high", "low", "close",
@@ -889,8 +886,7 @@ def collect_broker_summary_latest(
     universe (watchlist + holdings + VG_HARVEST_TICKERS). With skip_existing (default),
     tickers that already have broker_flows for that day are skipped — no wasted call."""
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT max(session_date) FROM trading_calendar")
-        latest = cur.fetchone()[0]
+        latest = latest_trading_day(cur)
         if latest is None:
             return [CollectOutcome(date.today(), "error", 0,
                                    "no trading_calendar rows — run collect-price first")]
@@ -920,8 +916,7 @@ def collect_broker_summary_radar() -> list[CollectOutcome]:
     run `compute` again so the broker signals + the RADAR broker line land."""
     base = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT max(session_date) FROM trading_calendar")
-        latest = cur.fetchone()[0]
+        latest = latest_trading_day(cur)
         if latest is None:
             return [CollectOutcome(date.today(), "error", 0,
                                    "no trading_calendar rows — run collect-price first")]
@@ -1020,8 +1015,7 @@ def collect_price_history_universe(
     trading day in price_bars (from ANY source, e.g. IDX Tier-0) is skipped — the
     history call would only duplicate it."""
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT max(session_date) FROM trading_calendar")
-        latest = cur.fetchone()[0]
+        latest = latest_trading_day(cur)
         tickers = tickers or _harvest_universe()
         have = (
             _have_for_date(cur, "price_bars", tickers, latest)
@@ -1096,8 +1090,7 @@ def collect_broker_inventory_universe(
     ticker that already has broker_inventory for the latest trading day is skipped
     (the ~80 td window barely moves day-to-day — re-pull only when stale)."""
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT max(session_date) FROM trading_calendar")
-        latest = cur.fetchone()[0]
+        latest = latest_trading_day(cur)
         tickers = tickers or _harvest_universe()
         have = (
             _have_for_date(cur, "broker_inventory", tickers, latest)
@@ -1152,10 +1145,7 @@ def collect_done_details_ticker(
     ticker = ticker.upper()
     # Freshness guard — resolve the target day and skip if we already have it.
     with connect() as conn, conn.cursor() as cur:
-        target = session_date
-        if target is None:
-            cur.execute("SELECT max(session_date) FROM trading_calendar")
-            target = cur.fetchone()[0]
+        target = session_date if session_date is not None else latest_trading_day(cur)
         if target is not None and not force:
             cur.execute(
                 "SELECT 1 FROM done_by_price WHERE ticker = %s AND session_date = %s LIMIT 1",

@@ -60,7 +60,6 @@ def _calendar(n: int, end: date) -> list[date]:
 
 def test_components_accumulation_shape():
     cal = _calendar(21, date(2026, 9, 1))
-    d0 = cal[-1]
     # price flat (~1000 throughout), foreign net-buying every day
     bars = {d: _bar(d, close=1000.0, fnet=4000.0) for d in cal}
     ihsg = {d: 100.0 for d in cal}
@@ -79,7 +78,7 @@ def test_components_accumulation_shape():
 
 def test_components_split_adjusted_return():
     cal = _calendar(10, date(2026, 9, 1))
-    d0, d5 = cal[-1], cal[-6]
+    d5 = cal[-6]
     bars = {d: _bar(d, close=1000.0, fnet=0.0) for d in cal}
     # a 10:1 split with ex_date between d5 and d0 halves... no, /10 the raw price
     for d in cal:
@@ -262,7 +261,7 @@ def test_comp_columns_align():
 
 
 def test_classify_participant_heuristics():
-    from vg.engine import Components, _classify, BANDAR_TICKET_MIN
+    from vg.engine import BANDAR_TICKET_MIN, Components, _classify
     # foreign-institution net-buy = 8% of value, domestic retail also crowding = 6%
     c = Components(
         ticker="X", close=1000.0, price_chg_5d=0.0, nff_w1=0.0, day_value=1_000_000_000.0,

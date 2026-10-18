@@ -145,11 +145,13 @@ not something to hand to an assistant):
 4. Point notifications (Integrations tab) at email and/or Telegram — connecting
    their bot to a chat is a couple of clicks on their side.
 
-Scope: this only answers "did `eod.sh` reach its last line today" — it does
-**not** tell you whether an individual collector inside that run failed (a
-`vg collect-price` error is swallowed by the script's `|| true` self-healing
-design on purpose). Per-collector failure visibility is a separate, not-yet-built
-concern — see `RENCANA-UI-UX.md` §3.3 (superadmin dashboard).
+Scope: this only answers "did `eod.sh` reach its last line today" — the ping is
+sent even when steps failed. Per-step failures are reported separately: every
+`vg collect-*` command exits 1 when any outcome is `error`/`blocked`/`partial`
+(`no_data` on holidays is fine), and `eod.sh` keeps running but ends with a
+`FAILED — core steps` / `WARN — best-effort steps` list in `eod.log`, exiting 1
+if a core (Tier-0) step failed. A per-collector history view is still a
+not-yet-built concern — see `RENCANA-UI-UX.md` §3.3 (superadmin dashboard).
 
 ## Cloudflare note
 

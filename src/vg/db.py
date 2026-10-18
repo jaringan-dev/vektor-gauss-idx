@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -28,9 +29,18 @@ def connect() -> Iterator[psycopg.Connection]:
 
 def run_sql_file(path: str | Path) -> None:
     sql = Path(path).read_text(encoding="utf-8")
-    with connect() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql)
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+
+
+def latest_trading_day(cur: psycopg.Cursor | None = None) -> date | None:
+    """Most recent session in trading_calendar, or None before the first collect.
+    Opens its own connection when no cursor is passed."""
+    if cur is None:
+        with connect() as conn, conn.cursor() as own:
+            return latest_trading_day(own)
+    cur.execute("SELECT max(session_date) FROM trading_calendar")
+    return cur.fetchone()[0]
 
 
 def upsert_many(

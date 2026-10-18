@@ -7,12 +7,9 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-try:  # optional
-    from dotenv import load_dotenv
+from dotenv import load_dotenv
 
-    load_dotenv()
-except Exception:  # pragma: no cover
-    pass
+load_dotenv()
 
 
 DEFAULT_UA = (
@@ -60,7 +57,7 @@ class Config:
     target_r: float
 
     @staticmethod
-    def load() -> "Config":
+    def load() -> Config:
         wl = os.environ.get("VG_WATCHLIST", "")
         hv = os.environ.get("VG_HARVEST_TICKERS", "")
         hd = os.environ.get("VG_HOLDINGS", "")
