@@ -53,7 +53,7 @@ Nilai: **A** lengkap & terverifikasi · **B** bisa dipakai dengan catatan · **C
 | **Q2** | `brokers` = top-20 *net buyer* (neg_net = 0 pada semua tarikan uji). `broker_levels` (25 level beli vs jual kotor) **tidak diparse**. `limit`, `broker_net`, `flow` tidak mengubah ini. | Distribusi tak teramati; semua tag broker miring ke sisi beli; DOM-RETAIL/ASING-DIST kelaparan. | Parse `broker_levels` dari respons yang sama (0 kuota tambahan); simpan sisi jual + batas atas sisi yang tidak terlihat; tarik ulang 105 hari. |
 | **Q3** | 963 path untuk 27.989 tarikan; satu file ditimpa 105 kali. | Tak ada jejak audit; tak bisa diparse ulang bila parser diperbaiki. | Penyimpanan *content-addressed* `…/{sha[:2]}/{sha}.json.zst`; `raw_artifacts` mengacu ke sha. |
 | **Q4** | 14/15/25 Sep memakai sumber cadangan: ±0,6% baris (≈6 per hari, ±17 total) berharga non-bulat/disesuaikan (FORU, PBSA); 11 dari 1.924 baris menyimpang >0,5% dari `prev` hari berikutnya. | Return di sekitar tiga hari itu salah untuk ≈17 baris saham-hari. | Tandai `source_quality='adjusted'`, ganti dengan harga mentah dari `prev` hari bursa berikutnya bila konsisten, kalau tidak NULL. |
-| **Q5** | `open` di luar [low, high] pada 128 dari 834 baris traded **hanya pada 16 Okt 2026**; hari lain 0. | `open` tak boleh dipercaya hari itu. | Kontrak data: `open` dibuat NULL bila di luar rentang; alarm pada hari lain. |
+| **Q5** | `open` di luar [low, high]: 16 baris traded **hanya pada 16 Okt 2026** (ditambah 112 baris ber-`open` = 0); hari lain 0. | `open` tak boleh dipercaya hari itu. | Kontrak data: `open` dibuat NULL bila di luar rentang; alarm pada hari lain. |
 | **Q6** | 10 indeks sektor lama berhenti 2021-04-30; 11 IDX-IC mulai setelahnya. | Rotasi sektor lintas 2021 tidak valid. | Peta JASICA→IDX-IC atau mulai deret sektor di Mei 2021; jangan menyambung diam-diam. |
 | **Q7** | KSEI: median total/listed = 0,994, tetapi p10 = 0,21. Mesin memakai basis *scripless* (terdokumentasi di `engine.py`). | `%asing` bukan `% dari saham beredar`; jangan dibandingkan lintas saham tanpa rasio cakupan. | Simpan `ksei_coverage = total/listed` dan tampilkan; saring saham < 50% dari tag KSEI. |
 | **Q8** | `delisting_date` tidak pernah terisi; 25 saham berhenti tanpa alasan. | Survivorship terbatas: saham yang hilang *masih ada* di data (bagus), tetapi alasan (delisting/merger/suspensi) tak diketahui. | Isi dari pengumuman IDX; tambah `security_master`. |
@@ -141,12 +141,12 @@ diaudit, dan *kartu data* (kelengkapan hari ini) — bukan rekomendasi transaksi
 
 Fase dikerjakan berurutan; tiap butir selesai hanya bila bukti yang tertulis terpenuhi.
 
-**Fase 0 — Integritas (± 1–2 hari kerja)**
-- [ ] **K1** (P0) Arsip mentah content-addressed + `raw_sha`/`parser_version` di tabel bronze. *Selesai bila:* dua tarikan berbeda untuk ticker yang sama tersimpan terpisah dan bisa diparse ulang.
-- [ ] **K2** (P0) Parse `broker_levels` + simpan sisi jual dan batas atas sisi tak terlihat; tes dengan respons BBCA 30 Okt. *Selesai bila:* tag distribusi bisa muncul dan n `BROKER-ASING-DIST` naik dari 14 pada data baru.
-- [ ] **K3** (P0) `adj_factor` + `close_adj` + total-return dari `corp_actions`; verifikasi 20 kasus manual (split, rights, dividen). *Selesai bila:* eval H5/H10 dapat dihitung ulang dengan `close_adj` dan selisih ke versi mentah dilaporkan.
-- [ ] **K4** (P0) Jadikan `scripts/data_audit.py` gerbang EOD (peringatan ke Telegram; blocking tahap berikutnya). *Selesai bila:* insiden 14/15/25 Sep tersuntik di skema `scratch` menghentikan tahap compute.
-- [ ] **K5** (P1) Perbaiki Q4/Q5 (tandai baris sumber cadangan, NULL-kan `open` di luar rentang).
+**Fase 0 — Integritas** — dikerjakan 2 Nov; hasil terukur di §9
+- [x] **K1** (P0) Arsip mentah content-addressed + `raw_sha`/`parser_version` di tabel bronze. *Selesai bila:* dua tarikan berbeda untuk ticker yang sama tersimpan terpisah dan bisa diparse ulang.
+- [x] **K2** (P0) Parse `broker_levels` + simpan sisi jual dan batas atas sisi tak terlihat; tes dengan respons BBCA 30 Okt. *Selesai bila:* tag distribusi bisa muncul dan n `BROKER-ASING-DIST` naik dari 14 pada data baru.
+- [x] **K3** (P0) `adj_factor` + `close_adj` + total-return dari `corp_actions`; verifikasi 20 kasus manual (split, rights, dividen). *Selesai bila:* eval H5/H10 dapat dihitung ulang dengan `close_adj` dan selisih ke versi mentah dilaporkan.
+- [x] **K4** (P0) Jadikan `scripts/data_audit.py` gerbang EOD (peringatan ke Telegram; blocking tahap berikutnya). *Selesai bila:* insiden 14/15/25 Sep tersuntik di skema `scratch` menghentikan tahap compute.
+- [x] **K5** (P1) Perbaiki Q4/Q5 (tandai baris sumber cadangan, NULL-kan `open` di luar rentang).
 
 **Fase 1 — Cakupan (± 1–3 minggu, kuota memengaruhi)**
 - [ ] **K6** (P1) Tarik ulang sisi jual 105 hari (perkiraan ±6,5 ribu panggilan).
@@ -173,3 +173,49 @@ Fase dikerjakan berurutan; tiap butir selesai hanya bila bukti yang tertulis ter
 1. Setuju memulai Fase 0 (K1–K5)? Ini tidak memakai kuota feed dan memperbaiki lubang terbesar.
 2. Backfill broker 2020→2026 memakai kuota Popular ± 15 hari — setuju, atau cukup 2023→2026 dulu?
 3. Fundamental (K14): perlu atau cukup fokus arus & harga?
+
+## 9. Hasil Fase 0 (2 Nov 2026) — terukur, termasuk yang belum terbukti
+
+**K1 arsip mentah** — `artifacts.store(immutable=True)` menyimpan `…/{sumber}/{kunci}/{sha16}.json`; byte identik dedupe, byte berbeda
+disimpan terpisah. Dipakai untuk broker, riwayat, inventori, harga, dan indeks. `broker_flows`/`broker_levels` kini membawa `raw_sha` dan
+`parser_version` (`vg-broker/2`). Terbukti: tes unit + tarikan nyata BBCA/TLKM/GOTO (berkas baru `BBCA/9f20b13bd46c8d8c.json` ada;
+baris → `raw_artifacts` lewat sha). **Belum:** 963 berkas lama tetap seperti adanya (isi lama sudah tertimpa; tak bisa dipulihkan).
+
+**K2 sisi jual broker** — `broker_levels` diparse dan disimpan (25 rung beli + 25 rung jual per saham-hari, terbukti pada 3 saham).
+Batas pasti (`broker_bounds.py`) dihitung pada 196 saham likuid 30 Okt dari tarikan langsung:
+- lebar interval median **2,5%** dari nilai transaksi (p25 0,6%; p75 4,7%) — cukup sempit untuk dipakai;
+- ukuran lama (hanya net buyer) **berada di luar interval pasti pada 139 dari 196 saham (71%)**; contoh BBCA: tercatat **+16,6%**
+  nilai transaksi, interval pasti **[−6,3%; −0,1%]**, yaitu tanda yang berlawanan;
+- pita 2%: ukuran lama menandai 146 saham "akumulasi-asing" dan 2 "distribusi"; dengan batas pasti: 78 akumulasi dan **62 distribusi**.
+**Konsekuensi yang harus dibaca terang:** `BROKER-ASING-AKUM/DIST`, `FOREIGN-INST`, `DOM-RETAIL` (dan hasil riset yang bertumpu padanya) memakai
+ukuran satu sisi. Verdict "tidak ada edge" untuk tag broker belum menguji pertanyaan yang dimaksud. Tag lama dibiarkan agar forward-test
+berjalan utuh; tag baru `BROKER2-ASING-AKUM/DIST` (aturan sama, ukuran benar, hanya menyala bila seluruh interval melewati pita) memulai jam
+forward-test baru dan baru menyala pada hari yang punya `broker_levels` (mulai EOD pertama setelah deploy, atau setelah K6).
+**Belum terbukti:** edge tag baru (butuh data; K6/K7), dan kenaikan n `BROKER2-ASING-DIST` pada data baru.
+
+**K3 penyesuaian harga** — `adj_factor` (2.673 peristiwa: 2.560 dividen, 72 split, 41 bonus) dan `price_adj`; view `price_bars_adj`
+(`close_adj` = split/bonus, `close_tr` = + dividen). Validasi terhadap pergerakan ex-date nyata (`vg adj-report`):
+dividen 90% dalam 5% dari faktor, selisih rata-rata +0,6% (tanpa bias tanda); split 67%; bonus 50% (n = 38, kecil). Dua temuan yang
+mengubah aturan: tanggal ex KSEI **terlambat satu hari bursa** (harga turun sehari sebelumnya pada 35% dividen dan 74% bonus, vs ±9%
+kebetulan) sehingga dipakai hari bursa sebelumnya; dan lonjakan jumlah saham dengan rasio 0,7–1,5 hanyalah penempatan/rights (harga
+bergerak ≈1/rasio hanya 31%) sehingga tidak disesuaikan (64 peristiwa). Tidak disesuaikan sama sekali: rights ber-harga-tebus (318;
+harga tebus tidak ada di data), dividen dengan DPS mustahil (4), 1.567 peristiwa sebelum bar pertama.
+Dampak pada return 5-bar: dividen **+2,2 s.d. +4,2 bp** rata-rata per tahun (0,6–1,0% baris bergeser >50 bp); split/bonus +1 s.d. +3 bp.
+Kecil secara rata-rata, terkonsentrasi pada musim dividen — relevan bagi tag yang berkorelasi dengan musim itu.
+**Belum:** `eval`/`signal_log` masih memakai close mentah (sengaja, agar forward-test tidak berubah di tengah jalan); memakai `close_tr` untuk
+outcome adalah keputusan terpisah.
+
+**K4 gerbang kualitas** — `vg quality-gate` (aturan murni di `quality.py`) dipasang di `eod.sh` sebelum kedua pass `compute`; BLOCK =
+harga bolong (<50% median 60 hari), tidak ada baris harga, hari non-bursa, pelanggaran OHLC, close ≤ 0, volume negatif; WARN = harga
+parsial, `open` di luar rentang, indeks hilang, sumber cadangan, broker parsial. Lari nyata pada 30 Okt: lolos dengan 1 peringatan
+(broker 196 vs normal ≈ 264). **Caveat jujur:** insiden September dibuktikan lewat uji murni berangka insiden + uji kabel `eod.sh`;
+uji end-to-end pada skema `scratch` BELUM dijalankan.
+
+**K5 perbaikan harga** — `vg repair-prices`: 17 baris sumber cadangan (6 saham: AHAP, BUVA, ENRG, FORU, PBSA, VKTR) berharga
+tersesuaikan diganti ke harga mentah dari `prev` hari bursa berikutnya (14 Sep memakai faktor vendor yang konstan, terbukti sama pada 15
+dan 25 Sep); `open` di luar rentang → NULL (16 baris; kini juga di saat ingest). Efek: sinyal 14 Sep–30 Okt dihitung ulang, 350 outcome
+dihitung ulang, 7 `close` di `signal_log` dikoreksi. Tiap baris yang disentuh membawa `quality_note`. Idempoten (kueri ulang: 0).
+
+**Mengubah data produksi (semua aditif/terlacak):** tabel baru `broker_levels`, `adj_factor`, `price_adj`, view `price_bars_adj`, kolom
+baru `raw_sha`, `parser_version`, `quality_note`, `bkr_foreign_net_lo/hi`; 17 baris harga + 16 `open` diperbaiki; sinyal 14 Sep–30 Okt
+dihitung ulang; 3 saham ditarik ulang untuk uji ujung-ke-ujung. Backup `backup-2026-11-02` mendahului semua ini.

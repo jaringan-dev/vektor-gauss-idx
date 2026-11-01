@@ -24,8 +24,9 @@ from decimal import Decimal
 
 import psycopg
 
+from .broker_bounds import cohort_net_bounds
 from .db import connect, upsert_many
-from .sources.vektorgauss import is_retail
+from .sources.vektorgauss import FOREIGN_BROKERS, is_retail
 
 # -- tunables (all guesses — the forward test decides) -----------------------
 PRICE_FLAT_BAND = 0.02          # |5d return| < 2% counts as "sideways"
@@ -129,6 +130,10 @@ class Components:
     bkr_foreign_net_d0: float | None = None   # SUM net_val of side_flag='F' brokers today
     bkr_foreign_net_5d: float | None = None   # ... trailing 5 td that have broker data
     bkr_cr3: float | None = None              # top-3 net buyers / all net buyers today (0..1)
+    # CERTAIN bounds on the foreign-broker net today (IDR), from top-20 net buyers + the gross ladders
+    # (broker_bounds.py). bkr_foreign_net_d0 above sums NET BUYERS ONLY and so cannot show selling.
+    bkr_foreign_net_lo: float | None = None
+    bkr_foreign_net_hi: float | None = None
     day_value: float | None = None            # today's traded value (IDR), transient — for ratios
     # Heuristic participant classifier (INFERENCE — RETAIL_BROKERS + avg-ticket).
     bkr_foreign_inst_net: float | None = None # F & not-retail net (IDR)
@@ -370,6 +375,8 @@ class _BrokerSnap:
     top_buyer: str | None = None             # dominant net-buyer broker code
     top_buyer_ticket: float | None = None    # its avg ticket (buy_val/buy_freq)
     top_buyer_inv_rising: bool | None = None # its cum_net_val rising over the window
+    foreign_net_lo: float | None = None      # certain bounds on foreign-broker net (needs broker_levels)
+    foreign_net_hi: float | None = None
 
 
 def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _BrokerSnap:
@@ -394,7 +401,7 @@ def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _Broke
 
     # Full per-broker rows for d0 → concentration + participant cohorts in one pass.
     cur.execute(
-        "SELECT broker_code, side_flag, net_val, buy_val, buy_freq "
+        "SELECT broker_code, side_flag, net_val, buy_val, buy_freq, sell_val "
         "FROM broker_flows WHERE ticker = %s AND session_date = %s",
         (ticker, d0),
     )
@@ -402,7 +409,7 @@ def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _Broke
     if rows:
         f_inst = d_retail = 0.0
         buyers: list[tuple[float, str, float | None]] = []  # (net, code, avg_ticket)
-        for code, sf, net_val, buy_val, buy_freq in rows:
+        for code, sf, net_val, buy_val, buy_freq, _sell_val in rows:
             net = float(net_val) if net_val is not None else 0.0
             retail = is_retail(code)
             if sf == "F" and not retail:
@@ -421,6 +428,19 @@ def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _Broke
             snap.cr1 = buyers[0][0] / total_buy
             snap.top_buyer = buyers[0][1]
             snap.top_buyer_ticket = buyers[0][2]
+
+    # Certain bounds on the foreign-broker net. Only when the gross ladder exists for d0 (collected
+    # from 2 Nov 2026 on, or re-fetched); NULL otherwise, and the *_PASTI tags below stay silent.
+    if rows:
+        cur.execute(
+            "SELECT side, broker_code, val FROM broker_levels WHERE ticker = %s AND session_date = %s",
+            (ticker, d0),
+        )
+        levels = cur.fetchall()
+        bnd = cohort_net_bounds(
+            [(r[0], r[3], r[5]) for r in rows], levels, FOREIGN_BROKERS) if levels else None
+        if bnd is not None:
+            snap.foreign_net_lo, snap.foreign_net_hi = bnd.lo, bnd.hi
 
     # "Bandar" persistence: is the dominant buyer's inventory (cum_net_val) rising
     # across the window? Needs broker_inventory (collected for the harvest set).
@@ -670,6 +690,18 @@ def _classify(c: Components) -> list[str]:
                     tags.append("BROKER-DOMISILI-DIVERGEN")
                     c.data_flags.append("BROKER-DOMISILI-DIVERGEN")
 
+    # v2 (2 Nov 2026): the same question as BROKER-ASING-* but answered with CERTAIN bounds — the tag fires
+    # only if the WHOLE interval clears the band. The v1 tags above sum net buyers only (a one-sided
+    # measure that disagreed in sign with the bounds for ~71% of liquid names on 30 Oct), so they are
+    # kept untouched for the running forward test but should not be read as foreign net flow.
+    # A NEW forward-test clock starts for these two (ARSITEKTUR-DATA-v1, K2).
+    if c.bkr_foreign_net_lo is not None and c.bkr_foreign_net_hi is not None and c.day_value:
+        # Same price-context rule as v1, so the ONLY difference between v1 and v2 is the measure.
+        if c.bkr_foreign_net_lo / c.day_value >= BROKER_FOREIGN_BAND and direction in ("flat", "down"):
+            tags.append("BROKER2-ASING-AKUM")
+        if c.bkr_foreign_net_hi / c.day_value <= -BROKER_FOREIGN_BAND and direction == "up":
+            tags.append("BROKER2-ASING-DIST")
+
     # HEURISTIC participant classifier (INFERENCE — RETAIL_BROKERS + avg-ticket +
     # concentration; a broker aggregates many clients, so these are model labels,
     # never ground truth). All probation, forward-tested.
@@ -704,6 +736,7 @@ _COMP_COLS = (
     "disclosure_5d", "disclosure_20d",
     "bkr_foreign_net_d0", "bkr_foreign_net_5d", "bkr_cr3",
     "bkr_foreign_inst_net", "bkr_dom_retail_net", "bkr_cr1", "bkr_top_buyer",
+    "bkr_foreign_net_lo", "bkr_foreign_net_hi",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -719,6 +752,7 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.disclosure_5d, c.disclosure_20d,
         c.bkr_foreign_net_d0, c.bkr_foreign_net_5d, c.bkr_cr3,
         c.bkr_foreign_inst_net, c.bkr_dom_retail_net, c.bkr_cr1, c.bkr_top_buyer,
+        c.bkr_foreign_net_lo, c.bkr_foreign_net_hi,
         c.quadrant, sorted(set(c.data_flags)),
     )
 
@@ -758,6 +792,8 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.bkr_foreign_net_d0 = bsnap.foreign_net_d0
             c.bkr_foreign_net_5d = bsnap.foreign_net_5d
             c.bkr_cr3 = bsnap.cr3
+            c.bkr_foreign_net_lo = bsnap.foreign_net_lo
+            c.bkr_foreign_net_hi = bsnap.foreign_net_hi
             c.bkr_foreign_inst_net = bsnap.foreign_inst_net
             c.bkr_dom_retail_net = bsnap.dom_retail_net
             c.bkr_cr1 = bsnap.cr1

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -132,6 +133,16 @@ def build_parser() -> argparse.ArgumentParser:
         "detect-ca",
         help="derive share_count_change events from price_bars.listed_shares jumps",
     )
+
+    rp = sub.add_parser("repair-prices", help="fix known-bad price rows (adjusted fallback prices, bad open); dry-run unless --apply")
+    rp.add_argument("--apply", action="store_true", help="write the repairs (default: only print the plan)")
+
+    qg = sub.add_parser("quality-gate", help="check the day's inputs before compute; exit 1 on a BLOCK finding")
+    qg.add_argument("--date", metavar="YYYY-MM-DD", help="default: the latest confirmed trading day")
+    qg.add_argument("--no-alert", action="store_true", help="do not send the Telegram alert")
+
+    sub.add_parser("compute-adj", help="rebuild adj_factor + price_adj (split/bonus/dividend) from corp_actions")
+    sub.add_parser("adj-report", help="validate adjustment factors vs realised ex-date moves + effect on 5d returns")
 
     cm = sub.add_parser("compute", help="engine v0: components + probation tags -> signal_*")
     gm = cm.add_mutually_exclusive_group(required=True)
@@ -379,6 +390,60 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "detect-ca":
         n = collect.detect_share_count_changes()
         print(f"share_count_change events written/updated: {n}")
+        return 0
+
+    if args.cmd == "repair-prices":
+        from . import repair
+        r = repair.run(apply=args.apply)
+        print(f"{'APPLIED' if args.apply else 'DRY-RUN'}: fallback rows checked {r['fallback_candidates']}, "
+              f"repaired {r['repaired']}, flagged {r['flagged']}, open to NULL {r['open_nulled']}")
+        for d, tk, old, new, what in r["plan"]:
+            print(f"  {d} {tk:<6} close {old:>10.2f} -> {new:>10.2f}  ({what})")
+        return 0
+
+    if args.cmd == "quality-gate":
+        from . import quality
+        facts = quality.load_facts(date.fromisoformat(args.date) if args.date else None)
+        findings = quality.evaluate(facts)
+        report = quality.format_report(facts.day, findings)
+        print(report)
+        stop = quality.blocked(findings)
+        try:
+            with connect() as conn, conn.cursor() as cur:
+                collect._log(cur, facts.day, "blocked" if stop else "ok", len(findings),
+                             report if findings else None, "quality_gate")
+        except Exception as exc:  # the gate's verdict must survive a logging failure
+            print(f"(run_log write failed: {type(exc).__name__}: {exc})")
+        if stop and not args.no_alert:
+            sender = TelegramSender()
+            if sender.configured:
+                try:
+                    sender.send("⚠️ Vektor Gauss — " + html.escape(report))
+                except Exception as exc:  # noqa: BLE001 — alert failure must not mask the BLOCK exit code
+                    print(f"(telegram alert failed: {type(exc).__name__}: {exc})")
+        return 1 if stop else 0
+
+    if args.cmd == "compute-adj":
+        from . import adjust
+        r = adjust.rebuild()
+        print(f"adj_factor events: {r['events']}  {r['by_kind']}  price_adj rows: {r['price_adj_rows']}")
+        print(f"skipped (not adjusted): {r['skipped']}")
+        return 0
+
+    if args.cmd == "adj-report":
+        from . import adjust
+        v = adjust.validate()
+        for kind in ("split", "bonus", "dividend"):
+            d = v[kind]
+            print(f"{kind:<9}", "no events" if d is None else
+                  f"n={d['n']} within5%={d['within_5pct']:.0%} median|rel err|={d['median_abs_rel_err']:.3f} "
+                  f"mean(realised-expected)={d['mean_gap']:+.4f}")
+        print("sample cases (kind ticker ex_date expected realised):")
+        for kind, tk, ex, f, real in v["cases"]:
+            print(f"  {kind:<9} {tk:<6} {ex}  expected {f:.4f}  realised {real:.4f}")
+        print("effect on 5-bar returns by year (bp avg; % rows moved >50bp):")
+        for y, n, sp, dv, ps, pd in adjust.h5_effect():
+            print(f"  {y}  n={n:>8}  split {sp:>7}bp  dividend {dv:>7}bp  rows moved: split {ps}% dividend {pd}%")
         return 0
 
     if args.cmd == "compute":

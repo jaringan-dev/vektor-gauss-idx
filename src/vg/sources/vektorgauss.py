@@ -38,6 +38,7 @@ from .base import (
     BrokerFlowRow,
     BrokerInventoryResult,
     BrokerInventoryRow,
+    BrokerLevelRow,
     BrokerSummaryFetchResult,
     BrokerSummarySource,
     DoneByPriceResult,
@@ -104,6 +105,12 @@ def is_retail(broker_code: str) -> bool:
 
 _PATH = "/api/broker-summary/{ticker}"
 
+# Bump when `_parse`/`_parse_levels` change what they extract; stored next to every parsed row so a
+# bad parser version can be found and the raw bytes re-parsed (ARSITEKTUR-DATA-v1 K1).
+#   /1  top-20 NET buyers only (`brokers`)            — the sell side was silently dropped
+#   /2  + `broker_levels` (25 gross-buy / gross-sell rungs)
+PARSER_VERSION = "vg-broker/2"
+
 
 def _dec(v) -> Decimal | None:
     if v is None:
@@ -158,6 +165,28 @@ class VgBrokerSummarySource(BrokerSummarySource):
             ))
         return rows
 
+    @staticmethod
+    def _parse_levels(raw: bytes) -> list[BrokerLevelRow]:
+        """The ranked gross buy / gross sell ladder. A rung may lack either side (fewer than 25
+        active brokers); a missing side is simply skipped, never zero-filled."""
+        doc = json.loads(raw)
+        out: list[BrokerLevelRow] = []
+        for rank, lv in enumerate(doc.get("broker_levels") or [], start=1):
+            for side, key, vkey, qkey, fkey, akey in (
+                ("B", "buy", "bval", "bvol", "bfrq", "bavg"),
+                ("S", "sell", "sval", "svol", "sfrq", "savg"),
+            ):
+                b = (lv or {}).get(key) or {}
+                code = (b.get("broker_code") or "").strip().upper()
+                if not code:
+                    continue
+                out.append(BrokerLevelRow(
+                    side=side, rank=rank, broker_code=code, broker_name=b.get("broker_name"),
+                    val=_dec(b.get(vkey)), vol=_dec(b.get(qkey)), freq=_dec(b.get(fkey)),
+                    avg=_dec(b.get(akey)),
+                ))
+        return out
+
     def _download(self, ticker: str, on_date: date | None = None) -> bytes:
         if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
             raise RuntimeError(
@@ -196,6 +225,7 @@ class VgBrokerSummarySource(BrokerSummarySource):
             )
         try:
             rows = self._parse(raw)
+            levels = self._parse_levels(raw)
         except Exception as exc:
             return BrokerSummaryFetchResult(
                 "error", session_date, ticker, self.name, self.tier, raw_bytes=raw,
@@ -204,7 +234,7 @@ class VgBrokerSummarySource(BrokerSummarySource):
         status = "ok" if rows else "no_data"
         return BrokerSummaryFetchResult(
             status, session_date, ticker, self.name, self.tier,
-            raw_bytes=raw, rows=rows,
+            raw_bytes=raw, rows=rows, levels=levels,
         )
 
 

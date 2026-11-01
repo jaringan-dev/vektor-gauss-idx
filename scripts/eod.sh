@@ -38,7 +38,15 @@ vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usually 0-15/day)
 vg collect-halts       --backfill "$BACK" "$TODAY"
 vg detect-ca
+# Quality gate (ARSITEKTUR-DATA-v1 K4): if today's inputs are broken (price gap, OHLC violations) compute
+# would turn them into wrong signals that eval later scores. A BLOCK finding skips compute and alerts.
+GATE_OK=1
+vg quality-gate || GATE_OK=0
+if [ "$GATE_OK" -eq 1 ]; then
 vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the radar candidates
+else
+  echo "!! quality gate BLOCKED — skipping compute (both passes); fix the inputs, then re-run"
+fi
 # Broker summary (vektorgauss, Tier 3) for watchlist + holdings + EVERY liquid name
 # (> Rp5B traded) + today's radar extras, then recompute so the broker signals + the RADAR
 # broker line land. Two-pass: needs pass-1 `compute` above (radar names). Idempotent: names
@@ -46,7 +54,7 @@ vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the r
 # to be `--radar` (a 60-name cap) which let daily coverage silently sag to ~60 (checklist G3).
 # Best-effort — a Tier-3 outage must never abort EOD.
 vg collect-broker-summary --full || true
-vg compute             --backfill "$BACK" "$TODAY" || true   # pass 2 — broker signals land
+[ "$GATE_OK" -eq 1 ] && { vg compute --backfill "$BACK" "$TODAY" || true; }   # pass 2 — broker signals land
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
 # feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.
 vg collect-broker-inventory --universe || true

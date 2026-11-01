@@ -33,6 +33,7 @@ from .sources.base import (
 )
 from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
+from .sources.vektorgauss import PARSER_VERSION as _BROKER_PARSER_VERSION
 from .sources.vektorgauss import (
     VgBrokerInventorySource,
     VgBrokerSummarySource,
@@ -67,9 +68,18 @@ class CollectOutcome:
     detail: str = ""
 
 
+def _sane_open(bar: PriceBar):
+    """`open` outside [low, high] is a source quirk (128 traded rows on 2026-10-16): store NULL, not a lie.
+    Untraded rows (low == 0) are left alone."""
+    o, lo, hi = bar.open, bar.low, bar.high
+    if o is None or not lo or hi is None:
+        return o
+    return o if lo <= o <= hi else None
+
+
 def _price_row(sd: date, bar: PriceBar, source: str, tier: int) -> tuple:
     return (
-        sd, bar.ticker, bar.prev, bar.open, bar.first_trade, bar.high, bar.low, bar.close,
+        sd, bar.ticker, bar.prev, _sane_open(bar), bar.first_trade, bar.high, bar.low, bar.close,
         bar.change, bar.volume, bar.value, bar.frequency, bar.foreign_buy_vol,
         bar.foreign_sell_vol, bar.nonreg_volume, bar.nonreg_value, bar.nonreg_frequency,
         bar.listed_shares, bar.tradable_shares, bar.weight_for_index, bar.index_individual,
@@ -137,7 +147,8 @@ def _log_error(sd: date, exc: BaseException, phase: str = "collect_price") -> No
 
 def _collect(res: PriceFetchResult) -> CollectOutcome:
     # Save raw to disk first (no DB dependency).
-    art = artifacts.store(res.source, res.session_date, res.raw_bytes) if res.raw_bytes else None
+    art = (artifacts.store(res.source, res.session_date, res.raw_bytes, immutable=True)
+           if res.raw_bytes else None)
     try:
         with connect() as conn, conn.cursor() as cur:
             if art:
@@ -312,7 +323,8 @@ def _index_row(sd: date, b: IndexBar, source: str, tier: int) -> tuple:
 
 
 def _collect_index(res: IndexFetchResult) -> CollectOutcome:
-    art = artifacts.store(res.source, res.session_date, res.raw_bytes) if res.raw_bytes else None
+    art = (artifacts.store(res.source, res.session_date, res.raw_bytes, immutable=True)
+           if res.raw_bytes else None)
     try:
         with connect() as conn, conn.cursor() as cur:
             if art:
@@ -811,7 +823,7 @@ def collect_trading_halts_range(start: date, end: date) -> list[CollectOutcome]:
 _BROKER_COLS = (
     "session_date", "ticker", "broker_code", "side_flag", "buy_val", "sell_val",
     "buy_vol", "sell_vol", "buy_avg", "sell_avg", "buy_freq", "sell_freq",
-    "net_val", "net_vol", "board", "source", "source_tier",
+    "net_val", "net_vol", "board", "source", "source_tier", "raw_sha", "parser_version",
 )
 _BROKER_UPDATE = tuple(
     c for c in _BROKER_COLS
@@ -819,30 +831,49 @@ _BROKER_UPDATE = tuple(
 )
 
 
-def _persist_broker(cur: psycopg.Cursor, res: BrokerSummaryFetchResult) -> int:
+_LEVEL_COLS = (
+    "session_date", "ticker", "side", "rank", "broker_code", "broker_name", "val", "vol",
+    "freq", "avg_price", "source", "source_tier", "raw_sha", "parser_version",
+)
+_LEVEL_UPDATE = tuple(c for c in _LEVEL_COLS if c not in ("session_date", "ticker", "side", "rank"))
+
+
+def _persist_broker(
+    cur: psycopg.Cursor, res: BrokerSummaryFetchResult, raw_sha: str | None = None,
+) -> int:
     rows = [
         (res.session_date, res.ticker, r.broker_code, r.side_flag, r.buy_val,
          r.sell_val, r.buy_vol, r.sell_vol, r.buy_avg, r.sell_avg, r.buy_freq,
-         r.sell_freq, r.net_val, r.net_vol, r.board, res.source, res.source_tier)
+         r.sell_freq, r.net_val, r.net_vol, r.board, res.source, res.source_tier,
+         raw_sha, _BROKER_PARSER_VERSION)
         for r in res.rows
     ]
-    return upsert_many(
+    n = upsert_many(
         cur, "broker_flows", _BROKER_COLS, rows,
         conflict=("session_date", "ticker", "broker_code", "board"),
         update=_BROKER_UPDATE,
     )
+    if res.levels:
+        upsert_many(
+            cur, "broker_levels", _LEVEL_COLS,
+            [(res.session_date, res.ticker, lv.side, lv.rank, lv.broker_code, lv.broker_name,
+              lv.val, lv.vol, lv.freq, lv.avg, res.source, res.source_tier, raw_sha,
+              _BROKER_PARSER_VERSION) for lv in res.levels],
+            conflict=("session_date", "ticker", "side", "rank"), update=_LEVEL_UPDATE,
+        )
+    return n
 
 
 def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
     art = (
-        artifacts.store(res.source, res.session_date, res.raw_bytes, stem=res.ticker)
+        artifacts.store(res.source, res.session_date, res.raw_bytes, stem=res.ticker, immutable=True)
         if res.raw_bytes else None
     )
     try:
         with connect() as conn, conn.cursor() as cur:
             if art:
                 artifacts.record(cur, res.source, res.session_date, *art)
-            rows = _persist_broker(cur, res) if res.status == "ok" else 0
+            rows = _persist_broker(cur, res, art[1] if art else None) if res.status == "ok" else 0
             _log(cur, res.session_date, res.status, rows,
                  (res.detail or f"{res.ticker}"), "collect_broker")
         detail = res.ticker if res.status == "ok" or not res.detail else f"{res.ticker}: {res.detail}"
@@ -1134,7 +1165,7 @@ def collect_price_history_ticker(ticker: str) -> CollectOutcome:
         return CollectOutcome(date.today(), "error", 0, f"{ticker}: {exc}")
     latest = max((b.bar_date for b in res.bars if b.bar_date), default=date.today())
     art = (
-        artifacts.store(res.source, latest, res.raw_bytes, stem=f"{ticker}-hist")
+        artifacts.store(res.source, latest, res.raw_bytes, stem=f"{ticker}-hist", immutable=True)
         if res.raw_bytes else None
     )
     try:
@@ -1237,7 +1268,7 @@ def collect_broker_inventory_ticker(ticker: str) -> CollectOutcome:
         return CollectOutcome(date.today(), "error", 0, f"{ticker}: {exc}")
     latest = max((r.bar_date for r in res.rows), default=date.today())
     art = (
-        artifacts.store(res.source, latest, res.raw_bytes, stem=ticker)
+        artifacts.store(res.source, latest, res.raw_bytes, stem=ticker, immutable=True)
         if res.raw_bytes else None
     )
     try:

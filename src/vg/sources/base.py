@@ -269,6 +269,22 @@ class BrokerFlowRow:
 
 
 @dataclass(slots=True)
+class BrokerLevelRow:
+    """One rung of the feed's ranked buy/sell ladder (`broker_levels`): the Nth largest GROSS buyer
+    ('B') or GROSS seller ('S') of the day. Unlike `BrokerFlowRow` (the top net buyers only), this
+    is where the sell side lives."""
+
+    side: str                      # 'B' | 'S'
+    rank: int                      # 1 = largest
+    broker_code: str
+    broker_name: str | None = None
+    val: Num = None                # IDR gross on that side
+    vol: Num = None
+    freq: Num = None
+    avg: Num = None
+
+
+@dataclass(slots=True)
 class BrokerSummaryFetchResult:
     status: FetchStatus
     session_date: date
@@ -278,6 +294,7 @@ class BrokerSummaryFetchResult:
     raw_bytes: bytes | None = None
     raw_ext: str = "json"
     rows: list[BrokerFlowRow] = field(default_factory=list)
+    levels: list[BrokerLevelRow] = field(default_factory=list)
     detail: str = ""
 
 

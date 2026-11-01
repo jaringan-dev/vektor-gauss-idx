@@ -283,3 +283,21 @@ def test_bandar_needs_concentration_and_ticket():
                    day_value=1_000_000_000.0, bkr_cr1=0.8, bkr_top_buyer="XL",
                    bkr_top_buyer_ticket=1_000_000, bkr_top_buyer_inv_rising=True)
     assert "BANDAR-CANDIDATE" not in _classify(c)
+
+
+def test_classify_broker2_fires_only_when_the_whole_interval_clears_the_band():
+    from vg.engine import BROKER_FOREIGN_BAND
+    v = 1_000.0
+    band = BROKER_FOREIGN_BAND
+
+    def comp(lo, hi, chg):
+        return Components(ticker="X", close=100.0, price_chg_5d=chg, nff_w1=0.0, day_value=v,
+                          bkr_foreign_net_lo=lo, bkr_foreign_net_hi=hi)
+
+    assert "BROKER2-ASING-AKUM" in _classify(comp(v * (band + 0.01), v * 0.5, 0.0))      # whole interval above, flat price
+    assert "BROKER2-ASING-DIST" in _classify(comp(-v * 0.5, -v * (band + 0.01), 0.06))   # whole interval below, rising price
+    both = {"BROKER2-ASING-AKUM", "BROKER2-ASING-DIST"}
+    assert not both & set(_classify(comp(-v * 0.02, v * 0.2, 0.0)))                      # interval straddles the band: silent
+    assert not both & set(_classify(comp(v * (band + 0.01), v * 0.5, 0.06)))             # right measure, wrong price context
+    assert not both & set(_classify(Components(ticker="X", close=100.0, price_chg_5d=0.0,
+                                               nff_w1=0.0, day_value=v)))                # no ladder -> silent

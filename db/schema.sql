@@ -458,3 +458,65 @@ ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_inst_net NUME
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_dom_retail_net   NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_cr1              NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_top_buyer        TEXT;
+
+-- ---------------------------------------------------------------------------
+-- ARSITEKTUR-DATA-v1 Phase 0 (K1/K2). Idempotent, like everything above.
+-- ---------------------------------------------------------------------------
+-- Lineage: which raw bytes + which parser produced a row (find a bad parser version, re-parse the raw).
+ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS raw_sha        TEXT;
+ALTER TABLE broker_flows ADD COLUMN IF NOT EXISTS parser_version TEXT;
+
+-- The feed's ranked GROSS ladder (top-25 buyers and top-25 sellers). `broker_flows` only ever held the
+-- top-20 NET buyers, so the sell side — and therefore any distribution signal — was invisible.
+CREATE TABLE IF NOT EXISTS broker_levels (
+    session_date   DATE NOT NULL,
+    ticker         TEXT NOT NULL,
+    side           CHAR(1) NOT NULL CHECK (side IN ('B', 'S')),   -- gross Buyer | gross Seller
+    rank           SMALLINT NOT NULL,                              -- 1 = largest on that side
+    broker_code    TEXT NOT NULL,
+    broker_name    TEXT,
+    val            NUMERIC,                                        -- IDR gross on that side
+    vol            NUMERIC,
+    freq           NUMERIC,
+    avg_price      NUMERIC,
+    source         TEXT NOT NULL,
+    source_tier    SMALLINT NOT NULL,
+    raw_sha        TEXT,
+    parser_version TEXT,
+    fetched_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_date, ticker, side, rank)
+);
+CREATE INDEX IF NOT EXISTS idx_broker_levels_ticker ON broker_levels (ticker, session_date);
+
+-- Certain-bounds foreign broker net (see engine._foreign_net_bounds). NULL = ladder not available.
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_lo NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_hi NUMERIC;
+
+-- K3: price adjustment from corporate actions (src/vg/adjust.py). price_bars stays RAW.
+CREATE TABLE IF NOT EXISTS adj_factor (
+    ticker     TEXT NOT NULL,
+    ex_date    DATE NOT NULL,
+    kind       TEXT NOT NULL CHECK (kind IN ('split', 'bonus', 'dividend')),
+    factor     NUMERIC NOT NULL CHECK (factor > 0),     -- multiply bars BEFORE ex_date by this
+    detail     TEXT,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, ex_date, kind)
+);
+-- Only bars that precede at least one event have a row; every other bar implicitly has factor 1.
+CREATE TABLE IF NOT EXISTS price_adj (
+    session_date  DATE NOT NULL,
+    ticker        TEXT NOT NULL,
+    split_factor  NUMERIC NOT NULL,   -- splits + bonus issues only (price continuity)
+    total_factor  NUMERIC NOT NULL,   -- + cash dividends (total-return basis)
+    PRIMARY KEY (session_date, ticker)
+);
+CREATE OR REPLACE VIEW price_bars_adj AS
+SELECT p.session_date, p.ticker, p.close,
+       COALESCE(a.split_factor, 1) AS split_factor,
+       COALESCE(a.total_factor, 1) AS total_factor,
+       p.close * COALESCE(a.split_factor, 1) AS close_adj,
+       p.close * COALESCE(a.total_factor, 1) AS close_tr
+FROM price_bars p LEFT JOIN price_adj a USING (session_date, ticker);
+
+-- K5: why a price row was touched after ingest (src/vg/repair.py). NULL = untouched.
+ALTER TABLE price_bars ADD COLUMN IF NOT EXISTS quality_note TEXT;
