@@ -46,7 +46,8 @@ Legenda status olahan: ✅ sudah ada di VG · 🟡 data lengkap, tinggal dibuat 
 
 ### D. Kepemilikan KSEI bulanan (`ownership_monthly`, 2018→)
 - ✅ Tren %asing/%ritel 3 bulan, KSEI-KONFIRM/DIVERGEN, KSEI-INST-AKUM, KSEI-RITEL-EXIT.
-- 🟡 Balance Position (lokal/asing × tipe investor, dari `detail`), tren jumlah pemegang (`holders_count`), estimasi free float, indikasi nominee/scripless.
+- 🟡 Balance Position (lokal/asing × tipe investor, dari `detail`), estimasi free float, indikasi nominee/scripless.
+- 🔴 **Koreksi 2 Nov:** `holders_count` **100% null** (berkas KSEI tidak memuatnya) — tren jumlah pemegang TIDAK bisa dibuat. Basis KSEI = saham *scripless*; 419 dari 980 saham < 95% dari `listed_shares` (lihat `ARSITEKTUR-DATA-v1.md` Q7).
 
 ### E. Disclosure (`disclosure_filings`, `disclosure_holdings`)
 - ✅ Tag INSIDER-AKUM/DIST, SUBSTANTIAL-AKUM/DIST, LAPOR-KEPEMILIKAN-RAMAI.
@@ -77,8 +78,9 @@ Legenda status olahan: ✅ sudah ada di VG · 🟡 data lengkap, tinggal dibuat 
 | D4 | `ticker_profile_history` hanya 2 snapshot, bukan harian | Perubahan sektor/papan tak terlacak tiap hari | Snapshot berkala (mingguan) |
 | D5 | `done_by_price` 6 baris (1 hari) | Order flow per level harga praktis tidak ada | Sengaja on-demand (mahal); tarik hanya untuk saham fokus |
 | D6 | `broker_affiliation_groups` kosong | Tidak ada pengelompokan broker satu grup | Isi manual dari domain knowledge bila ingin "clean" ala NeoBDM |
-| D7 | `market_breadth` berhenti 16 Okt, sedangkan data lain 30 Okt | Edge hari-hari terbaru belum bisa dihitung | Kemungkinan wajar karena butuh return 10 hari ke depan; **belum diverifikasi** |
-| D8 | `raw_artifacts`/`run_log` memuat tanggal logis sampai 2026-12-31 dan 2015-12-31 | Tampak seperti tanggal penanda, bukan data | **Tidak diselidiki**; cek sebelum dipakai untuk UI riwayat koleksi |
+| D7 | `market_breadth` berhenti 16 Okt, sedangkan data lain 30 Okt | Edge hari-hari terbaru belum bisa dihitung | **Terverifikasi 2 Nov:** selisih tepat 10 hari bursa = jendela H10; wajar. |
+| D8 | `raw_artifacts` memuat tanggal logis 2026-12-31 | Penanda tahun untuk sumber `ksei_ca_schedule` (7 baris), bukan data | **Terverifikasi 2 Nov**; abaikan di UI riwayat koleksi. |
+| D9 | `broker_flows` hanya 20 *net buyer* teratas per saham-hari; `broker_levels` (sisi jual) tidak diparse | Distribusi tak teramati | Lihat `ARSITEKTUR-DATA-v1.md` Q2 / K2 |
 
 ## 4. Implikasi untuk UI
 Data yang **lengkap tetapi belum punya layar**: sektor (G), kalender dividen (F), insider per saham (E), Inventory Chart / Broker Stalker (C), candle per saham (A). Layar-layar ini masuk daftar di `CHECKLIST-UI-UX.md`.
