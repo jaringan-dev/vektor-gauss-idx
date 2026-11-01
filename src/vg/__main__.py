@@ -92,6 +92,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="with --full: fill that PAST trading day instead of the newest (feed serves history)")
     cb.add_argument("--backfill", nargs=2, metavar=("START", "END"),
                     help="with --full: fill every trading day in the inclusive range, oldest first")
+    cb.add_argument("--levels-only", action="store_true",
+                    help="with --full: treat a name as stored only if broker_levels has it (re-fetch the gross sell side)")
 
     cbi = sub.add_parser(
         "collect-broker-inventory",
@@ -286,8 +288,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "collect-broker-summary":
-        if (args.plan or args.date or args.backfill) and not args.full:
-            print("--plan / --date / --backfill only apply together with --full")
+        if (args.plan or args.date or args.backfill or args.levels_only) and not args.full:
+            print("--plan / --date / --backfill / --levels-only only apply together with --full")
             return 2
         if args.backfill and (args.date or args.plan):
             print("--backfill cannot be combined with --date or --plan")
@@ -302,8 +304,9 @@ def main(argv: list[str] | None = None) -> int:
             _print(collect.collect_broker_summary_ticker(latest, args.ticker))
         elif args.full:
             day = _d(args.date) if args.date else None
+            have = "broker_levels" if args.levels_only else "broker_flows"
             if args.plan:
-                plan = collect.plan_broker_full(session_date=day)
+                plan = collect.plan_broker_full(session_date=day, have_table=have)
                 if plan["latest"] is None:
                     print(plan.get("reason") or "no trading_calendar rows — run collect-price first")
                     return 1
@@ -314,9 +317,9 @@ def main(argv: list[str] | None = None) -> int:
                     print("  e.g. " + ", ".join(plan["todo"][:15]) + (" …" if len(plan["todo"]) > 15 else ""))
                 return 0
             if args.backfill:
-                outs = collect.backfill_broker_full(_d(args.backfill[0]), _d(args.backfill[1]))
+                outs = collect.backfill_broker_full(_d(args.backfill[0]), _d(args.backfill[1]), have_table=have)
             else:
-                outs = collect.collect_broker_summary_full(session_date=day)
+                outs = collect.collect_broker_summary_full(session_date=day, have_table=have)
             for o in outs:
                 _print(o)
             return 0 if outs and outs[-1].status == "ok" else 1

@@ -144,7 +144,7 @@ def test_newest_day_keeps_the_original_undated_call(rig):
 def test_a_past_day_requests_that_exact_date(rig):
     rig.todo, rig.latest, rig.newest = ["BBCA", "BBRI"], OLDER, LATEST
     collect.collect_broker_summary_full(session_date=OLDER)
-    assert rig.plan_args == {"session_date": OLDER}
+    assert rig.plan_args == {"session_date": OLDER, "have_table": "broker_flows"}
     assert rig.kwargs == [{"use_date": True}, {"use_date": True}]
 
 
@@ -199,7 +199,7 @@ def test_backfill_runs_each_trading_day_oldest_first(monkeypatch):
     monkeypatch.setattr(collect, "connect", _fake_connect(_Cur(rows=[(d,) for d in days])))
     seen = []
 
-    def fake_full(*, delay=None, session_date=None):
+    def fake_full(*, delay=None, session_date=None, have_table="broker_flows"):
         seen.append(session_date)
         return [CollectOutcome(session_date, "ok", 100, "190 names")]
 
@@ -213,7 +213,7 @@ def test_backfill_stops_at_the_first_failing_day(monkeypatch):
     monkeypatch.setattr(collect, "connect", _fake_connect(_Cur(rows=[(d,) for d in days])))
     seen = []
 
-    def fake_full(*, delay=None, session_date=None):
+    def fake_full(*, delay=None, session_date=None, have_table="broker_flows"):
         seen.append(session_date)
         st = "error" if session_date == days[1] else "ok"
         return [CollectOutcome(session_date, st, 0, "x")]
@@ -322,7 +322,7 @@ def test_cli_plan_with_a_date_passes_the_date_through(monkeypatch):
     got = {}
     monkeypatch.setattr(collect, "plan_broker_full", lambda **k: got.update(k) or _plan()(**k))
     assert main(["collect-broker-summary", "--full", "--plan", "--date", "2026-10-16"]) == 0
-    assert got == {"session_date": OLDER}
+    assert got == {"session_date": OLDER, "have_table": "broker_flows"}
 
 
 def test_cli_plan_for_a_non_trading_day_exits_1_with_the_reason(monkeypatch, capsys):
@@ -365,7 +365,7 @@ def test_cli_full_date_calls_the_dated_pass(monkeypatch):
     monkeypatch.setattr(collect, "collect_broker_summary_full",
                         lambda **k: got.update(k) or [CollectOutcome(OLDER, "ok", 100, "190 names")])
     assert main(["collect-broker-summary", "--full", "--date", "2026-10-16"]) == 0
-    assert got == {"session_date": OLDER}
+    assert got == {"session_date": OLDER, "have_table": "broker_flows"}
 
 
 def test_cli_full_backfill_calls_the_range_pass(monkeypatch):
@@ -373,7 +373,7 @@ def test_cli_full_backfill_calls_the_range_pass(monkeypatch):
 
     got = []
     monkeypatch.setattr(collect, "backfill_broker_full",
-                        lambda a, b: got.append((a, b)) or [CollectOutcome(b, "ok", 100, "190 names")])
+                        lambda a, b, **k: got.append((a, b)) or [CollectOutcome(b, "ok", 100, "190 names")])
     assert main(["collect-broker-summary", "--full", "--backfill", "2026-10-16", "2026-10-20"]) == 0
     assert got == [(date(2026, 10, 16), date(2026, 10, 20))]
 
@@ -410,3 +410,18 @@ def test_eod_script_runs_the_full_pass_not_the_radar_cap():
              if not ln.strip().startswith("#")]
     broker = [ln for ln in lines if ln.startswith("vg collect-broker-summary")]
     assert broker == ["vg collect-broker-summary --full || true"]
+
+
+# ---- K6: re-fetch the gross sell side for history stored before it was parsed -------------
+
+def test_plan_rejects_an_unknown_have_table():
+    with pytest.raises(ValueError):
+        collect.plan_broker_full(have_table="price_bars; DROP TABLE x")
+
+
+def test_levels_only_flag_requires_full_and_is_wired_to_have_table():
+    from vg.__main__ import build_parser
+    p = build_parser()
+    a = p.parse_args(["collect-broker-summary", "--full", "--backfill", "2026-06-03", "2026-10-30", "--levels-only"])
+    assert a.levels_only is True and a.full is True
+    assert p.parse_args(["collect-broker-summary", "--full"]).levels_only is False
