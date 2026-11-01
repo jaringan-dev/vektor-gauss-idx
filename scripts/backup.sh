@@ -13,7 +13,7 @@
 # Run by: scripts/eod.sh (weekly, see the Sunday block) / cron / by hand.
 #
 #   VG_HOME          repo checkout with .venv + .env     (default: parent of this script)
-#   VG_BACKUP_REPO    "owner/repo" for `gh release`       (default: jaringan-bot/vektor-gauss)
+#   VG_BACKUP_REPO    "owner/repo" for `gh release`       (default: jaringan-dev/vektor-gauss-idx)
 #   VG_BACKUP_KEEP    how many past backups to retain     (default: 8, ~2 months weekly)
 #   VG_BACKUP_DIR     scratch dir for the dump/tar files  (default: /tmp/vg-backup)
 set -u
@@ -24,7 +24,7 @@ cd "$VG_HOME" || { echo "VG_HOME not found: $VG_HOME"; exit 1; }
 # .env holds VG_DATABASE_URL + Telegram secrets — simple KEY=VALUE, safe to source.
 [ -f .env ] && { set -a; . ./.env; set +a; }
 
-REPO="${VG_BACKUP_REPO:-jaringan-bot/vektor-gauss}"
+REPO="${VG_BACKUP_REPO:-jaringan-dev/vektor-gauss-idx}"
 KEEP="${VG_BACKUP_KEEP:-8}"
 WORKDIR="${VG_BACKUP_DIR:-/tmp/vg-backup}"
 STAMP=$(date +%F)
