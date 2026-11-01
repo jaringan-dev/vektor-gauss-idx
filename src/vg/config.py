@@ -42,6 +42,7 @@ class Config:
     http_user_agent: str
     http_timeout: float
     request_delay_seconds: float
+    feed_delay_seconds: float          # pause between calls to the VG feed (no Cloudflare there)
     idx_base_url: str
     feed_base_url: str
     feed_api_key: str
@@ -74,6 +75,9 @@ class Config:
             http_user_agent=os.environ.get("VG_HTTP_USER_AGENT", DEFAULT_UA),
             http_timeout=float(os.environ.get("VG_HTTP_TIMEOUT", "30")),
             request_delay_seconds=float(os.environ.get("VG_REQUEST_DELAY_SECONDS", "4")),
+            # IDX sits behind Cloudflare and needs the slow delay above; the VG feed does not.
+            # 1.0s was exercised for ~19k calls (2026-10-16/31) without a single throttle.
+            feed_delay_seconds=float(os.environ.get("VG_FEED_DELAY_SECONDS", "1.0")),
             idx_base_url=os.environ.get("VG_IDX_BASE_URL", "https://www.idx.co.id").rstrip("/"),
             # VG data feed (Phase 1.5, Tier 3): broker summary + Cloudflare-free price
             # history. Endpoint + key live in .env only, never in source.

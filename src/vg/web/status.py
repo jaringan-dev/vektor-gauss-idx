@@ -49,6 +49,21 @@ def span_days(first: date | None, last: date | None) -> int:
     return (last - first).days
 
 
+def is_small_n(n: int | None) -> bool:
+    """True when a tag has too few signals to be judged (below the promotion bar's n)."""
+    return (n or 0) < MIN_SIGNALS
+
+
+def order_rows(rows: list[dict]) -> list[dict]:
+    """Display order: well-sampled tags first (largest n first), small-n tags always last.
+
+    A tiny sample can show a spectacular edge (FLOAT-ASING-PADAT, n=34, +6.6%) purely by
+    chance; it must never sit above a tag with thousands of observations by default
+    (checklist E2). Stable for equal n.
+    """
+    return sorted(rows, key=lambda r: (is_small_n(r.get("n")), -(r.get("n") or 0)))
+
+
 def classify(row: dict) -> TagStatus:
     """Verdict for one `engine.eval_tags()` row. See the module docstring for the bar."""
     n = row.get("n") or 0

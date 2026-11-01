@@ -10,7 +10,8 @@
       --ready-bg:#dcfce7; --ready-fg:#166534;
       --fail-bg:#fee2e2; --fail-fg:#991b1b;
       --prob-bg:#f3f4f6; --prob-fg:#6b7280;
-      --pos:#15803d; --neg:#b91c1c;
+      --warn-bg:#fef3c7; --warn-fg:#92400e;
+      --pos:#15803d; --neg:#b91c1c; --side:#fff;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -18,16 +19,53 @@
         --ready-bg:#14341f; --ready-fg:#4ade80;
         --fail-bg:#3a1618; --fail-fg:#f87171;
         --prob-bg:#1f2227; --prob-fg:#9ca3af;
-        --pos:#4ade80; --neg:#f87171;
+        --warn-bg:#3b2f10; --warn-fg:#fbbf24;
+        --pos:#4ade80; --neg:#f87171; --side:#12131a;
       }
     }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--fg);
            font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif; }
-    header { padding:20px 16px; border-bottom:1px solid var(--border); }
-    header h1 { margin:0; font-size:18px; }
-    header .sub { color:var(--muted); font-size:13px; margin-top:4px; }
-    main { max-width:1100px; margin:0 auto; padding:16px; }
+
+    /* ---- shell (A1): sidebar on wide screens, collapsible menu on narrow ones ---- */
+    .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+    .skip { position:absolute; left:-9999px; top:8px; }
+    .skip:focus { left:8px; z-index:20; background:var(--panel); color:var(--fg); padding:8px 14px;
+                  border:2px solid var(--fg); border-radius:8px; }
+    .layout { display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100vh; }
+    .topbar { display:none; }
+    .sidebar { background:var(--side); border-right:1px solid var(--border); padding:16px 12px;
+               position:sticky; top:0; height:100vh; overflow-y:auto; }
+    .brand { font-weight:700; font-size:15px; margin:0 8px 14px; }
+    .brand span { display:block; font-weight:400; font-size:11px; color:var(--muted); }
+    .sidebar .grp { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:14px 8px 4px; }
+    .sidebar ul { list-style:none; margin:0; padding:0; }
+    .sidebar a { display:block; padding:8px 10px; border-radius:8px; color:var(--fg); text-decoration:none; font-size:13px; }
+    .sidebar a:hover { background:var(--prob-bg); }
+    .sidebar a[aria-current="page"] { background:var(--prob-bg); font-weight:600; box-shadow:inset 3px 0 0 var(--fg); }
+    .content { min-width:0; }
+    .menu-btn { font:inherit; font-size:14px; padding:8px 14px; border:1px solid var(--border); border-radius:8px;
+                background:var(--panel); color:var(--fg); cursor:pointer; }
+    @media (max-width:859px) {
+      .layout { grid-template-columns:minmax(0,1fr); }
+      .topbar { display:flex; align-items:center; gap:12px; padding:10px 16px; background:var(--side);
+                border-bottom:1px solid var(--border); }
+      .sidebar { display:none; position:static; height:auto; border-right:0; border-bottom:1px solid var(--border); }
+      .sidebar.open { display:block; }
+    }
+
+    /* ---- FreshnessStrip (A2) ---- */
+    .strip { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:9px 20px;
+             background:var(--panel); border-bottom:1px solid var(--border); font-size:12px; }
+    @media (min-width:860px) { .strip { position:sticky; top:0; z-index:5; } }
+    .strip ul { display:contents; list-style:none; margin:0; padding:0; }
+    .strip li { padding:2px 9px; border-radius:999px; border:1px solid var(--border); white-space:nowrap; }
+    .strip li.lv-warn { background:var(--warn-bg); color:var(--warn-fg); border-color:var(--warn-fg); }
+    .strip li.lv-bad  { background:var(--fail-bg); color:var(--fail-fg); border-color:var(--fail-fg); font-weight:600; }
+    .strip .checked { margin-left:auto; color:var(--muted); }
+
+    main { padding:16px 20px; max-width:1100px; }
+    .pagehead h1 { margin:0 0 14px; font-size:20px; }
     .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px;
              padding:16px; margin-bottom:20px; overflow-x:auto; }
     .panel h2 { margin:0 0 4px; font-size:15px; }
@@ -42,10 +80,12 @@
     .badge.ready { background:var(--ready-bg); color:var(--ready-fg); }
     .badge.failing { background:var(--fail-bg); color:var(--fail-fg); }
     .badge.probation { background:var(--prob-bg); color:var(--prob-fg); }
+    .badge.warn { background:var(--prob-bg); color:var(--prob-fg); border:1px dashed var(--prob-fg); margin-left:6px; }
+    .quad { color:var(--muted); font-size:12px; }
     .err { background:var(--fail-bg); color:var(--fail-fg); padding:12px; border-radius:8px;
            font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; }
     .disclaimer { color:var(--muted); font-size:11px; margin-top:8px; }
-    footer { max-width:1100px; margin:0 auto; padding:16px; color:var(--muted); font-size:12px; }
+    footer { padding:16px 20px; max-width:1100px; color:var(--muted); font-size:12px; }
     nav.nav { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
     nav.nav a { color:var(--fg); text-decoration:none; font-size:13px; padding:5px 12px;
                 border:1px solid var(--border); border-radius:999px; background:var(--panel); }
@@ -54,19 +94,84 @@
               border-radius:8px; background:var(--bg); color:var(--fg); font-size:14px; }
     .count { color:var(--muted); font-size:12px; margin-left:10px; }
     code { background:var(--prob-bg); padding:1px 5px; border-radius:4px; }
+    .chip { display:inline-block; border:1px solid var(--border); border-radius:6px; padding:1px 8px;
+            font-size:12px; margin:2px 4px 2px 0; font-variant-numeric:tabular-nums; }
+    pre.cmd { background:var(--prob-bg); padding:12px; border-radius:8px; overflow-x:auto; margin:0 0 10px;
+              font-size:12px; line-height:1.6; }
+    pre.cmd code { background:none; padding:0; }
+
+    /* coverage heatmap (F1): state = colour + symbol + number, never colour alone */
+    table.cov th[scope="row"] { text-align:left; font-weight:500; color:var(--fg); }
+    table.cov td, table.cov thead th { text-align:center; }
+    td.cov-ok, .cov-ok { background:var(--ready-bg); color:var(--ready-fg); }
+    td.cov-warn, .cov-warn { background:var(--warn-bg); color:var(--warn-fg); }
+    td.cov-bad, .cov-bad { background:var(--fail-bg); color:var(--fail-fg); font-weight:600; }
+    td.cov-na { color:var(--muted); }
+    table.cov td a { color:inherit; text-decoration:underline; display:block; }
+    ul.legend { list-style:none; display:flex; gap:14px; flex-wrap:wrap; margin:12px 0 0; padding:0;
+                font-size:12px; color:var(--muted); }
+    ul.legend .sw { display:inline-block; min-width:22px; text-align:center; padding:1px 6px; border-radius:4px;
+                    margin-right:5px; border:1px solid var(--border); }
   </style>
+  <noscript><style>.sidebar { display:block !important; } .menu-btn { display:none; }</style></noscript>
 </head>
 <body>
-  <header>
-    <h1>Vektor Gauss — Superadmin</h1>
-    <div class="sub">{% block subtitle %}{% endblock %}</div>
-    <nav class="nav">
-      <a href="/" class="{{ 'active' if active_page == 'tracker' else '' }}">Forward-test</a>
-      <a href="/screener" class="{{ 'active' if active_page == 'screener' else '' }}">Saham hari ini</a>
-      <a href="/ranking" class="{{ 'active' if active_page == 'ranking' else '' }}">Top / Ranking</a>
-    </nav>
-  </header>
-  <main>{% block content %}{% endblock %}</main>
-  <footer>{% block footer %}{% endblock %}</footer>
+  <a class="skip" href="#main">Lewati ke konten</a>
+  <div class="layout">
+    <div class="topbar">
+      <button type="button" id="menu-btn" class="menu-btn" aria-controls="sidebar" aria-expanded="false">☰ Menu</button>
+      <span class="brand" style="margin:0">Vektor Gauss</span>
+    </div>
+
+    <aside id="sidebar" class="sidebar" aria-label="Navigasi utama">
+      <div class="brand">Vektor Gauss <span>Superadmin · lokal</span></div>
+      <nav aria-label="Layar">
+        {% for g in nav_groups|default([]) %}
+        <div class="grp">{{ g.title }}</div>
+        <ul>
+          {% for it in g["items"] %}
+          <li><a href="{{ it.href }}"{% if active_page == it.key %} aria-current="page"{% endif %}>{{ it.label }}</a></li>
+          {% endfor %}
+        </ul>
+        {% endfor %}
+      </nav>
+    </aside>
+
+    <div class="content">
+      {% if strip %}
+      <section class="strip" aria-label="Kesegaran data">
+        {% if strip.error %}
+        <ul><li class="lv-bad"><span aria-hidden="true">✖</span> Kesegaran data tidak bisa diperiksa: {{ strip.error }}</li></ul>
+        {% else %}
+        <ul>
+          {% for it in strip["items"] %}
+          <li class="lv-{{ it.level }}"><b>{{ it.label }}</b> <span aria-hidden="true">{{ it.symbol }}</span>
+            {{ it.text }}<span class="sr-only"> — status {{ it.word }}</span></li>
+          {% endfor %}
+        </ul>
+        <span class="checked">{% if strip.checked_at %}diperiksa {{ strip.checked_at }} · {% endif %}<a href="/coverage">cakupan data</a></span>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      <main id="main" tabindex="-1">
+        <header class="pagehead"><h1>{% block subtitle %}{% endblock %}</h1></header>
+        {% block content %}{% endblock %}
+      </main>
+      <footer>{% block footer %}{% endblock %}</footer>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var btn = document.getElementById("menu-btn"), side = document.getElementById("sidebar");
+      if (!btn || !side) return;
+      function set(open) { side.classList.toggle("open", open); btn.setAttribute("aria-expanded", open ? "true" : "false"); }
+      btn.addEventListener("click", function () { set(!side.classList.contains("open")); });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && side.classList.contains("open")) { set(false); btn.focus(); }
+      });
+    })();
+  </script>
 </body>
 </html>

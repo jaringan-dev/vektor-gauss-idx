@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vektor Gauss — Mockup UI v2</title>
+<style>
+:root{
+  --surface:#f7f7f8; --panel:#fff; --text:#1a1a1a; --muted:#6b7280; --border:#e5e7eb;
+  --pos:#15803d; --neg:#b91c1c; --warn:#b45309; --info:#1d4ed8;
+  --ready-bg:#dcfce7; --ready-fg:#166534; --fail-bg:#fee2e2; --fail-fg:#991b1b;
+  --prob-bg:#f3f4f6; --prob-fg:#6b7280; --warn-bg:#fef3c7; --info-bg:#dbeafe; --side:#fff;
+}
+:root[data-theme="dark"]{
+  --surface:#0e0f12; --panel:#17181c; --text:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
+  --pos:#4ade80; --neg:#f87171; --warn:#fbbf24; --info:#93c5fd;
+  --ready-bg:#14341f; --ready-fg:#4ade80; --fail-bg:#3a1618; --fail-fg:#f87171;
+  --prob-bg:#1f2227; --prob-fg:#9ca3af; --warn-bg:#3b2f10; --info-bg:#172554; --side:#12131a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface);color:var(--text);font:14px/1.5 -apple-system,"Segoe UI",Roboto,sans-serif}
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+aside{background:var(--side);border-right:1px solid var(--border);padding:16px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+aside h1{font-size:15px;margin:0 8px 14px}
+aside .grp{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:14px 8px 4px}
+aside button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);padding:7px 10px;border-radius:8px;font-size:13px;cursor:pointer}
+aside button:hover{background:var(--prob-bg)}
+aside button.active{background:var(--prob-bg);font-weight:600;box-shadow:inset 3px 0 0 var(--info)}
+aside .new{font-size:10px;background:var(--info-bg);color:var(--info);padding:1px 6px;border-radius:999px;margin-left:6px}
+aside .theme{margin-top:18px;border:1px solid var(--border);text-align:center}
+main{min-width:0}
+.strip{display:flex;flex-wrap:wrap;gap:6px 16px;padding:9px 20px;background:var(--panel);border-bottom:1px solid var(--border);font-size:12px;position:sticky;top:0;z-index:5}
+.strip b{font-weight:600}
+.ok{color:var(--pos)} .warnc{color:var(--warn)}
+.content{padding:20px;max-width:1100px}
+h2{font-size:20px;margin:0 0 4px} .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+.panel h3{margin:0 0 2px;font-size:15px} .note{color:var(--muted);font-size:12px;margin:0 0 10px}
+.grid{display:grid;gap:14px} .g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:860px){.app{grid-template-columns:1fr}aside{position:static;height:auto}.g2,.g3{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+th:first-child,td:first-child{text-align:left} th{color:var(--muted);font-size:12px;font-weight:600}
+.pos{color:var(--pos)} .neg{color:var(--neg)}
+.badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.b-ready{background:var(--ready-bg);color:var(--ready-fg)} .b-fail{background:var(--fail-bg);color:var(--fail-fg)}
+.b-prob{background:var(--prob-bg);color:var(--prob-fg)} .b-warn{background:var(--warn-bg);color:var(--warn)}
+.cov{display:inline-block;background:var(--info-bg);color:var(--info);font-size:11px;padding:1px 8px;border-radius:999px}
+.chip{display:inline-block;border:1px solid var(--border);border-radius:6px;padding:1px 8px;font-size:12px;margin:2px 4px 2px 0}
+.card{border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--panel)}
+.card .t{font-size:12px;color:var(--muted)} .card .v{font-size:18px;font-weight:600;margin-top:2px}
+.card.red{border-color:var(--neg)} .card.yellow{border-color:var(--warn)} .card.green{border-color:var(--border)}
+.alert{border-left:4px solid var(--warn);background:var(--warn-bg);padding:9px 12px;border-radius:6px;margin:6px 0;font-size:13px}
+.disc{color:var(--muted);font-size:11px;margin-top:18px}
+.screen{display:none} .screen.show{display:block}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.heat{display:grid;grid-template-columns:70px repeat(4,1fr);gap:2px;font-size:11px;max-height:420px;overflow:auto}
+.heat div{padding:3px 6px;border-radius:3px;text-align:center}
+.heat .h{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.c-ok{background:var(--ready-bg);color:var(--ready-fg)} .c-bad{background:var(--fail-bg);color:var(--fail-fg)} .c-mid{background:var(--warn-bg);color:var(--warn)}
+svg{width:100%;height:auto;display:block}
+.label{font-size:11px;fill:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <h1>Vektor Gauss</h1>
+  <div class="grp">Beranda</div>
+  <button data-s="home" class="active">Kesehatan <span class="new">baru</span></button>
+  <div class="grp">Pola (Tag)</div>
+  <button data-s="tracker">Forward-test</button>
+  <button data-s="tag">Detail tag <span class="new">baru</span></button>
+  <div class="grp">Saham</div>
+  <button data-s="screener">Saham hari ini</button>
+  <button data-s="ranking">Top / Ranking</button>
+  <button data-s="ticker">Detail saham <span class="new">baru</span></button>
+  <div class="grp">Data</div>
+  <button data-s="cov">Cakupan &amp; celah <span class="new">baru</span></button>
+  <button data-s="log">Log mentah</button>
+  <button class="theme" id="theme">Tema: terang / gelap</button>
+</aside>
+<main>
+  <div class="strip" id="strip">
+    <span><b>EOD</b> 30 Okt 2026 <span class="ok">✅</span></span>
+    <span><b>harga</b> 962 saham <span class="ok">✅</span></span>
+    <span><b>broker</b> 196 saham (likuid) <span class="ok">✅</span></span>
+    <span><b>KSEI</b> Sep 2026 <span class="ok">✅</span></span>
+    <span style="margin-left:auto;color:var(--muted)">MOCKUP · data contoh</span>
+  </div>
+  <div class="content">
+
+  <!-- BERANDA -->
+  <section class="screen show" id="s-home">
+    <h2>Kesehatan</h2><p class="sub">Ada yang perlu saya tangani hari ini?</p>
+    <div class="panel">
+      <h3>Perlu perhatian</h3><p class="note">Kosong berarti "Semua sehat".</p>
+      <div class="alert">⚠ Cakupan broker 16–30 Okt turun ke ~60 saham/hari (cap radar). <a href="#" data-go="cov">Lihat Data →</a></div>
+      <div class="alert">⚠ 3 hari harga bolong terdeteksi (14, 15, 25 Sep). <a href="#" data-go="cov">Lihat Data →</a></div>
+    </div>
+    <div class="grid g3">
+      <div class="card green"><div class="t">EOD hari ini</div><div class="v ok">Sehat</div><div class="note">harga &amp; indeks = 30 Okt</div></div>
+      <div class="card yellow"><div class="t">Cakupan broker</div><div class="v warnc">Parsial</div><div class="note">60 dari ~190 normal</div></div>
+      <div class="card green"><div class="t">KSEI bulanan</div><div class="v ok">Sehat</div><div class="note">Sep 2026 (31 hari)</div></div>
+      <div class="card green"><div class="t">Disclosure</div><div class="v ok">Sehat</div><div class="note">24 filing 5 hari terakhir</div></div>
+      <div class="card green"><div class="t">Flag integritas</div><div class="v ok">Normal</div><div class="note">RECON_FAIL 0</div></div>
+      <div class="card"><div class="t">Telegram</div><div class="v" style="color:var(--muted)">Belum dilacak</div><div class="note">butuh tabel notification_log</div></div>
+    </div>
+    <div class="panel" style="margin-top:16px">
+      <h3>Ringkasan pola</h3><p class="note">Diurut n terbesar. Tag ber-n kecil diberi label dan tidak diurut di atas.</p>
+      <table><thead><tr><th>tag</th><th>n</th><th>edge H5 likuid</th><th>status</th></tr></thead><tbody>
+      <tr><td>BROKER-DOMISILI-KONFIRM</td><td>5.878</td><td class="pos">+0,92%</td><td><span class="badge b-prob">PROBATION</span></td></tr>
+      <tr><td>BROKER-ASING-AKUM</td><td>5.102</td><td class="pos">+0,54%</td><td><span class="badge b-prob">PROBATION</span></td></tr>
+      <tr><td>FLOAT-ASING-PADAT</td><td>34</td><td class="pos">+6,56%</td><td><span class="badge b-prob">PROBATION · n kecil</span></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- FORWARD TEST -->
+  <section class="screen" id="s-tracker">
+    <h2>Forward-test</h2><p class="sub">Jendela out-of-sample sejak 4 Sep. Gate: n ≥ 50, span ≥ 60 hari, edge H5 positif setelah biaya ~170bp.</p>
+    <div class="panel"><table>
+      <thead><tr><th>tag</th><th>n</th><th>span</th><th>tren edge</th><th>edge H5</th><th>edge H5 likuid</th><th>edge − biaya</th><th>status</th></tr></thead>
+      <tbody>
+      <tr><td>BROKER-DOMISILI-KONFIRM</td><td>1.434</td><td>57h</td><td><svg viewBox="0 0 80 18" width="80" height="18"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="0,12 12,9 24,11 36,6 48,8 60,5 80,7"/></svg></td><td class="neg">−0,23%</td><td class="pos">+1,28%</td><td class="neg">−0,45%</td><td><span class="badge b-fail">GAGAL — tak ada edge</span></td></tr>
+      <tr><td>BROKER-ASING-AKUM</td><td>1.320</td><td>57h</td><td><svg viewBox="0 0 80 18" width="80" height="18"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="0,5 12,8 24,9 36,12 48,11 60,13 80,14"/></svg></td><td class="neg">−0,62%</td><td class="pos">+0,90%</td><td class="neg">−2,32%</td><td><span class="badge b-fail">GAGAL — tak ada edge</span></td></tr>
+      <tr><td>FLOAT-ASING-PADAT</td><td>34</td><td>24h</td><td><svg viewBox="0 0 80 18" width="80" height="18"><polyline fill="none" stroke="currentColor" stroke-width="1.5" points="0,14 16,10 32,8 48,5 64,4 80,3"/></svg></td><td class="pos">+5,29%</td><td class="pos">+6,56%</td><td class="pos">+3,59%</td><td><span class="badge b-prob">PROBATION · n kecil</span></td></tr>
+      </tbody></table>
+      <p class="note" style="margin-top:8px">Perhatikan: tag GAGAL tampil sama menonjolnya dengan yang lain. Hijau tebal hanya akan muncul untuk LULUS (belum ada satu pun).</p>
+    </div>
+  </section>
+
+  <!-- DETAIL TAG -->
+  <section class="screen" id="s-tag">
+    <h2>BROKER-DOMISILI-KONFIRM <span class="badge b-prob">PROBATION</span></h2>
+    <p class="sub">n 5.878 · 3 Jun → 30 Okt · edge H5 likuid +0,92% · biaya ~170bp → belum melewati</p>
+    <div class="panel"><h3>Edge kumulatif dari waktu ke waktu</h3><p class="note">Garis di bawah garis biaya = belum layak. Pita = ketidakpastian.</p>
+      <svg viewBox="0 0 700 200" id="edgechart"></svg></div>
+    <div class="panel"><h3>Per bulan</h3><table><thead><tr><th>bulan</th><th>n</th><th>edge H5 likuid</th><th>hit vs pasar</th></tr></thead><tbody>
+      <tr><td>Jun</td><td>1.020</td><td class="pos">+1,10%</td><td>46% vs 43%</td></tr>
+      <tr><td>Jul</td><td>1.480</td><td class="pos">+0,70%</td><td>47% vs 44%</td></tr>
+      <tr><td>Agu</td><td>1.350</td><td class="pos">+0,55%</td><td>46% vs 45%</td></tr>
+      <tr><td>Sep</td><td>1.100</td><td class="pos">+1,20%</td><td>48% vs 44%</td></tr>
+      <tr><td>Okt</td><td>928</td><td class="pos">+1,35%</td><td>49% vs 44%</td></tr></tbody></table></div>
+    <div class="panel"><h3>Cara kerja tag</h3><p class="note">Terpicu saat net asing (domisili) dan net broker sama-sama positif pada saham yang sama. Sinyal inferensi Tier-3, bukan fakta.</p></div>
+  </section>
+
+  <!-- SCREENER -->
+  <section class="screen" id="s-screener">
+    <h2>Saham hari ini</h2><p class="sub">Sesi 30 Okt · 549 saham kena minimal satu tag · ★ watchlist · 📌 dipegang</p>
+    <div class="panel">
+      <input class="chip" style="width:60%;padding:7px 10px" placeholder="Cari saham atau tag…  (mis. BBRI, BROKER-ASING-AKUM)"> <span class="cov">549 / 549 saham</span>
+      <table style="margin-top:8px"><thead><tr><th>saham</th><th></th><th>harga</th><th>chg</th><th>asing 1mg</th><th>broker net</th><th>CR3</th><th style="text-align:left">tag</th></tr></thead><tbody>
+      <tr><td>★ <b><a href="#" data-go="ticker">BBCA</a></b></td><td>🟢</td><td>6.075</td><td class="pos">+1,2%</td><td class="pos">+185,6B</td><td class="pos">+275B</td><td>92%</td><td style="text-align:left"><span class="chip">BROKER-ASING-AKUM</span><span class="chip">TIKET-BESAR-AKUM</span></td></tr>
+      <tr><td><b>ASII</b></td><td>🟢</td><td>4.780</td><td class="neg">−0,4%</td><td class="pos">+144,0B</td><td>n/a</td><td>—</td><td style="text-align:left"><span class="chip">AKUM-ASING</span><span class="chip">KSEI-DIVERGEN</span></td></tr>
+      <tr><td>★ <b>BBRI</b></td><td>🔻</td><td>3.900</td><td class="neg">−0,9%</td><td class="neg">−329,4B</td><td class="neg">−98B</td><td>71%</td><td style="text-align:left"><span class="chip">DISTRIBUSI-ASING</span></td></tr></tbody></table>
+    </div>
+    <p class="note">Perbaikan v2: ticker bisa diklik ke Detail saham, filter per tag/sektor, kolom bisa disortir.</p>
+  </section>
+
+  <!-- RANKING -->
+  <section class="screen" id="s-ranking">
+    <h2>Top / Ranking</h2><p class="sub">Sesi 30 Okt · <a href="#">1D</a> · <b>5D</b></p>
+    <div class="grid g2">
+      <div class="panel"><h3>Top Akum Asing</h3><p class="note"><span class="cov">dari 834 saham</span> arus asing bersih, se-pasar</p>
+        <table><tbody><tr><td>1 BBCA</td><td class="pos">+185,6B</td></tr><tr><td>2 ASII</td><td class="pos">+144,0B</td></tr><tr><td>3 TINS</td><td class="pos">+99,9B</td></tr></tbody></table></div>
+      <div class="panel"><h3>Top Distribusi Asing</h3><p class="note"><span class="cov">dari 834 saham</span></p>
+        <table><tbody><tr><td>1 BMRI</td><td class="neg">−430,1B</td></tr><tr><td>2 BBRI</td><td class="neg">−329,4B</td></tr><tr><td>3 TLKM</td><td class="neg">−195,2B</td></tr></tbody></table></div>
+      <div class="panel"><h3>Top Akum Bandar</h3><p class="note"><span class="cov">dari 196 saham</span> hanya universe broker likuid — bukan se-pasar</p>
+        <table><tbody><tr><td>1 BBCA</td><td class="pos">+1.150B</td></tr><tr><td>2 BBRI</td><td class="pos">+411B</td></tr></tbody></table></div>
+      <div class="panel"><h3>Top Retail Jualan</h3><p class="note"><span class="cov">dari 196 saham</span> selalu 1D</p>
+        <table><tbody><tr><td>1 PSKT</td><td class="neg">−0,8B</td></tr><tr><td>2 TLDN</td><td class="neg">−0,1B</td></tr></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- DETAIL SAHAM -->
+  <section class="screen" id="s-ticker">
+    <h2>BBCA ★ 📌 &nbsp;6.075 <span class="pos">+1,2%</span> &nbsp;🟢 AKUMULASI</h2><p class="sub">Layar baru: gabungan harga, arus asing, inventory broker, KSEI, dan riwayat tag.</p>
+    <div class="panel"><h3>Inventory broker kumulatif vs harga</h3>
+      <p class="note">5 broker net buy (hijau–kuning) vs 5 net sell (merah–biru) · 3M · Nilai · Semua investor · <span class="cov">data broker tersedia: saham likuid</span></p>
+      <svg viewBox="0 0 700 260" id="invchart"></svg>
+      <div class="legend"><span><i class="sw" style="background:#16a34a"></i>YU (net buy)</span><span><i class="sw" style="background:#ca8a04"></i>KZ (net buy)</span><span><i class="sw" style="background:#dc2626"></i>DH (net sell)</span><span><i class="sw" style="background:#2563eb"></i>XL (net sell)</span></div></div>
+    <div class="grid g3">
+      <div class="panel"><h3>Arus asing</h3><table><tbody><tr><td>hari ini</td><td class="pos">+286B</td></tr><tr><td>1 minggu</td><td class="pos">+186B</td></tr><tr><td>konsistensi</td><td>7/10</td></tr></tbody></table></div>
+      <div class="panel"><h3>Broker (hari ini)</h3><table><tbody><tr><td>net asing</td><td class="pos">+275B</td></tr><tr><td>CR3</td><td>92%</td></tr><tr><td>top buyer</td><td>YU</td></tr></tbody></table></div>
+      <div class="panel"><h3>KSEI (bulanan)</h3><table><tbody><tr><td>%asing 3 bln</td><td class="pos">↑</td></tr><tr><td>%ritel 3 bln</td><td class="neg">↓</td></tr><tr><td>data per</td><td>Sep 2026</td></tr></tbody></table></div>
+    </div>
+    <div class="panel"><h3>Tag hari ini</h3><span class="chip">BROKER-ASING-AKUM <span class="badge b-prob">PROBATION</span></span><span class="chip">BROKER-DOMISILI-KONFIRM <span class="badge b-prob">PROBATION</span></span><span class="chip">TIKET-BESAR-AKUM <span class="badge b-prob">PROBATION</span></span>
+      <p class="note" style="margin-top:8px">Klik tag → Detail tag. Tidak ada tag LULUS, jadi tidak ada elemen "terpercaya".</p></div>
+  </section>
+
+  <!-- CAKUPAN -->
+  <section class="screen" id="s-cov">
+    <h2>Cakupan &amp; celah</h2><p class="sub">Ilustrasi kondisi sebelum perbaikan 31 Okt. Sel dikodekan jumlah baris relatif terhadap normal, bukan sekadar ada/tidak.</p>
+    <div class="panel"><div class="heat" id="heat"></div>
+      <div class="legend"><span><i class="sw" style="background:var(--ready-bg)"></i>normal</span><span><i class="sw" style="background:var(--warn-bg)"></i>parsial</span><span><i class="sw" style="background:var(--fail-bg)"></i>bolong</span></div>
+      <p class="note" style="margin-top:8px">14, 15, 25 Sep langsung terlihat merah pada harga dan sinyal. Klik sel → daftar saham hilang + perintah perbaikan siap salin.</p></div>
+  </section>
+
+  <section class="screen" id="s-log">
+    <h2>Log mentah</h2><p class="sub">Tanpa dekorasi — kecepatan cek lebih penting daripada tampilan.</p>
+    <div class="panel"><pre style="margin:0;font-size:12px;overflow:auto">2026-10-30 19:15 collect-price   ok   962 rows
+2026-10-30 19:16 collect-index   ok   1 rows
+2026-10-30 19:21 compute         ok   tickers=963 tags=1421
+2026-10-30 19:22 digest          sent (1 message)</pre></div>
+  </section>
+
+  <p class="disc">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi. Tidak ada perintah beli/jual.</p>
+  </div>
+</main>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+function show(id){
+  $$('.screen').forEach(e=>e.classList.toggle('show',e.id==='s-'+id));
+  $$('aside button[data-s]').forEach(b=>b.classList.toggle('active',b.dataset.s===id));
+  window.scrollTo(0,0);
+}
+$$('aside button[data-s]').forEach(b=>b.onclick=()=>show(b.dataset.s));
+$$('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault();show(a.dataset.go)});
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark'};
+
+// seeded pseudo-random so the mockup is stable
+let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
+
+// edge chart
+(function(){
+  const W=700,H=200,pad=34,n=60;let y=0,pts=[];
+  for(let i=0;i<n;i++){y+=0.0004+(rnd()-0.45)*0.006;pts.push(y)}
+  const mx=0.03,mn=-0.01,sx=i=>pad+i*(W-pad-10)/(n-1),sy=v=>H-20-(v-mn)/(mx-mn)*(H-40);
+  const costY=sy(0.017);
+  const line=pts.map((v,i)=>sx(i)+','+sy(v)).join(' ');
+  const upper=pts.map((v,i)=>sx(i)+','+sy(v+0.004+i*0.0001)).join(' ');
+  const lower=pts.slice().reverse().map((v,i)=>sx(n-1-i)+','+sy(v-0.004-(n-1-i)*0.0001)).join(' ');
+  $('#edgechart').innerHTML=
+   `<line x1="${pad}" x2="${W-10}" y1="${costY}" y2="${costY}" stroke="var(--neg)" stroke-dasharray="4 3"/>
+    <text class="label" x="${W-120}" y="${costY-4}">garis biaya ~170bp</text>
+    <polygon points="${upper} ${lower}" fill="var(--info)" opacity=".15"/>
+    <polyline points="${line}" fill="none" stroke="var(--text)" stroke-width="2"/>
+    <text class="label" x="4" y="${sy(0)+3}">0%</text><text class="label" x="${pad}" y="${H-4}">3 Jun</text><text class="label" x="${W-50}" y="${H-4}">30 Okt</text>`;
+})();
+
+// inventory chart
+(function(){
+  const W=700,H=260,pad=36,n=60,cols=['#16a34a','#ca8a04','#dc2626','#2563eb'],drift=[1.0,.6,-.9,-.5];
+  let html='';
+  // candles (price)
+  let p=6000;const sx=i=>pad+i*(W-pad-10)/(n-1);
+  for(let i=0;i<n;i++){const o=p;p+=(rnd()-0.46)*60;const c=p,hi=Math.max(o,c)+rnd()*25,lo=Math.min(o,c)-rnd()*25;
+    const y=v=>H-30-(v-5700)/(6400-5700)*(H-60);const up=c>=o;const x=sx(i);
+    html+=`<line x1="${x}" x2="${x}" y1="${y(hi)}" y2="${y(lo)}" stroke="${up?'var(--pos)':'var(--neg)'}" opacity=".5"/>
+           <rect x="${x-2}" y="${y(Math.max(o,c))}" width="4" height="${Math.max(1,Math.abs(y(o)-y(c)))}" fill="${up?'var(--pos)':'var(--neg)'}" opacity=".5"/>`;}
+  // broker lines
+  drift.forEach((d,k)=>{let v=0,pts=[];for(let i=0;i<n;i++){v+=d*(0.6+rnd()*0.8)+ (rnd()-0.5)*0.8;pts.push(v)}
+    const sy=v=>H/2-30-v*1.9;html+=`<polyline fill="none" stroke="${cols[k]}" stroke-width="2" points="${pts.map((v,i)=>sx(i)+','+sy(v)).join(' ')}"/>`});
+  html+=`<line x1="${pad}" x2="${W-10}" y1="${H/2-30}" y2="${H/2-30}" stroke="var(--border)"/>
+         <text class="label" x="4" y="${H/2-27}">0</text><text class="label" x="${pad}" y="${H-6}">Agu</text><text class="label" x="${W-40}" y="${H-6}">30 Okt</text>`;
+  $('#invchart').innerHTML=html;
+})();
+
+// coverage heatmap (illustrative: before the 31 Okt fix)
+(function(){
+  const days=[];const base=new Date(2026,8,1);
+  for(let d=new Date(base);d<=new Date(2026,9,30);d.setDate(d.getDate()+1)){const w=d.getDay();if(w>0&&w<6)days.push(new Date(d))}
+  let h='<div class="h">hari</div><div class="h">harga</div><div class="h">indeks</div><div class="h">broker</div><div class="h">sinyal</div>';
+  const fmt=d=>d.toLocaleDateString('id-ID',{day:'2-digit',month:'short'});
+  days.forEach(d=>{
+    const key=d.getMonth()*100+d.getDate();
+    const gap=[814,815,825].includes(key);              // 14,15,25 Sep (month idx 8 => 8xx)
+    const sparse=d.getMonth()===9&&d.getDate()>=16;     // 16-30 Okt broker parsial
+    const price=gap?['c-bad','5']:['c-ok','962'];
+    const brk=sparse?['c-mid','~60']:['c-ok','~190'];
+    const sig=gap?['c-bad','5']:['c-ok','~830'];
+    h+=`<div style="text-align:left">${fmt(d)}</div><div class="${price[0]}">${price[1]}</div><div class="c-ok">1</div><div class="${brk[0]}">${brk[1]}</div><div class="${sig[0]}">${sig[1]}</div>`;
+  });
+  $('#heat').innerHTML=h;
+})();
+</script>
+</body>
+</html>

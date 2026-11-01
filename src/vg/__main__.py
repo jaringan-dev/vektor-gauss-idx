@@ -30,7 +30,9 @@ def _print(o: collect.CollectOutcome) -> None:
     print(line)
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI definition, separate from `main` so tests can check that a command the UI
+    recommends (e.g. the coverage page's repair hints) really parses."""
     p = argparse.ArgumentParser(prog="vg", description="Vektor Gauss — Phase 1 collectors")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -49,6 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     gph = cph.add_mutually_exclusive_group(required=True)
     gph.add_argument("--universe", action="store_true", help="watchlist + holdings")
     gph.add_argument("--ticker", metavar="CODE", help="one ticker (~120 td window)")
+    gph.add_argument("--all", action="store_true",
+                     help="EVERY ticker on the newest session — repairs older price gaps (1 feed call each)")
 
     co = sub.add_parser("collect-ownership", help="KSEI month-end balance -> ownership_monthly")
     go = co.add_mutually_exclusive_group(required=True)
@@ -79,6 +83,14 @@ def main(argv: list[str] | None = None) -> int:
     gb.add_argument("--radar", action="store_true",
                     help="watchlist + holdings + today's radar-tagged names (two-pass EOD)")
     gb.add_argument("--ticker", metavar="CODE", help="one ticker (e.g. BBCA)")
+    gb.add_argument("--full", action="store_true",
+                    help="watchlist + holdings + EVERY liquid name + radar extras (the EOD default)")
+    cb.add_argument("--plan", action="store_true",
+                    help="with --full: show what would be fetched, fetch nothing")
+    cb.add_argument("--date", metavar="YYYY-MM-DD",
+                    help="with --full: fill that PAST trading day instead of the newest (feed serves history)")
+    cb.add_argument("--backfill", nargs=2, metavar=("START", "END"),
+                    help="with --full: fill every trading day in the inclusive range, oldest first")
 
     cbi = sub.add_parser(
         "collect-broker-inventory",
@@ -168,7 +180,11 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--reload", action="store_true", help="auto-reload on code change (dev)")
 
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     if args.cmd == "init-db":
         run_sql_file(_SCHEMA)
@@ -193,6 +209,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "collect-price-history":
         if args.ticker:
             _print(collect.collect_price_history_ticker(args.ticker))
+        elif args.all:
+            outs = collect.collect_price_history_all()
+            for o in outs:
+                _print(o)
+            return 0 if outs and outs[-1].status == "ok" else 1
         else:
             outs = collect.collect_price_history_universe()
             for o in outs:
@@ -254,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "collect-broker-summary":
+        if (args.plan or args.date or args.backfill) and not args.full:
+            print("--plan / --date / --backfill only apply together with --full")
+            return 2
+        if args.backfill and (args.date or args.plan):
+            print("--backfill cannot be combined with --date or --plan")
+            return 2
         if args.ticker:
             with connect() as conn, conn.cursor() as cur:
                 cur.execute("SELECT max(session_date) FROM trading_calendar")
@@ -262,6 +289,26 @@ def main(argv: list[str] | None = None) -> int:
                 print("no trading_calendar rows — run collect-price first")
                 return 1
             _print(collect.collect_broker_summary_ticker(latest, args.ticker))
+        elif args.full:
+            day = _d(args.date) if args.date else None
+            if args.plan:
+                plan = collect.plan_broker_full(session_date=day)
+                if plan["latest"] is None:
+                    print(plan.get("reason") or "no trading_calendar rows — run collect-price first")
+                    return 1
+                print(f"session {plan['latest']}: universe {len(plan['universe'])} "
+                      f"({plan['n_liquid']} liquid) · already stored {len(plan['have'])} · "
+                      f"would fetch {len(plan['todo'])}")
+                if plan["todo"]:
+                    print("  e.g. " + ", ".join(plan["todo"][:15]) + (" …" if len(plan["todo"]) > 15 else ""))
+                return 0
+            if args.backfill:
+                outs = collect.backfill_broker_full(_d(args.backfill[0]), _d(args.backfill[1]))
+            else:
+                outs = collect.collect_broker_summary_full(session_date=day)
+            for o in outs:
+                _print(o)
+            return 0 if outs and outs[-1].status == "ok" else 1
         else:
             outs = (
                 collect.collect_broker_summary_radar() if args.radar

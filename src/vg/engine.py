@@ -1056,9 +1056,9 @@ def latest_signal_date() -> date | None:
 # Columns that may be ranked by the web /ranking view. Whitelist — the column name
 # is interpolated into SQL, so it must never come from untrusted input.
 _RANKABLE = {
-    "nff_d0", "nff_w1",                       # net foreign flow (market-wide, ~834)
-    "bkr_foreign_net_d0", "bkr_foreign_net_5d",  # broker-foreign net (~64 only)
-    "bkr_dom_retail_net",                     # broker domestic-retail net (~64, 1D only)
+    "nff_d0", "nff_w1",                       # net foreign flow (from IDX: near market-wide)
+    "bkr_foreign_net_d0", "bkr_foreign_net_5d",  # broker-foreign net (feed universe; coverage varies by day)
+    "bkr_dom_retail_net",                     # broker domestic-retail net (feed universe, 1D only)
 }
 
 

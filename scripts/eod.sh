@@ -39,11 +39,13 @@ vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usual
 vg collect-halts       --backfill "$BACK" "$TODAY"
 vg detect-ca
 vg compute             --backfill "$BACK" "$TODAY"   # pass 1 — produces the radar candidates
-# Broker summary (vektorgauss, Tier 3, forward-only) for watchlist + holdings +
-# today's radar-tagged names, then recompute so the broker signals + the RADAR
-# broker line land. Two-pass: needs pass-1 `compute` above. Best-effort — a Tier-3
-# outage must never abort EOD.
-vg collect-broker-summary --radar || true
+# Broker summary (vektorgauss, Tier 3) for watchlist + holdings + EVERY liquid name
+# (> Rp5B traded) + today's radar extras, then recompute so the broker signals + the RADAR
+# broker line land. Two-pass: needs pass-1 `compute` above (radar names). Idempotent: names
+# already stored are skipped. ~190 calls/day at VG_FEED_DELAY_SECONDS (default 1s). It used
+# to be `--radar` (a 60-name cap) which let daily coverage silently sag to ~60 (checklist G3).
+# Best-effort — a Tier-3 outage must never abort EOD.
+vg collect-broker-summary --full || true
 vg compute             --backfill "$BACK" "$TODAY" || true   # pass 2 — broker signals land
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
 # feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.

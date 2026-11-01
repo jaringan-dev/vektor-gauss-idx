@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block subtitle %}{% if m %}Yang hilang: {{ m.source_label }} · {{ m.date_label }}{% else %}Cakupan &amp; celah data{% endif %}{% endblock %}
+
+{% block content %}
+  {% if bad_request %}
+    <div class="panel">
+      <h2>Permintaan tidak bisa diproses</h2>
+      <div class="err">{{ bad_request }}</div>
+      <p class="note" style="margin-top:10px"><a href="/coverage">← kembali ke peta cakupan</a></p>
+    </div>
+  {% elif error %}
+    <div class="panel">
+      <h2>Tidak bisa membaca data</h2>
+      <p class="note">App hidup, tapi query ke database gagal.</p>
+      <div class="err">{{ error }}</div>
+    </div>
+  {% else %}
+    <div class="panel">
+      <h2>{{ m.source_label }} — {{ m.date_label }}
+        <span class="badge {{ {'ok':'ready','warn':'probation','bad':'failing','na':'probation'}[m.cell.level] }}">
+          <span aria-hidden="true">{{ m.cell.symbol }}</span> {{ m.cell.word }}</span></h2>
+      <p class="note">
+        {{ m.present }} {{ m.unit }} tersedia{% if m.baseline %}; normal ≈ {{ m.baseline }}{% endif %}
+        {% if m.cell.pct is not none %}({{ m.cell.pct }}% dari normal){% endif %}.
+        {% if m.ref_label %}Dibandingkan dengan <b>{{ m.ref_label }}</b> (hari normal terdekat, {{ m.expected }} {{ m.unit }}).
+        {% else %}Tidak ada hari normal sebagai acuan di rentang ini.{% endif %}
+      </p>
+      {% if m.missing_total %}
+        <h3 style="font-size:14px;margin:12px 0 6px">Hilang {{ m.missing_total }} dari {{ m.expected }}</h3>
+        <p>{% for t in m.missing %}<span class="chip">{{ t }}</span>{% endfor %}
+          {% if m.missing_total > m.missing|length %}<span class="note">… dan {{ m.missing_total - m.missing|length }} lainnya</span>{% endif %}</p>
+      {% elif m.ref_label %}
+        <p class="note">Tidak ada yang hilang relatif terhadap hari acuan.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Perintah perbaikan</h2>
+      <p class="note">Jalankan di terminal WSL, di dalam repo dan venv-nya. Semuanya idempoten (aman diulang).</p>
+      <pre class="cmd"><code>cd ~/vektor-gauss &amp;&amp; source .venv/bin/activate
+{% for c in m.commands %}{{ c }}
+{% endfor %}</code></pre>
+      <p class="note">Setelah mengisi data, urutan <code>vg compute</code> lalu <code>vg backfill-outcomes</code>
+         membuat sinyal dan hasil edge ikut diperbarui.</p>
+      <p class="note"><a href="/coverage">← kembali ke peta cakupan</a></p>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
+     Tidak ada perintah beli/jual.</p>
+{% endblock %}

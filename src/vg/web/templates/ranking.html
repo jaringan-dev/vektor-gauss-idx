@@ -18,8 +18,9 @@
     <div class="panel">
       <h2>Peringkat — sesi {{ session_date }}</h2>
       <p class="note">
-        Arus asing se-pasar (~ribuan saham, IDX gratis); <b>bandar &amp; retail hanya mencakup
-        universe broker vektorgauss (~puluhan saham)</b> — jadi bukan peringkat seluruh pasar.
+        Angka "dari N saham" di tiap panel adalah cakupan sebenarnya pada sesi ini. Arus asing berasal
+        dari IDX (mencakup hampir seluruh saham); <b>bandar &amp; retail berasal dari feed broker yang
+        cakupannya lebih sempit</b> — jadi belum tentu peringkat seluruh pasar.
       </p>
       <nav class="nav" style="margin-top:8px">
         <a href="/ranking?h=1d" class="{{ 'active' if h == '1d' else '' }}">1 hari (1D)</a>
@@ -34,7 +35,7 @@
       {% if p.rows %}
       <table>
         <thead>
-          <tr><th>#</th><th>saham</th><th></th><th>nilai</th><th>harga</th><th>chg</th>
+          <tr><th>#</th><th>saham</th><th>kuadran</th><th>nilai</th><th>harga</th><th>chg</th>
               <th style="text-align:left">tag</th></tr>
         </thead>
         <tbody>
@@ -42,7 +43,7 @@
           <tr>
             <td>{{ r.rank }}</td>
             <td><b>{{ r.ticker }}</b></td>
-            <td>{{ r.quad_emoji }}</td>
+            <td>{{ r.quad_emoji }} <span class="quad">{{ r.quad|capitalize if r.quad else '—' }}</span></td>
             <td class="{{ r.val_c }}">{{ r.val }}</td>
             <td>{{ r.price }}</td>
             <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>

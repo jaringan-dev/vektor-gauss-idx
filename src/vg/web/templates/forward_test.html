@@ -15,7 +15,7 @@
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.tag }}</td>
+        <td>{{ r.tag }}{% if r.small_n %}<span class="badge warn" title="Sampel terlalu kecil untuk dinilai">n kecil</span>{% endif %}</td>
         <td>{{ r.n }}</td>
         <td>{{ r.span_days }}h</td>
         <td class="{{ r.edge_h1.c }}">{{ r.edge_h1.t }}</td>
@@ -50,7 +50,13 @@
         Jendela out-of-sample — satu-satunya angka yang menentukan promosi. Gate:
         n &ge; {{ min_n }}, span &ge; {{ min_span }} hari, dan edge H5 tetap positif
         setelah biaya ~{{ cost_bp }}bp. Tag yang gagal ditampilkan sama jelasnya dengan yang lolos.
+        Tag dengan n &lt; {{ min_n }} diberi label <span class="badge warn">n kecil</span> dan selalu
+        diurut paling bawah — edge dari sampel sekecil itu bisa muncul karena kebetulan.
       </p>
+      {% if computed_at %}
+      <p class="note">Dihitung {{ computed_at }} (waktu server){% if cache_hit %} · dari cache {{ cache_minutes }} menit,
+         tambahkan <code>?fresh=1</code> di URL untuk menghitung ulang{% endif %}.</p>
+      {% endif %}
       {% if forward %}
         {{ eval_table(forward, true) }}
       {% elif forward_since %}

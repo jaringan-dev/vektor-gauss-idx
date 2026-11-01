@@ -8,19 +8,97 @@ as the public "Rapor Publik" (§4.2), once the gate is cleared.
 
 from __future__ import annotations
 
+import threading
+from contextlib import asynccontextmanager
+from datetime import date, datetime
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import engine
 from ..config import CONFIG
+from ..db import connect
+from . import coverage as cov
+from . import freshness
 from . import status as gate
+from .cache import TTLCache
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-app = FastAPI(title="Vektor Gauss — Superadmin")
+# Sidebar (A1). `key` must equal the `active_page` each route passes to its template.
+_NAV = [
+    {"title": "Pola", "items": [
+        {"key": "tracker", "label": "Forward-test", "href": "/"},
+    ]},
+    {"title": "Saham", "items": [
+        {"key": "screener", "label": "Saham hari ini", "href": "/screener"},
+        {"key": "ranking", "label": "Top / Ranking", "href": "/ranking"},
+    ]},
+    {"title": "Data", "items": [
+        {"key": "coverage", "label": "Cakupan & celah", "href": "/coverage"},
+    ]},
+]
+
+# Coverage heatmap (F1): per-day row counts for 4 sources; cheap but not free, so 2 minutes.
+_COVERAGE_CACHE = TTLCache(ttl_seconds=120)
+_COVERAGE_WINDOWS = (30, 60, 120, 250)
+
+# FreshnessStrip (A2): four small queries, checked at most once a minute across all pages.
+_STRIP_CACHE = TTLCache(ttl_seconds=60)
+
+
+def _strip_ctx() -> dict:
+    """Context for the global freshness strip. A failure is shown AS a red strip — never hidden,
+    and never allowed to break the page it decorates."""
+    try:
+        items, wall, _hit = _STRIP_CACHE.get_or_compute(
+            ("strip", date.today()), lambda: freshness.build_strip(freshness.load_inputs())
+        )
+        return {
+            "items": [i.as_dict() for i in items],
+            "level": freshness.worst(i.level for i in items),
+            "checked_at": datetime.fromtimestamp(wall).strftime("%H:%M"),
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"items": [], "level": freshness.BAD, "checked_at": None,
+                "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _render(name: str, ctx: dict, status_code: int = 200) -> HTMLResponse:
+    """Render a page inside the shell. Renders manually + wraps in HTMLResponse: avoids depending on
+    the TemplateResponse positional signature, which changed across Starlette versions."""
+    ctx["nav_groups"] = _NAV
+    ctx["strip"] = _strip_ctx()
+    return HTMLResponse(_TEMPLATES.get_template(name).render(ctx), status_code=status_code)
+
+# Tag-eval tables are slow (in-sample ≈ 2.9s) but only change after `vg compute` /
+# `vg backfill-outcomes`. 30-minute TTL, invalidated early by _eval_version() (which moves
+# whenever outcomes are rewritten); the page always prints when the numbers were computed,
+# so the cache is never hidden (B1).
+_EVAL_CACHE = TTLCache(ttl_seconds=1800)
+
+
+def _warm_cache() -> None:
+    """Fill the tracker cache in the background at startup so the first visit is not the slow one."""
+    try:
+        _cached_view_rows(None)
+        if CONFIG.forward_since:
+            _cached_view_rows(CONFIG.forward_since)
+    except Exception:  # noqa: BLE001 — DB down at startup: the first real request shows the error panel
+        pass
+    _strip_ctx()  # never raises; primes the freshness cache
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    threading.Thread(target=_warm_cache, daemon=True, name="vg-cache-warm").start()
+    yield
+
+
+app = FastAPI(title="Vektor Gauss — Superadmin", lifespan=_lifespan)
 
 
 def _pct(x: float | None, dp: int = 2) -> str:
@@ -64,6 +142,23 @@ def _signcls(x: float | None) -> str:
     return "" if x is None else ("pos" if x >= 0 else "neg")
 
 
+def _eval_version() -> tuple:
+    """Cheap change token for the eval tables: `market_breadth` is tiny (~1.6k rows) and is
+    rewritten by every `vg backfill-outcomes`, so its newest computed_at + row count moves
+    exactly when the underlying outcomes do."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(computed_at), count(*) FROM market_breadth")
+        ts, n = cur.fetchone()
+    return (str(ts), n)
+
+
+def _cached_view_rows(since, fresh: bool = False) -> tuple[list[dict], float, bool]:
+    """(rows, computed_at_epoch, was_cache_hit) for the tracker tables."""
+    return _EVAL_CACHE.get_or_compute(
+        ("tracker", since), lambda: _view_rows(since), version=_eval_version(), fresh=fresh
+    )
+
+
 def _view_rows(since) -> list[dict]:
     """Shape `engine.eval_tags(since)` into display rows, each with an honest verdict."""
     rows = []
@@ -73,6 +168,7 @@ def _view_rows(since) -> list[dict]:
             {
                 "tag": r["tag"],
                 "n": r["n"],
+                "small_n": gate.is_small_n(r["n"]),
                 "n_liquid": r.get("n_liquid") or 0,
                 "span_days": gate.span_days(r.get("first_date"), r.get("last_date")),
                 "first_date": r.get("first_date"),
@@ -87,11 +183,11 @@ def _view_rows(since) -> list[dict]:
                 "edge_after_cost": _cell(st.edge_after_cost),
             }
         )
-    return rows
+    return gate.order_rows(rows)
 
 
 @app.get("/", response_class=HTMLResponse)
-def forward_tracker() -> HTMLResponse:
+def forward_tracker(fresh: bool = False) -> HTMLResponse:
     ctx: dict = {
         "active_page": "tracker",
         "forward_since": CONFIG.forward_since,
@@ -101,15 +197,22 @@ def forward_tracker() -> HTMLResponse:
         "error": None,
         "insample": [],
         "forward": [],
+        "computed_at": None,
+        "cache_hit": False,
+        "cache_minutes": int(_EVAL_CACHE.ttl // 60),
     }
     try:
-        ctx["insample"] = _view_rows(None)
-        ctx["forward"] = _view_rows(CONFIG.forward_since) if CONFIG.forward_since else []
+        ctx["insample"], t_in, hit_in = _cached_view_rows(None, fresh)
+        if CONFIG.forward_since:
+            ctx["forward"], t_fw, hit_fw = _cached_view_rows(CONFIG.forward_since, fresh)
+        else:
+            t_fw, hit_fw = t_in, hit_in
+        # Report the OLDER of the two timestamps: the page is only as fresh as its stalest table.
+        ctx["computed_at"] = datetime.fromtimestamp(min(t_in, t_fw)).strftime("%d %b %Y %H:%M:%S")
+        ctx["cache_hit"] = hit_in and hit_fw
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
-    # Render manually + wrap in HTMLResponse: avoids depending on the TemplateResponse
-    # positional signature, which changed across Starlette versions (request-first).
-    return HTMLResponse(_TEMPLATES.get_template("forward_test.html").render(ctx))
+    return _render("forward_test.html", ctx)
 
 
 def _screener_view() -> tuple:
@@ -153,7 +256,7 @@ def screener() -> HTMLResponse:
         ctx["session_date"], ctx["rows"] = _screener_view()
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
-    return HTMLResponse(_TEMPLATES.get_template("screener.html").render(ctx))
+    return _render("screener.html", ctx)
 
 
 def _rank_rows(column: str, desc: bool) -> tuple:
@@ -166,6 +269,7 @@ def _rank_rows(column: str, desc: bool) -> tuple:
             {
                 "rank": i,
                 "ticker": r["ticker"],
+                "quad": r.get("quadrant") or "",
                 "quad_emoji": _QUAD_EMOJI.get(r.get("quadrant") or "", "▪️"),
                 "val": _idr(r.get("val")), "val_c": _signcls(r.get("val")),
                 "price": _price(close), "chg": _cell(chg, 1),
@@ -204,7 +308,64 @@ def ranking(h: str = "5d") -> HTMLResponse:
         ctx["session_date"], ctx["h"], ctx["panels"] = _ranking_view(h)
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
-    return HTMLResponse(_TEMPLATES.get_template("ranking.html").render(ctx))
+    return _render("ranking.html", ctx)
+
+
+def _counts(n_days: int) -> tuple[list, dict]:
+    return _COVERAGE_CACHE.get_or_compute(("counts", n_days), lambda: cov.load_counts(n_days))[0]
+
+
+@app.get("/coverage", response_class=HTMLResponse)
+def coverage(days: int = 60) -> HTMLResponse:
+    n = max(10, min(250, days))
+    ctx: dict = {"active_page": "coverage", "error": None, "n_days": n, "windows": _COVERAGE_WINDOWS,
+                 "rows": [], "summary": []}
+    try:
+        day_list, counts = _counts(n)
+        ctx["rows"], ctx["summary"] = cov.grid_view(cov.build_grid(day_list, counts))
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("coverage.html", ctx)
+
+
+def _missing_error(message: str, status: int) -> HTMLResponse:
+    return _render("coverage_missing.html", {"active_page": "coverage", "error": None,
+                                             "bad_request": message, "m": None}, status_code=status)
+
+
+@app.get("/coverage/missing", response_class=HTMLResponse)
+def coverage_missing(d: str = Query("", alias="date"), source: str = "price") -> HTMLResponse:
+    """Which tickers/indices a source is missing on a day, relative to its nearest healthy day."""
+    if source not in cov.SOURCE_KEYS:
+        return _missing_error(f"Sumber tidak dikenal: {source!r}. Pilihan: {', '.join(cov.SOURCE_KEYS)}.", 400)
+    try:
+        target = date.fromisoformat(d)
+    except ValueError:
+        return _missing_error(f"Tanggal tidak valid: {d!r}. Gunakan format YYYY-MM-DD.", 400)
+    ctx: dict = {"active_page": "coverage", "error": None, "bad_request": None, "m": None}
+    try:
+        day_list, counts = _counts(250)
+        if target not in day_list:
+            return _missing_error(f"{target} bukan hari bursa dalam 250 hari bursa terakhir.", 404)
+        grid = cov.build_grid(day_list, counts)
+        meta = grid["summary"][source]
+        cell = next(r["cells"][source] for r in grid["rows"] if r["date"] == target)
+        ref = cov.nearest_healthy_day(target, day_list, counts[source], meta["baseline"])
+        present = cov.load_tickers(source, target)
+        expected = cov.load_tickers(source, ref) if ref else set()
+        missing = cov.missing_names(expected, present)
+        unit = next(u for k, _l, u, _t, _c in cov.SOURCES if k == source)
+        ctx["m"] = {
+            "source": source, "source_label": cov.source_label(source), "unit": unit,
+            "date_label": freshness.fmt_date(target), "iso": target.isoformat(),
+            "cell": cell.as_dict(), "baseline": round(meta["baseline"]) if meta["baseline"] else None,
+            "present": len(present), "ref_label": freshness.fmt_date(ref) if ref else None,
+            "expected": len(expected), "missing_total": len(missing), "missing": missing[:400],
+            "commands": cov.repair_commands(source, target),
+        }
+    except Exception as exc:  # noqa: BLE001
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("coverage_missing.html", ctx)
 
 
 @app.get("/healthz")

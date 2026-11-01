@@ -62,6 +62,50 @@ def test_fetch_empty_is_no_data():
     assert res.rows == []
 
 
+def test_fetch_latest_day_path_calls_download_without_a_date():
+    """Back-compat guard: the default path must call _download(ticker) with NO extra argument
+    (db37921 once broke this by always passing on_date=, which erred every one-arg override)."""
+    src = VgBrokerSummarySource()
+    seen = []
+    src._download = lambda ticker, **kw: seen.append(kw) or _SAMPLE
+    assert src.fetch(date(2026, 9, 27), "BBCA").status == "ok"
+    assert seen == [{}]
+
+
+def test_fetch_use_date_pins_the_requested_day():
+    src = VgBrokerSummarySource()
+    seen = []
+    src._download = lambda ticker, on_date=None: seen.append(on_date) or _SAMPLE
+    res = src.fetch(date(2026, 7, 15), "BBCA", use_date=True)
+    assert res.status == "ok"
+    assert seen == [date(2026, 7, 15)]
+
+
+def test_download_sends_start_equals_end_only_for_a_dated_pull(monkeypatch):
+    captured = {}
+
+    class _Resp:
+        content = b"{}"
+
+        def raise_for_status(self):
+            pass
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        captured["params"] = params
+        return _Resp()
+
+    monkeypatch.setattr(vektorgauss.httpx, "get", fake_get)
+    monkeypatch.setattr(vektorgauss.CONFIG, "feed_base_url", "http://feed.test")
+    monkeypatch.setattr(vektorgauss.CONFIG, "feed_api_key", "k")
+    src = VgBrokerSummarySource()
+
+    src._download("bbca", on_date=date(2026, 7, 15))
+    assert captured["params"] == {"start_date": "2026-07-15", "end_date": "2026-07-15"}
+
+    src._download("bbca")
+    assert captured["params"] is None       # latest-day request carries no date parameters
+
+
 # --- broker inventory (broker-accumulation) ---------------------------------
 _INV = (
     b'{"stock_code":"BBCA","start_date":"2026-06-03","end_date":"2026-06-04",'

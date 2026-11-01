@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block subtitle %}Cakupan &amp; celah data{% endblock %}
+
+{% block content %}
+  {% if error %}
+    <div class="panel">
+      <h2>Tidak bisa membaca data</h2>
+      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
+         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
+      <div class="err">{{ error }}</div>
+    </div>
+  {% elif not rows %}
+    <div class="panel">
+      <h2>Belum ada hari bursa</h2>
+      <p class="note">Tabel <code>trading_calendar</code> kosong — jalankan <code>vg collect-price</code> dulu.</p>
+    </div>
+  {% else %}
+    <div class="panel">
+      <h2>{{ n_days }} hari bursa terakhir</h2>
+      <p class="note">
+        Tiap sel dibandingkan dengan jumlah <b>normal</b> sumber itu (median sejak datanya ada), bukan
+        sekadar "ada atau tidak": 5 baris harga di hari yang biasanya 962 tetap bolong. Sel
+        ⚠ / ✖ bisa diklik untuk melihat apa yang hilang dan perintah perbaikannya.
+      </p>
+      <nav class="nav" aria-label="Rentang hari">
+        {% for w in windows %}
+        <a href="/coverage?days={{ w }}"{% if w == n_days %} class="active" aria-current="true"{% endif %}>{{ w }} hari</a>
+        {% endfor %}
+      </nav>
+      <table style="margin-top:12px">
+        <caption class="sr-only">Ringkasan per sumber data</caption>
+        <thead><tr><th scope="col">sumber</th><th scope="col">normal ≈</th><th scope="col">ada sejak</th>
+          <th scope="col">hari ✖ bolong</th><th scope="col">hari ⚠ parsial</th></tr></thead>
+        <tbody>
+          {% for s in summary %}
+          <tr>
+            <th scope="row" style="font-weight:600;color:var(--fg)">{{ s.label }}</th>
+            <td>{% if s.baseline %}{{ s.baseline }} {{ s.unit }}{% else %}—{% endif %}</td>
+            <td>{{ s.start or '—' }}</td>
+            <td class="{{ 'neg' if s.bad else '' }}">{{ s.bad }}</td>
+            <td>{{ s.warn }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <table class="cov">
+        <caption class="sr-only">Cakupan data per hari bursa dan sumber, hari terbaru di atas</caption>
+        <thead>
+          <tr><th scope="col">hari</th>{% for s in summary %}<th scope="col">{{ s.label }}</th>{% endfor %}</tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <th scope="row">{{ r.label }}</th>
+            {% for s in summary %}{% set c = r.cells[s.key] %}
+            <td class="cov-{{ c.level }}">
+              {% if c.level in ('warn', 'bad') %}
+              <a href="/coverage/missing?date={{ r.iso }}&amp;source={{ s.key }}"
+                 aria-label="{{ s.label }} {{ r.label }}: {{ c.word }}, {{ c.count }} dari normal sekitar {{ s.baseline }} — lihat yang hilang">
+                <span aria-hidden="true">{{ c.symbol }}</span> {{ c.count }}</a>
+              {% elif c.level == 'ok' %}
+              <span aria-hidden="true">{{ c.symbol }}</span> {{ c.count }}<span class="sr-only"> {{ c.word }}</span>
+              {% else %}
+              <span aria-hidden="true">—</span><span class="sr-only">belum ada data</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <ul class="legend">
+        <li><span class="cov-ok sw">✓</span> normal (≥ 90% dari normal)</li>
+        <li><span class="cov-warn sw">⚠</span> parsial (50–90%)</li>
+        <li><span class="cov-bad sw">✖</span> bolong (&lt; 50%)</li>
+        <li><span class="sw">—</span> sumber belum punya data pada tanggal itu</li>
+      </ul>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>Strip di atas setiap layar menilai hanya hari terbaru dan menahan <b>Broker</b> paling parah di ⚠
+     (sumber sekunder); peta ini deskriptif dan menampilkan ✖ apa adanya untuk semua sumber.</p>
+  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
+     Tidak ada perintah beli/jual.</p>
+{% endblock %}

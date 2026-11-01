@@ -186,7 +186,9 @@ class VgBrokerSummarySource(BrokerSummarySource):
     ) -> BrokerSummaryFetchResult:
         ticker = ticker.upper()
         try:
-            raw = self._download(ticker, on_date=session_date if use_date else None)
+            # Latest-day path keeps the original one-argument call (back-compat with
+            # subclasses/stubs that override _download(ticker)); only a dated pull passes on_date.
+            raw = self._download(ticker, on_date=session_date) if use_date else self._download(ticker)
         except Exception as exc:
             return BrokerSummaryFetchResult(
                 "error", session_date, ticker, self.name, self.tier,

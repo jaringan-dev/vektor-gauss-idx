@@ -29,7 +29,7 @@
       <table id="screener">
         <thead>
           <tr>
-            <th>saham</th><th></th><th>harga</th><th>chg</th>
+            <th>saham</th><th>kuadran</th><th>harga</th><th>chg</th>
             <th>asing hari ini</th><th>asing 1mg</th>
             <th>broker net</th><th>CR3</th><th>konsist.</th><th>KSEI</th>
             <th style="text-align:left">tag</th>
@@ -39,7 +39,7 @@
           {% for r in rows %}
           <tr data-search="{{ r.ticker }} {{ r.tags }}">
             <td>{% if r.in_wl %}★ {% endif %}<b>{{ r.ticker }}</b>{% if r.held %} 📌{% endif %}</td>
-            <td title="{{ r.quad }}">{{ r.quad_emoji }}</td>
+            <td>{{ r.quad_emoji }} <span class="quad">{{ r.quad|capitalize if r.quad else '—' }}</span></td>
             <td>{{ r.price }}</td>
             <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
             <td class="{{ r.nff_d0_c }}">{{ r.nff_d0 }}</td>

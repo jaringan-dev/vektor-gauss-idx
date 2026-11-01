@@ -7,7 +7,7 @@ caught and written to run_log with status 'error', then the loop continues.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -925,24 +925,165 @@ def collect_broker_summary_radar() -> list[CollectOutcome]:
         if latest is None:
             return [CollectOutcome(date.today(), "error", 0,
                                    "no trading_calendar rows — run collect-price first")]
-        extra: list[str] = []
-        if CONFIG.radar_tags:
-            cur.execute(
-                """
-                SELECT sl.ticker
-                FROM signal_log sl
-                JOIN signal_components sc
-                  ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
-                WHERE sl.session_date = %s AND sl.tag = ANY(%s)
-                GROUP BY sl.ticker, sc.nff_w1
-                ORDER BY sc.nff_w1 DESC NULLS LAST
-                LIMIT %s
-                """,
-                (latest, list(CONFIG.radar_tags), _BROKER_RADAR_CAP),
-            )
-            extra = [r[0] for r in cur.fetchall()]
+        extra = _radar_names(cur, latest)
     tickers = list(dict.fromkeys([*base, *extra]))
     return collect_broker_summary_latest(tickers=tickers)
+
+
+def _radar_names(cur: psycopg.Cursor, latest: date) -> list[str]:
+    """Names flagged by today's radar tags, biggest weekly foreign flow first, capped."""
+    if not CONFIG.radar_tags:
+        return []
+    cur.execute(
+        """
+        SELECT sl.ticker
+        FROM signal_log sl
+        JOIN signal_components sc
+          ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
+        WHERE sl.session_date = %s AND sl.tag = ANY(%s)
+        GROUP BY sl.ticker, sc.nff_w1
+        ORDER BY sc.nff_w1 DESC NULLS LAST
+        LIMIT %s
+        """,
+        (latest, list(CONFIG.radar_tags), _BROKER_RADAR_CAP),
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# G3 — the DAILY broker pass covers the whole liquid universe, not a 60-name radar.
+#
+# Why: with the radar cap, daily broker coverage sat at ~60 names (the 16-30 Oct drop)
+# even though the feed served ~19k calls at 1s spacing without a throttle and the paid
+# quota (21k/day) makes ~190 calls/day trivial. Broker tags are only as good as the
+# coverage behind them; a silent drop to ~60 is exactly what the freshness strip flags.
+# ---------------------------------------------------------------------------
+
+# "Liquid" = traded more than this on the latest session. Must equal engine.LIQUID_VALUE_IDR
+# (a test guards it) — collect cannot import engine without a cycle.
+_BROKER_LIQUID_VALUE_IDR = 5_000_000_000
+# Consecutive HARD errors (not no_data) after which we assume quota exhaustion / a ban and stop,
+# so a dead feed cannot make EOD grind through ~190 doomed calls.
+_FEED_ABORT_AFTER_ERRORS = 10
+
+
+def select_broker_universe(base, liquid, radar) -> list[str]:
+    """Order-preserving union: watchlist + holdings first, then liquid names (biggest value
+    first, as given), then radar extras (illiquid names the radar tags flagged)."""
+    return list(dict.fromkeys((*base, *liquid, *radar)))
+
+
+@dataclass
+class _FeedRun:
+    ok: int = 0
+    no_data: int = 0
+    errors: int = 0
+    rows: int = 0
+    failures: list = field(default_factory=list)
+    aborted: bool = False
+
+
+def _feed_loop(items, fetch_one, pause: float) -> _FeedRun:
+    """Call fetch_one(item) -> CollectOutcome for each item, `pause` seconds apart.
+
+    `no_data` is benign (a name that simply did not trade). _FEED_ABORT_AFTER_ERRORS consecutive
+    hard errors stop the run: a dead feed or an exhausted quota must not make us grind through
+    hundreds of doomed calls. Errors that are interleaved with successes never abort."""
+    run = _FeedRun()
+    consecutive = 0
+    for i, item in enumerate(items):
+        o = fetch_one(item)
+        run.rows += o.rows
+        if o.status == "ok":
+            run.ok, consecutive = run.ok + 1, 0
+        elif o.status == "no_data":
+            run.no_data, consecutive = run.no_data + 1, 0
+        else:
+            run.errors, consecutive = run.errors + 1, consecutive + 1
+            run.failures.append(o)
+            if consecutive >= _FEED_ABORT_AFTER_ERRORS:
+                run.aborted = True
+                break
+        if i < len(items) - 1:
+            time.sleep(pause)
+    return run
+
+
+def plan_broker_full(*, skip_existing: bool = True, session_date: date | None = None) -> dict:
+    """What the full broker pass WOULD fetch (read-only). `session_date` None = the newest trading
+    day; a past date plans a historical fill. `latest` is None (with a `reason`) when there is no
+    such trading day."""
+    base = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM trading_calendar")
+        newest = cur.fetchone()[0]
+        empty = {"latest": None, "newest": newest, "universe": [], "have": set(), "todo": [], "n_liquid": 0}
+        latest = session_date or newest
+        if latest is None:
+            return empty
+        if session_date is not None:
+            cur.execute("SELECT 1 FROM trading_calendar WHERE session_date = %s", (session_date,))
+            if cur.fetchone() is None:
+                return {**empty, "reason": f"{session_date} is not a trading day in trading_calendar"}
+        cur.execute(
+            "SELECT ticker FROM price_bars WHERE session_date = %s AND value > %s ORDER BY value DESC",
+            (latest, _BROKER_LIQUID_VALUE_IDR),
+        )
+        liquid = [r[0] for r in cur.fetchall()]
+        universe = select_broker_universe(base, liquid, _radar_names(cur, latest))
+        have = _have_for_date(cur, "broker_flows", universe, latest) if skip_existing else set()
+    return {
+        "latest": latest, "newest": newest, "universe": universe, "have": have, "n_liquid": len(liquid),
+        "todo": [t for t in universe if t not in have],
+    }
+
+
+def collect_broker_summary_full(
+    *, delay: float | None = None, session_date: date | None = None
+) -> list[CollectOutcome]:
+    """Broker summary for watchlist + holdings + EVERY liquid name + radar extras. Default = the
+    newest trading day (the EOD pass); `session_date` fills a PAST day (the feed serves history).
+    Idempotent (skips names already stored), paced by CONFIG.feed_delay_seconds, aborts after
+    _FEED_ABORT_AFTER_ERRORS consecutive hard errors. Returns the failures plus one summary line
+    (not 190 lines of noise). For the EOD pass run it AFTER the first `compute` so radar names exist."""
+    plan = plan_broker_full(session_date=session_date)
+    latest = plan["latest"]
+    if latest is None:
+        return [CollectOutcome(
+            session_date or date.today(), "error", 0,
+            plan.get("reason") or "no trading_calendar rows — run collect-price first")]
+    pause = CONFIG.feed_delay_seconds if delay is None else delay
+    # Only a day OLDER than the newest needs the dated request; the newest day keeps the original
+    # no-date call that production has always used.
+    dated = latest != plan["newest"]
+    run = _feed_loop(plan["todo"], lambda t: collect_broker_summary_ticker(latest, t, use_date=dated), pause)
+    detail = (
+        f"{len(plan['universe'])} names ({plan['n_liquid']} liquid): fetched {run.ok}, no_data {run.no_data}, "
+        f"errors {run.errors}, skipped {len(plan['have'])} already-have"
+    )
+    if run.aborted:
+        detail = f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
+    return [*run.failures, CollectOutcome(latest, "error" if run.aborted else "ok", run.rows, detail)]
+
+
+def backfill_broker_full(start: date, end: date, *, delay: float | None = None) -> list[CollectOutcome]:
+    """`collect_broker_summary_full` for every trading day in [start, end], oldest first. Stops the
+    whole backfill at the first day that fails outright (feed/quota trouble) instead of hammering on."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT session_date FROM trading_calendar WHERE session_date BETWEEN %s AND %s ORDER BY session_date",
+            (start, end),
+        )
+        days = [r[0] for r in cur.fetchall()]
+    if not days:
+        return [CollectOutcome(start, "error", 0, f"no trading days between {start} and {end}")]
+    out: list[CollectOutcome] = []
+    for d in days:
+        res = collect_broker_summary_full(delay=delay, session_date=d)
+        out.extend(res)
+        if res[-1].status == "error":
+            break
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1036,6 +1177,29 @@ def collect_price_history_universe(
     if have:
         out.append(CollectOutcome(latest, "ok", 0, f"skipped {len(have)} already-have"))
     return out
+
+
+def collect_price_history_all(*, delay: float | None = None) -> list[CollectOutcome]:
+    """Gap-fill OHLCV + foreign flow for EVERY ticker on the newest price session from the VG feed
+    (one call per ticker returns ~120 trading days).
+
+    Unlike `collect_price_history_universe` it does NOT skip tickers that already have the newest
+    day — that is the point: it repairs OLDER missing days, e.g. the 14/15/25 Sep gap (5 rows
+    instead of ~962). Tier-0 (IDX) rows are never overwritten: `_persist_price_history` only
+    updates rows whose source_tier is >= the feed's. Idempotent; aborts on consecutive errors."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(session_date) FROM price_bars")
+        latest = cur.fetchone()[0]
+        if latest is None:
+            return [CollectOutcome(date.today(), "error", 0, "no price_bars yet — run collect-price first")]
+        cur.execute("SELECT DISTINCT ticker FROM price_bars WHERE session_date = %s ORDER BY ticker", (latest,))
+        tickers = [r[0] for r in cur.fetchall()]
+    pause = CONFIG.feed_delay_seconds if delay is None else delay
+    run = _feed_loop(tickers, collect_price_history_ticker, pause)
+    detail = f"{len(tickers)} tickers: filled {run.ok}, no_data {run.no_data}, errors {run.errors}"
+    if run.aborted:
+        detail = f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
+    return [*run.failures, CollectOutcome(latest, "error" if run.aborted else "ok", run.rows, detail)]
 
 
 # ---------------------------------------------------------------------------
