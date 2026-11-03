@@ -1,6 +1,14 @@
 {% extends "base.html" %}
-{% from "_macros.html" import term, th, ticker, tag_chips, quad, db_error, disclaimer %}
+{% from "_macros.html" import term, ticker, tag_chips, quad, db_error, disclaimer %}
 {% block subtitle %}Today's stocks{% endblock %}
+
+{% macro sh(key, label, term_key=none, left=false) -%}
+{%- set s = sorts[key] if sorts else none -%}
+<th scope="col" role="columnheader"{% if left %} style="text-align:left"{% endif %}{% if s and s.active %} aria-sort="{{ 'descending' if p.dir == 'desc' else 'ascending' }}"{% endif %}>
+  {% if term_key %}<a class="t" href="/guide#{{ term_key }}" data-term="{{ term_key }}">{{ label }}</a>{% else %}{{ label }}{% endif %}
+  {% if s %}<a class="sortlink{{ ' on' if s.active else '' }}" href="{{ s.href }}" title="Sort by {{ label|lower }}" aria-label="Sort by {{ label|lower }}">{{ s.arrow or '↕' }}</a>{% endif %}
+</th>
+{%- endmacro %}
 
 {% block content %}
   {% if error %}
@@ -12,36 +20,48 @@
     </div>
   {% else %}
     <div class="answer"><span class="q">Which stocks showed something unusual on {{ session_date }}?</span>
-      These {{ rows|length }} stocks triggered at least one {{ term('pattern', 'pattern') }} on the latest session. A pattern describes what the
-      transaction data looked like; it is not a prediction and not a trade instruction. Click a stock to see the details behind it, or any dotted word for an explanation.</div>
+      {{ total_all }} stocks triggered at least one {{ term('pattern', 'pattern') }} on the latest session. A pattern describes what the
+      transaction data looked like; it is not a prediction and not a trade instruction. Narrow the list with the filters, sort by any column,
+      and click a stock to see the details behind it.</div>
+
     <div class="panel">
       <h2>Stocks with patterns — session {{ session_date }}</h2>
-      <p class="note">
-        <span aria-hidden="true">★</span> = on your watchlist · <span aria-hidden="true">📌</span> = currently held.
-        Sorted by 1-week foreign flow (largest first).
+      <form method="get" action="/screener" class="filterbar" role="search">
+        <label class="sr-only" for="q">Search the list</label>
+        <input id="q" class="filter" name="q" type="search" autocomplete="off" value="{{ q_text }}" placeholder="Search a stock or pattern… (e.g. BBRI, accumulation)">
+        {% if p.quad %}<input type="hidden" name="quad" value="{{ p.quad }}">{% endif %}
+        {% if p.flow %}<input type="hidden" name="flow" value="{{ p.flow }}">{% endif %}
+        {% if p.liquid %}<input type="hidden" name="liquid" value="1">{% endif %}
+        {% if p.wl %}<input type="hidden" name="wl" value="1">{% endif %}
+        {% if p.sort != 'foreign_1w' or p.dir != 'desc' %}<input type="hidden" name="sort" value="{{ p.sort }}"><input type="hidden" name="dir" value="{{ p.dir }}">{% endif %}
+        <button type="submit" class="menu-btn">Search</button>
+      </form>
+      <p class="chips" aria-label="Filters">
+        {% for c in chips %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
+        {% if filtered %}<a class="fchip clear" href="{{ clear }}">Clear filters</a>{% endif %}
       </p>
-      <p>
-        <label class="sr-only" for="q">Filter the table</label>
-        <input id="q" class="filter" type="search" autocomplete="off"
-               placeholder="Filter by stock or pattern…  (e.g. BBRI, accumulation)">
-        <span id="count" class="count"></span>
+      <p class="note">
+        {% if pg.total %}Showing {{ pg.start + 1 }}–{{ pg.end }} of {{ pg.total }}{% if filtered %} (filtered from {{ total_all }}){% endif %}.{% else %}No stock matches these filters.{% endif %}
+        <span aria-hidden="true">★</span> = on your watchlist · <span aria-hidden="true">📌</span> = currently held.
+        {% if p.sort == 'foreign_1w' and p.dir == 'desc' %}Default order: 1-week foreign flow, largest first.{% else %}Sorted by {{ p.sort|replace('_', ' ') }} ({{ 'lowest first' if p.dir == 'asc' else 'highest first' }}).{% endif %}
+        {{ term('liquid', 'Liquid') }} = traded above Rp5 billion today.
       </p>
       <table id="screener" class="cards" role="table">
         <thead role="rowgroup">
           <tr role="row">
-            <th scope="col" role="columnheader" style="text-align:left">Stock</th>
-            {{ th('quadrant', 'Quadrant', true) }}
-            <th scope="col">Price</th>
-            {{ th('change_today', 'Change') }}
-            {{ th('foreign_today', 'Foreign today') }}{{ th('foreign_1w', 'Foreign 1 week') }}
-            {{ th('broker_net', 'Foreign brokers') }}{{ th('cr3', 'Top-3 share') }}
-            {{ th('consistency', 'Days in a row') }}{{ th('ksei', 'KSEI trend') }}
-            {{ th('pattern', 'Why it appears', true) }}
+            {{ sh('ticker', 'Stock', none, true) }}
+            <th scope="col" role="columnheader" style="text-align:left"><a class="t" href="/guide#quadrant" data-term="quadrant">Quadrant</a></th>
+            {{ sh('price', 'Price') }}
+            {{ sh('change', 'Change', 'change_today') }}
+            {{ sh('foreign_today', 'Foreign today', 'foreign_today') }}{{ sh('foreign_1w', 'Foreign 1 week', 'foreign_1w') }}
+            {{ sh('brokers', 'Foreign brokers', 'broker_net') }}{{ sh('top3', 'Top-3 share', 'cr3') }}
+            {{ sh('days', 'Days in a row', 'consistency') }}<th scope="col" role="columnheader"><a class="t" href="/guide#ksei" data-term="ksei">KSEI trend</a></th>
+            {{ sh('patterns', 'Why it appears', 'pattern', true) }}
           </tr>
         </thead>
         <tbody role="rowgroup">
           {% for r in rows %}
-          <tr role="row" data-search="{{ r.ticker }} {{ r.tags }} {% for c in r.tag_list %}{{ plain_tag(c) }} {% endfor %}{{ quad_word(r.quad) }}">
+          <tr role="row">
             <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
             <td role="cell" data-label="Quadrant" style="text-align:left">{{ quad(r.quad) }}</td>
             <td role="cell" data-label="Price">{{ r.price }}</td>
@@ -55,35 +75,16 @@
             <td role="cell" data-label="Why it appears" class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
           </tr>
           {% endfor %}
-          <tr id="nomatch" style="display:none"><td colspan="11" class="note">Nothing matches.</td></tr>
         </tbody>
       </table>
+      {% if pg and pg.pages > 1 %}
+      <nav class="pager" aria-label="Pages">
+        {% if pg_prev %}<a class="fchip" href="{{ pg_prev }}" rel="prev">← Previous</a>{% else %}<span class="fchip off">← Previous</span>{% endif %}
+        <span>Page {{ pg.page }} of {{ pg.pages }}</span>
+        {% if pg_next %}<a class="fchip" href="{{ pg_next }}" rel="next">Next →</a>{% else %}<span class="fchip off">Next →</span>{% endif %}
+      </nav>
+      {% endif %}
     </div>
-
-    <script>
-      (function () {
-        var q = document.getElementById("q");
-        var count = document.getElementById("count");
-        var nomatch = document.getElementById("nomatch");
-        var rows = Array.prototype.slice.call(
-          document.querySelectorAll("#screener tbody tr[data-search]")
-        );
-        function apply() {
-          var term = q.value.trim().toUpperCase();
-          var vis = 0;
-          for (var i = 0; i < rows.length; i++) {
-            var hay = (rows[i].getAttribute("data-search") || "").toUpperCase();
-            var show = !term || hay.indexOf(term) !== -1;
-            rows[i].style.display = show ? "" : "none";
-            if (show) vis++;
-          }
-          if (nomatch) nomatch.style.display = vis === 0 ? "" : "none";
-          count.textContent = vis + " / " + rows.length + " stocks";
-        }
-        q.addEventListener("input", apply);
-        apply();
-      })();
-    </script>
   {% endif %}
 {% endblock %}
 

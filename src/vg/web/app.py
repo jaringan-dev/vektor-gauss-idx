@@ -24,11 +24,12 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
-from . import freshness, fmt, glossary
+from . import freshness, fmt, glossary, listing
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
 from . import stock as stockmod
+from . import today as todaymod
 from .cache import TTLCache
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -38,8 +39,11 @@ _GLOSSARY_JSON = json.dumps(glossary.popover_data(), ensure_ascii=False).replace
 
 # Sidebar (A1). `key` must equal the `active_page` each route passes to its template.
 _NAV = [
+    {"title": "Overview", "items": [
+        {"key": "today", "label": "Today", "href": "/"},
+    ]},
     {"title": "Patterns", "items": [
-        {"key": "tracker", "label": "Track record", "href": "/"},
+        {"key": "tracker", "label": "Track record", "href": "/track-record"},
         {"key": "risk", "label": "Stop & target test", "href": "/risk-test"},
         {"key": "research", "label": "Is the edge real?", "href": "/research"},
     ]},
@@ -168,7 +172,33 @@ def _view_rows(since) -> list[dict]:
     return gate.order_rows(rows)
 
 
+def _track_summary() -> dict | None:
+    """How many patterns are tracked and what their forward-test verdicts are (for the Today page)."""
+    try:
+        rows = _cached_view_rows(CONFIG.forward_since)[0] if CONFIG.forward_since else _cached_view_rows(None)[0]
+    except Exception:  # noqa: BLE001
+        return None
+    codes = [r["status"].code for r in rows]
+    return {"n": len(rows), "passed": codes.count(gate.READY), "failing": codes.count(gate.FAILING), "probation": codes.count(gate.PROBATION)}
+
+
 @app.get("/", response_class=HTMLResponse)
+def today() -> HTMLResponse:
+    ctx: dict = {"active_page": "today", "error": None, "v": None, "empty": False,
+                 "wl": set(CONFIG.watchlist), "held": set(CONFIG.holdings)}
+    try:
+        sd = engine.latest_signal_date()
+        if sd is None:
+            ctx["empty"] = True
+        else:
+            watch = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+            ctx["v"] = todaymod.build_view(todaymod.load(sd, watch), _track_summary())
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("today.html", ctx)
+
+
+@app.get("/track-record", response_class=HTMLResponse)
 def forward_tracker(fresh: bool = False) -> HTMLResponse:
     ctx: dict = {
         "active_page": "tracker",
@@ -228,16 +258,34 @@ def _screener_view() -> tuple:
                     "ksei": _TREND.get(r.get("ksei_foreign_trend_3m") or "", "?"),
                     "tags": r.get("tags") or "",
                     "tag_list": glossary.split_tags(r.get("tags")),
+                    # raw values for server-side filtering and sorting (web/listing.py)
+                    "price_raw": close, "chg_raw": chg, "nff_d0_raw": r.get("nff_d0"), "nff_w1_raw": r.get("nff_w1"),
+                    "bkr_raw": r.get("bkr_foreign_net_d0"), "cr3_raw": cr3, "cons_raw": cons, "value_raw": r.get("value"),
+                    "n_tags": len(glossary.split_tags(r.get("tags"))),
+                    "search": " ".join([r["ticker"], r.get("tags") or "", *[glossary.plain_tag(c) for c in glossary.split_tags(r.get("tags"))],
+                                        glossary.quad_word(r.get("quadrant"))]).upper(),
                 }
             )
     return sd, rows
 
 
 @app.get("/screener", response_class=HTMLResponse)
-def screener() -> HTMLResponse:
-    ctx: dict = {"active_page": "screener", "error": None, "session_date": None, "rows": []}
+def screener(q: str = "", quad: str = "", liquid: str = "0", flow: str = "", wl: str = "0", sort: str = "foreign_1w",
+             dir: str = "", page: str = "1") -> HTMLResponse:  # noqa: A002 — `dir` is the public query-string name
+    p = listing.clean({"q": q, "quad": quad, "liquid": liquid, "flow": flow, "wl": wl, "sort": sort, "dir": dir, "page": page})
+    ctx: dict = {"active_page": "screener", "error": None, "session_date": None, "rows": [], "p": p, "total_all": 0, "pg": None,
+                 "chips": listing.chips(p), "sorts": {k: listing.sort_link(p, k) for k in listing.SORTS}, "q_text": p["q"],
+                 "pg_prev": None, "pg_next": None, "clear": listing.query(listing.DEFAULTS)}
     try:
-        ctx["session_date"], ctx["rows"] = _screener_view()
+        ctx["session_date"], all_rows = _screener_view()
+        ctx["total_all"] = len(all_rows)
+        filtered = listing.apply(all_rows, p)
+        pg = listing.paginate(len(filtered), p["page"])
+        ctx["pg"] = pg
+        ctx["rows"] = filtered[pg["start"]:pg["end"]]
+        ctx["pg_prev"] = listing.query(p, page=pg["page"] - 1) if pg["has_prev"] else None
+        ctx["pg_next"] = listing.query(p, page=pg["page"] + 1) if pg["has_next"] else None
+        ctx["filtered"] = any((p["q"], p["quad"], p["liquid"], p["flow"], p["wl"]))
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("screener.html", ctx)

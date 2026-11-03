@@ -1159,7 +1159,7 @@ def screener_rows(session_date: date) -> list[dict]:
             """
             SELECT sl.ticker,
                    string_agg(DISTINCT sl.tag, ', ' ORDER BY sl.tag)   AS tags,
-                   pb.close, pb.prev,
+                   pb.close, pb.prev, pb.value,
                    sc.nff_d0, sc.nff_w1, sc.quadrant,
                    sc.foreign_consistency_10d, sc.ksei_foreign_trend_3m,
                    sc.bkr_foreign_net_d0, sc.bkr_cr3
@@ -1169,7 +1169,7 @@ def screener_rows(session_date: date) -> list[dict]:
             LEFT JOIN signal_components sc
               ON sc.session_date = sl.session_date AND sc.ticker = sl.ticker
             WHERE sl.session_date = %s
-            GROUP BY sl.ticker, pb.close, pb.prev, sc.nff_d0, sc.nff_w1, sc.quadrant,
+            GROUP BY sl.ticker, pb.close, pb.prev, pb.value, sc.nff_d0, sc.nff_w1, sc.quadrant,
                      sc.foreign_consistency_10d, sc.ksei_foreign_trend_3m,
                      sc.bkr_foreign_net_d0, sc.bkr_cr3
             ORDER BY sc.nff_w1 DESC NULLS LAST, sl.ticker

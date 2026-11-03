@@ -492,3 +492,65 @@ def test_health_page_database_failure_is_an_error_panel_not_a_crash(client, monk
     webapp._HEALTH_CACHE.clear()
     r = client.get("/health")
     assert r.status_code == 200 and "Cannot read the data" in r.text and "db down" in r.text
+
+
+# ---- Today (new home) ------------------------------------------------------------------------------
+
+def _today_raw():
+    D = Decimal
+    row = lambda tk, c, p, v, d0, w1, q, cons, lo, hi, n: (tk, D(c), D(p), D(v), D(d0), D(w1), q, cons, lo, hi, n)  # noqa: E731
+    return {"session_date": LATEST, "ihsg": (D("7500"), D("7600")), "breadth": (300, 550, 100, D("12000000000000")),
+            "foreign": (D("-900000000000"), D("-850000000000")),
+            "watch": [row("BBCA", 4840, 4980, 250_000_000_000, -24_400_000_000, 486_600_000_000, "AKUMULASI", 2, None, None, 3)],
+            "inflow": [row("ASII", 4750, 4860, 90_000_000_000, 46_000_000_000, 160_000_000_000, "MARKUP", 7, None, None, 1)],
+            "outflow": [row("TLKM", 3000, 3100, 120_000_000_000, -30_000_000_000, -200_000_000_000, "MARKDOWN", 1, None, None, 2)],
+            "certain": {"BROKER2-ASING-AKUM": [row("BBRI", 2660, 2820, 857_000_000_000, 0, 0, "AKUMULASI", 3, D(60_000_000_000), D(90_000_000_000), 2)],
+                        "BROKER2-ASING-AKUM:n": 39, "BROKER2-ASING-DIST": [], "BROKER2-ASING-DIST:n": 0}}
+
+
+def test_today_view_describes_the_market_and_formats_the_lists():
+    from vg.web import today
+
+    v = today.build_view(_today_raw(), {"n": 26, "passed": 0, "failing": 5, "probation": 21})
+    assert v["market"][0] == "The Jakarta Composite closed at 7,500, down 1.32%."
+    assert "300 stocks rose, 550 fell and 100 were unchanged" in v["market"][1] and "Rp12.0 trillion" in v["market"][1]
+    assert "net sellers of Rp900.0 billion" in v["market"][2] and "in liquid stocks alone" in v["market"][2]
+    w = v["watch"][0]
+    assert w["ticker"] == "BBCA" and w["chg"]["t"] == "-2.8%" and w["w1"] == "+486.6B" and w["quad_word"] == "Accumulation" and w["n_tags"] == 3
+    assert v["certain"]["buy_n"] == 39 and v["certain"]["buy"][0]["bounds"] == "+7.0% to +10.5%"
+    assert v["inflow"][0]["quad_word"] == "Markup" and v["outflow"][0]["d0_c"] == "neg"
+
+
+def test_today_page_answers_the_three_questions_and_never_recommends(client, monkeypatch):
+    from vg.web import today
+
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: LATEST)
+    monkeypatch.setattr(today, "load", lambda sd, watch: _today_raw())
+    monkeypatch.setattr(webapp, "_track_summary", lambda: {"n": 26, "passed": 0, "failing": 5, "probation": 21})
+    monkeypatch.setattr(webapp.CONFIG, "watchlist", ("BBCA",), raising=False)
+    monkeypatch.setattr(webapp.CONFIG, "holdings", (), raising=False)
+    r = client.get("/")
+    assert r.status_code == 200
+    for needle in ("What happened on 2026-11-03, and what is worth a look?", "The Jakarta Composite closed at 7,500", "Your stocks",
+                   "Foreign money flowing in", "Foreign money flowing out", "the data is certain about the direction",
+                   "none of the 26 tracked patterns has passed the forward test yet", "not what to buy",
+                   'href="/stock/BBCA"', 'href="/stock/ASII"', 'href="/stock/TLKM"', 'href="/track-record"', "Not investment advice"):
+        assert needle in r.text, needle
+    assert "buy now" not in r.text.lower() and "you should" not in r.text.lower()
+
+
+def test_today_page_handles_no_signals_and_database_failure(client, monkeypatch):
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: None)
+    assert "No signals yet" in client.get("/").text
+
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", boom)
+    r = client.get("/")
+    assert r.status_code == 200 and "Cannot read the data" in r.text and "db down" in r.text
+
+
+def test_track_record_moved_to_its_own_address(client):
+    r = client.get("/track-record")
+    assert r.status_code == 200 and 'href="/track-record"' in r.text

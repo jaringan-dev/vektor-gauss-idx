@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, th, ticker, quad, tag_chip, db_error, disclaimer %}
+{% block subtitle %}Today{% endblock %}
+
+{% macro flow_table(rows, empty) %}
+  {% if rows %}
+  <table>
+    <thead><tr><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}
+      {{ th('foreign_today', 'Foreign today') }}{{ th('foreign_1w', 'Foreign 1 week') }}<th scope="col">Patterns</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td style="text-align:left">{{ ticker(r.ticker, r.ticker in wl, r.ticker in held) }}</td>
+        <td style="text-align:left">{% if r.quad_key %}{{ term(r.quad_key, r.quad_word) }}{% else %}—{% endif %}</td>
+        <td>{{ r.price }}</td><td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+        <td class="{{ r.d0_c }}">{{ r.d0 }}</td><td class="{{ r.w1_c }}">{{ r.w1 }}</td>
+        <td><a class="tk" href="/stock/{{ r.ticker }}">{{ r.n_tags }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="note">{{ empty }}</p>{% endif %}
+{% endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif empty %}
+    <div class="panel"><h2>No signals yet</h2><p class="note">There are no rows in <code>signal_log</code>. Run <code>vg compute</code> first.</p></div>
+  {% else %}
+    <div class="answer"><span class="q">What happened on {{ v.session_date }}, and what is worth a look?</span>
+      {% for s in v.market %}{{ s }} {% endfor %}
+      Below: how your own stocks did, then the liquid stocks with the strongest foreign money moves. The lists are built by the rules written under each one.
+      They show where unusual money moved, <b>not what to buy</b>:
+      {% if v.track %}{% if v.track.passed %}{{ v.track.passed }} of {{ v.track.n }} tracked patterns have passed the forward test.{% else %}none of the {{ v.track.n }} tracked patterns has passed the forward test yet.{% endif %}{% endif %}
+    </div>
+
+    {% if v.watch %}
+    <div class="panel">
+      <h2>Your stocks</h2>
+      <p class="note">Your watchlist and holdings (<span aria-hidden="true">★</span> watchlist, <span aria-hidden="true">📌</span> held). Click a stock for charts, brokers and the risk plan.</p>
+      {{ flow_table(v.watch, '') }}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h2>Foreign money flowing in</h2>
+      <p class="note">Rule: {{ term('liquid', 'liquid stocks') }} (traded above Rp{{ v.liquid_bn }} billion today), ranked by {{ term('foreign_1w', 'net foreign flow over the last week') }}, largest first.</p>
+      {{ flow_table(v.inflow, 'No liquid stocks with foreign flow data today.') }}
+    </div>
+
+    <div class="panel">
+      <h2>Foreign money flowing out</h2>
+      <p class="note">Same rule, ranked from the largest outflow.</p>
+      {{ flow_table(v.outflow, 'No liquid stocks with foreign flow data today.') }}
+    </div>
+
+    <div class="panel">
+      <h2>Foreign brokers: the data is certain about the direction</h2>
+      <p class="note">Stocks where the {{ term('certain_bounds', 'certain range') }} of foreign-broker net flow is entirely above (or below) 5% of traded value
+         and the price pattern fits: {{ tag_chip('BROKER2-ASING-AKUM') }} and {{ tag_chip('BROKER2-ASING-DIST') }}. Largest by traded value. These patterns have not passed the forward test.</p>
+      <div class="grid">
+        <div><h3 style="font-size:14px;margin:0 0 4px">Certainly buying into weakness ({{ v.certain.buy_n }} today)</h3>
+          {% if v.certain.buy %}<table><tbody>{% for r in v.certain.buy %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
+        <div><h3 style="font-size:14px;margin:0 0 4px">Certainly selling into strength ({{ v.certain.sell_n }} today)</h3>
+          {% if v.certain.sell %}<table><tbody>{% for r in v.certain.sell %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
+      </div>
+      <p class="wide-note">The right-hand figure is the range of net foreign-broker flow as a share of traded value.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Where to go next</h2>
+      <ul>
+        <li><a href="/screener">Today's stocks</a>: every stock with a pattern today. Sort, filter, and page through them.</li>
+        <li><a href="/track-record">Track record</a> and <a href="/research">Is the edge real?</a>: whether the patterns have ever paid after costs. Honest answer so far: not yet.</li>
+        <li><a href="/health">System health</a> and the <a href="/guide">guide</a> if a word is unclear.</li>
+      </ul>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}

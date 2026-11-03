@@ -275,9 +275,13 @@ def test_screener_quadrant_shows_text_next_to_emoji():
            "price": "6,075", "chg": _cell(), "nff_d0": "+1B", "nff_d0_c": "pos", "nff_w1": "+2B",
            "nff_w1_c": "pos", "bkr_net": "n/a", "bkr_net_c": "", "cr3": "—", "cons": "7/10",
            "ksei": "↑", "tags": "AKUM-ASING", "tag_list": ["AKUM-ASING"]}
+    from vg.web import listing
+
+    p = listing.clean({})
     out = ENV.get_template("screener.html").render(
-        active_page="screener", error=None, session_date=date(2026, 10, 30), rows=[row]
-    )
+        active_page="screener", error=None, session_date=date(2026, 10, 30), rows=[row], p=p, total_all=1, pg=listing.paginate(1, 1),
+        chips=listing.chips(p), sorts={k: listing.sort_link(p, k) for k in listing.SORTS}, q_text="", pg_prev=None, pg_next=None,
+        filtered=False, clear="?")
     assert "Quadrant</a></th>" in out
     assert ">Accumulation</a>" in out
     assert 'href="/stock/BBCA"' in out                  # every ticker links to its detail page

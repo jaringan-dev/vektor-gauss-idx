@@ -64,7 +64,7 @@
     .strip li.lv-bad  { background:var(--fail-bg); color:var(--fail-fg); border-color:var(--fail-fg); font-weight:600; }
     .strip .checked { margin-left:auto; color:var(--muted); }
 
-    main { padding:16px 20px; max-width:1100px; }
+    main { padding:16px 20px; max-width:1500px; }
     .pagehead h1 { margin:0 0 14px; font-size:20px; }
     .panel { background:var(--panel); border:1px solid var(--border); border-radius:10px;
              padding:16px; margin-bottom:20px; overflow-x:auto; }
@@ -86,7 +86,7 @@
     .err { background:var(--fail-bg); color:var(--fail-fg); padding:12px; border-radius:8px;
            font-family:ui-monospace,monospace; font-size:12px; white-space:pre-wrap; }
     .disclaimer { color:var(--muted); font-size:11px; margin-top:8px; }
-    footer { padding:16px 20px; max-width:1100px; color:var(--muted); font-size:12px; }
+    footer { padding:16px 20px; max-width:1500px; color:var(--muted); font-size:12px; }
     nav.nav { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
     nav.nav a { color:var(--fg); text-decoration:none; font-size:13px; padding:5px 12px;
                 border:1px solid var(--border); border-radius:999px; background:var(--panel); }
@@ -121,6 +121,18 @@
                        background:var(--panel); color:var(--fg); font-size:14px; }
     .topsearch button { padding:8px 14px; border:1px solid var(--border); border-radius:8px; background:var(--panel);
                         color:var(--fg); cursor:pointer; font-size:14px; }
+    .filterbar { display:flex; gap:8px; margin:0 0 10px; max-width:560px; }
+    .filterbar .filter { flex:1; min-width:0; }
+    p.chips { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 10px; }
+    a.fchip, span.fchip { display:inline-block; padding:4px 12px; border:1px solid var(--border); border-radius:999px; font-size:13px; color:var(--fg);
+                          text-decoration:none; background:var(--panel); }
+    a.fchip:hover, a.fchip:focus-visible { border-color:var(--fg); }
+    a.fchip.on { background:var(--fg); color:var(--bg); border-color:var(--fg); font-weight:600; }
+    a.fchip.clear { color:var(--muted); border-style:dashed; }
+    span.fchip.off { color:var(--muted); opacity:.6; }
+    a.sortlink { color:var(--muted); text-decoration:none; font-size:11px; margin-left:3px; }
+    a.sortlink.on, a.sortlink:hover { color:var(--fg); }
+    nav.pager { display:flex; gap:14px; align-items:center; justify-content:center; margin-top:12px; color:var(--muted); font-size:13px; }
     .answer { background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--fg); border-radius:10px;
               padding:12px 16px; margin-bottom:16px; font-size:14px; line-height:1.6; }
     .answer .q { display:block; color:var(--muted); font-size:12px; margin-bottom:2px; }
