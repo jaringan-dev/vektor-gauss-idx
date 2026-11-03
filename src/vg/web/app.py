@@ -19,7 +19,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from .. import engine, risk
+from .. import engine, risk, risk_eval
 from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
@@ -37,6 +37,7 @@ _GLOSSARY_JSON = json.dumps(glossary.popover_data(), ensure_ascii=False).replace
 _NAV = [
     {"title": "Patterns", "items": [
         {"key": "tracker", "label": "Track record", "href": "/"},
+        {"key": "risk", "label": "Stop & target test", "href": "/risk-test"},
     ]},
     {"title": "Stocks", "items": [
         {"key": "screener", "label": "Today's stocks", "href": "/screener"},
@@ -344,6 +345,21 @@ def coverage_missing(d: str = Query("", alias="date"), source: str = "price") ->
     return _render("coverage_missing.html", ctx)
 
 
+def _rule_test_for(codes: list[str]) -> dict | None:
+    """Evidence for the stock page: how the 2R rule performed across all stocks, and on this stock's flagged patterns."""
+    payload, _computed = _risk_snapshot()
+    if not payload:
+        return None
+    rows = {r["tag"]: r for r in payload["scopes"]["all"]}
+    base = rows.get(payload["baseline"])
+    if not base:
+        return None
+    mine = [{"tag": c, "name": glossary.plain_tag(c), "n": rows[c]["n"], "res": _rule_cells(rows[c]["r"]["2"]),
+             "hold": fmt.cell(rows[c]["hold"])} for c in codes if c in rows]
+    return {"window": payload["window"], "n": base["n"], "base": _rule_cells(base["r"]["2"]), "hold": fmt.cell(base["hold"]),
+            "cost": f"{payload['cost'] * 100:.1f}%", "horizon": payload["horizon"], "mine": mine}
+
+
 def _track_by_tag() -> dict:
     """Forward-test verdict per tag, for the pattern chips on the stock page. Never raises (the page still renders)."""
     try:
@@ -355,6 +371,53 @@ def _track_by_tag() -> dict:
                    "edge_h5": r["edge_h5"], "edge_after_cost": r["edge_after_cost"]}
         for r in rows
     }
+
+
+_RISK_CACHE = TTLCache(ttl_seconds=300)
+
+
+def _risk_snapshot():
+    """(payload, computed_at_epoch) of the saved stop/target backtest, or (None, None). Never raises."""
+    try:
+        snap, _wall, _hit = _RISK_CACHE.get_or_compute(("risk",), lambda: risk_eval.load_snapshot() or (None, None))
+    except Exception:  # noqa: BLE001 — table missing / DB down: pages simply omit the evidence panel
+        return None, None
+    payload, computed = snap
+    return payload, computed
+
+
+def _rule_cells(r: dict) -> dict:
+    return {"stop": fmt.pct_plain(r["stop_pct"], 0), "target": fmt.pct_plain(r["target_pct"], 0),
+            "time": fmt.pct_plain(r["time_pct"], 0), "net": fmt.cell(r["net"]), "win": fmt.pct_plain(r["win"], 0)}
+
+
+def _risk_rows(payload: dict, scope: str) -> list[dict]:
+    out = []
+    for row in payload["scopes"][scope]:
+        out.append({"tag": row["tag"], "is_baseline": row["tag"] == payload["baseline"], "n": row["n"],
+                    "hold": fmt.cell(row["hold"]), "r": {k: _rule_cells(v) for k, v in row["r"].items()}})
+    return out
+
+
+@app.get("/risk-test", response_class=HTMLResponse)
+def risk_test(scope: str = "all") -> HTMLResponse:
+    scope = "liquid" if scope == "liquid" else "all"
+    payload, computed = _risk_snapshot()
+    ctx: dict = {"active_page": "risk", "scope": scope, "payload": payload, "error": None}
+    if payload:
+        rows = _risk_rows(payload, scope)
+        base = next((r for r in payload["scopes"][scope] if r["tag"] == payload["baseline"]), None)
+        big = [r for r in payload["scopes"][scope] if r["tag"] != payload["baseline"] and r["n"] >= 200]
+        two = lambda r: r["r"]["2"]["net"]  # noqa: E731
+        ctx.update(
+            rows=rows, window=payload["window"], computed_at=computed.strftime("%d %b %Y %H:%M") if computed else None,
+            cost_pct=f"{payload['cost'] * 100:.1f}%", horizon=payload["horizon"], stop_atr=f"{payload['stop_atr']:g}",
+            n_total=base["n"] if base else None,
+            base_net=fmt.pct(two(base)) if base else None, base_hold=fmt.pct(base["hold"]) if base else None,
+            n_big=len(big), n_positive=sum(1 for r in big if two(r) > 0),
+            best=max(big, key=two) if big else None, best_net=fmt.pct(two(max(big, key=two))) if big else None,
+        )
+    return _render("risk_test.html", ctx)
 
 
 @app.get("/guide", response_class=HTMLResponse)
@@ -414,6 +477,7 @@ def stock_detail(ticker: str, capital: float | None = None, risk_pct: float = 1.
         ctx["risk_pct"] = rp
         balance = capital * 1_000_000 if capital and capital > 0 else None
         ctx["v"] = stockmod.build_view(raw, _track_by_tag(), balance=balance, risk_pct=rp / 100)
+        ctx["rule_test"] = _rule_test_for([t["code"] for t in ctx["v"]["tags_today"]])
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("stock.html", ctx)

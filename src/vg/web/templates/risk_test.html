@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, th, tag_chip, db_error, disclaimer %}
+{% block subtitle %}Stop &amp; target test{% endblock %}
+
+{% macro cells(r) -%}
+<td>{{ r.stop }}</td><td>{{ r.target }}</td><td>{{ r.time }}</td><td class="{{ r.net.c }}">{{ r.net.t }}</td><td>{{ r.win }}</td>
+{%- endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not payload %}
+    <div class="panel">
+      <h2>No test results saved yet</h2>
+      <p class="note">This page shows a backtest that takes a few minutes to compute, so it is computed offline. Run
+         <code>vg risk-eval --save</code> in the WSL terminal, then reload.</p>
+    </div>
+  {% else %}
+    <div class="answer"><span class="q">Does the stop-and-target rule make the patterns pay?</span>
+      The test enters at the {{ term('ref_price', 'reference price') }}, places a stop {{ stop_atr }} × {{ term('atr', 'ATR') }} below and a target at 1R, 2R or 3R above,
+      and closes the trade at whichever comes first: stop, target, or a {{ term('time_exit', 'time exit') }} after {{ horizon }} trading days.
+      Across <b>{{ '{:,}'.format(n_total) }}</b> past stock-days ({{ window[0] }} to {{ window[1] }}), the average trade with a 2R target ended at
+      <b class="{{ 'pos' if base_net.startswith('+') else 'neg' }}">{{ base_net }}</b> after the {{ cost_pct }} trading cost, versus
+      <b>{{ base_hold }}</b> for simply {{ term('hold_10', 'holding for 10 days') }} with no stop.
+      {{ n_positive }} of the {{ n_big }} patterns with at least 200 signals had a positive average result at 2R{% if best %};
+      the best was {{ tag_chip(best.tag) }} at <b>{{ best_net }}</b>{% endif %}.
+      <br><b>Read this as:</b> the stop and target are risk management, not a source of profit. Where the average is below zero, the typical trade lost money.
+      This is a replay of history, not a forward test.</div>
+
+    <div class="panel">
+      <h2>Results by pattern</h2>
+      <nav class="nav" aria-label="Scope">
+        <a href="/risk-test?scope=all"{% if scope == 'all' %} class="active" aria-current="true"{% endif %}>All stocks</a>
+        <a href="/risk-test?scope=liquid"{% if scope == 'liquid' %} class="active" aria-current="true"{% endif %}>Liquid stocks only</a>
+      </nav>
+      <p class="note" style="margin-top:8px">{{ term('liquid', 'Liquid') }} = traded more than Rp5 billion that day. Calculated {{ computed_at }}. Cost {{ cost_pct }} round trip. The first row applies the same rule to
+         <i>every</i> stock on the same days: a pattern only means something if it does better than that row.</p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col" rowspan="2" style="text-align:left">Pattern</th><th scope="col" rowspan="2">n</th>
+            <th scope="col" rowspan="2">{{ term('hold_10', 'Hold 10d') }}</th>
+            {% for t in payload.targets %}<th scope="colgroup" colspan="5" style="text-align:center;border-left:1px solid var(--border)">Target {{ t }}R</th>{% endfor %}
+          </tr>
+          <tr>
+            {% for t in payload.targets %}
+            <th scope="col" style="border-left:1px solid var(--border)">{{ term('stop_hit', 'stop') }}</th><th scope="col">{{ term('target_hit', 'target') }}</th>
+            <th scope="col">{{ term('time_exit', 'time') }}</th><th scope="col">{{ term('avg_net', 'net') }}</th><th scope="col">{{ term('win_rate', 'win') }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr{% if r.is_baseline %} style="font-weight:600;background:var(--prob-bg)"{% endif %}>
+            <td style="text-align:left">{% if r.is_baseline %}All stocks (same rule){% else %}{{ tag_chip(r.tag) }}{% endif %}</td>
+            <td>{{ '{:,}'.format(r.n) }}</td><td class="{{ r.hold.c }}">{{ r.hold.t }}</td>
+            {% for t in payload.targets %}{{ cells(r.r[t]) }}{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>How the test works, and its limits</h2>
+      <ul>
+        <li>Entry is the signal day's close; each later day is replayed in order. A gap through the stop exits at the open (worse than planned). If the stop and
+            the target both fall inside one day's range, the stop is assumed to hit first.</li>
+        <li>Only signals with {{ horizon }} later trading days are used, so nothing is judged on partial information. Prices are adjusted for splits and bonus
+            issues; cash dividends are not.</li>
+        <li>Signals from the newer broker patterns (BROKER2) only exist since June 2026 and were computed backwards. Several patterns have few independent
+            observations because signals on the same day are related.</li>
+        <li>This does not model auto-rejection limits, order-queue priority, or slippage beyond the single cost assumption.</li>
+      </ul>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>All numbers come from replaying history with fixed rules. They describe what would have happened, not what will happen.</p>
+  {{ disclaimer() }}
+{% endblock %}

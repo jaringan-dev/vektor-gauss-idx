@@ -520,3 +520,11 @@ FROM price_bars p LEFT JOIN price_adj a USING (session_date, ticker);
 
 -- K5: why a price row was touched after ingest (src/vg/repair.py). NULL = untouched.
 ALTER TABLE price_bars ADD COLUMN IF NOT EXISTS quality_note TEXT;
+
+-- Slow, rarely-changing analyses computed offline (e.g. `vg risk-eval --save`) and read by the dashboard, so a page view
+-- never triggers a multi-minute computation. One row per analysis name; the payload is self-describing JSON.
+CREATE TABLE IF NOT EXISTS analysis_snapshot (
+    name         TEXT PRIMARY KEY,
+    computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    payload      JSONB NOT NULL
+);

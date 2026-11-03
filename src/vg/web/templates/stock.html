@@ -110,6 +110,16 @@
          If the stop level is hit exactly, the loss is about <b>Rp{{ v.risk.lots.max_loss }}</b> including a {{ '%.1f' % 0.4 }}% round-trip fee.
          {% if v.risk.lots.capped %}The size was capped by what your capital can buy.{% endif %}</p>
       {% endif %}
+      {% if rule_test %}
+      <div class="wide-note" style="margin-top:12px">
+        <b>Has a rule like this paid off?</b> Replaying it on {{ '{:,}'.format(rule_test.n) }} past stock-days ({{ rule_test.window[0] }} to {{ rule_test.window[1] }}):
+        with a 2R target, <b>{{ rule_test.base.stop }}</b> of trades hit the stop, <b>{{ rule_test.base.target }}</b> reached the target, and the average trade ended at
+        <b class="{{ rule_test.base.net.c }}">{{ rule_test.base.net.t }}</b> after the {{ rule_test.cost }} trading cost
+        (just holding {{ rule_test.horizon }} days: <b class="{{ rule_test.hold.c }}">{{ rule_test.hold.t }}</b>).
+        {% for m in rule_test.mine %}<br>On {{ tag_chip(m.tag) }} signals ({{ '{:,}'.format(m.n) }}): <b class="{{ m.res.net.c }}">{{ m.res.net.t }}</b> average.{% endfor %}
+        <a href="/risk-test">See the full test →</a>
+      </div>
+      {% endif %}
       {% else %}
       <p class="note">No risk plan: the ATR is not available for this stock on the latest session (for example after a split), or the stop would fall at or below zero.</p>
       {% endif %}

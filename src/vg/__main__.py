@@ -188,6 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     ow.add_argument("ticker")
     ow.add_argument("--months", type=int, default=12)
 
+    rv = sub.add_parser("risk-eval", help="backtest the mechanical stop/target rule per pattern (retrospective)")
+    rv.add_argument("--since", type=date.fromisoformat, default=None, help="first signal day (default: all signal_log history)")
+    rv.add_argument("--scope", choices=("all", "liquid"), default="all", help="liquid = signals on stocks trading > Rp5B that day")
+    rv.add_argument("--min-n", type=int, default=30)
+    rv.add_argument("--save", action="store_true", help="store both scopes in analysis_snapshot for the dashboard (/risk-test)")
+
     sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
     sv.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only, §3.6)")
     sv.add_argument("--port", type=int, default=8787)
@@ -666,6 +672,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {r['month'].isoformat():<10}{_p(r['foreign_pct']):>10}"
                   f"{_p(r['inst_pct']):>10}{_p(r['indiv_pct']):>11}"
                   f"{_p(r['scripless_pct']):>11}{hc:>10}")
+        return 0
+
+    if args.cmd == "risk-eval":
+        from . import risk_eval
+
+        groups, window = risk_eval.run(args.since)
+        print(risk_eval.format_text(risk_eval.table(groups, args.scope, args.min_n), window))
+        if args.save:
+            risk_eval.save_snapshot(risk_eval.snapshot_payload(groups, window, min_n=args.min_n))
+            print("saved to analysis_snapshot (dashboard: /risk-test)")
         return 0
 
     if args.cmd == "serve":

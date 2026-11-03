@@ -182,3 +182,56 @@ def test_every_page_has_the_search_box_and_the_disclaimer(client):
         assert r.status_code == 200
         assert 'action="/search"' in r.text, path
         assert re.search(r"[Nn]ot investment advice", r.text), path
+
+
+# ---- stop & target test page -------------------------------------------------------------------
+
+def _snapshot():
+    from vg import risk_eval
+    from vg.risk_eval import Bar, Sig
+
+    flat = [Bar(100.0, 101.0, 99.0, 100.0)] * 10
+    sigs = [(Sig(date(2026, 10, 1), "AAAA", tag, True), 100.0, 5.0, flat)
+            for tag in (risk_eval.BASELINE, "BROKER2-ASING-AKUM") for _ in range(3)]
+    return risk_eval.snapshot_payload(risk_eval.evaluate(sigs), (date(2026, 6, 3), date(2026, 10, 20)), min_n=1)
+
+
+def test_snapshot_payload_is_json_safe_and_self_describing():
+    import json
+
+    p = _snapshot()
+    json.dumps(p)
+    assert p["targets"] == ["1", "2", "3"] and p["baseline"] == "ALL STOCKS" and p["window"] == ["2026-06-03", "2026-10-20"]
+    assert p["scopes"]["all"][0]["tag"] == "ALL STOCKS" and set(p["scopes"]["all"][0]["r"]) == {"1", "2", "3"}
+
+
+def test_risk_test_page_states_the_result_and_the_limits(client, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (_snapshot(), dt.datetime(2026, 11, 3, 9, 0)))
+    r = client.get("/risk-test")
+    assert r.status_code == 200
+    for needle in ("Does the stop-and-target rule make the patterns pay?", "-1.70%", "simply", "Results by pattern",
+                   "not a forward test", "All stocks (same rule)", 'href="/guide#tag-BROKER2-ASING-AKUM"',
+                   'href="/risk-test?scope=liquid"'):
+        assert needle in r.text, needle
+    assert client.get("/risk-test?scope=liquid").status_code == 200
+    assert client.get("/risk-test?scope=bogus").status_code == 200          # unknown scope falls back to all
+
+
+def test_risk_test_page_without_a_saved_snapshot_says_how_to_create_it(client, monkeypatch):
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (None, None))
+    r = client.get("/risk-test")
+    assert r.status_code == 200 and "vg risk-eval --save" in r.text
+
+
+def test_stock_page_shows_the_evidence_next_to_the_levels(client, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw())
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (_snapshot(), dt.datetime(2026, 11, 3, 9, 0)))
+    r = client.get("/stock/BBCA")
+    assert "Has a rule like this paid off?" in r.text and "See the full test" in r.text
+    assert "On " in r.text and "signals (3)" in r.text                      # the stock's own flagged pattern is listed
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (None, None))
+    assert "Has a rule like this paid off?" not in client.get("/stock/BBCA").text

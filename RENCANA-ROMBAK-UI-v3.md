@@ -157,3 +157,7 @@ Data tidak perlu diubah; hampir semua layar membaca tabel yang sudah ada (`price
 - **Tahap B (click-through) done in the worktree:** `/stock/{ticker}` (plain-language summary, certain bounds, patterns with their forward-test verdict, mechanical risk plan with position size, last 10 sessions, biggest brokers, KSEI ownership, corporate actions), clickable tickers everywhere, global search (`/search`).
 - **Risk plan:** `risk.py` (IDX tick sizes, stop = reference − 2×ATR rounded down, 1R/2R/3R targets, lots from capital × risk%). **Not yet done:** the backtest that measures how these stop/target rules perform per pattern (needed before the numbers can be called evidence).
 - **Not in this change:** charts (Tahap E), pattern detail pages and the simplified track record (Tahap D), mobile polish (Tahap F). Dev preview ran on :8788; the live dashboard on :8787 still runs the old code until deployed.
+
+## 11. Stop/target backtest (3 Nov 2026)
+
+`src/vg/risk_eval.py` replays the mechanical rule (stop = entry − 2×ATR14 rounded to the IDX tick; 1R/2R/3R targets; 10-trading-day time exit; stop assumed first when both levels fall in one bar; gap-throughs exit at the open; 1.7% round-trip cost; split/bonus-adjusted prices) on every historical pattern signal and on ALL stocks as a baseline. `vg risk-eval [--scope all|liquid] [--save]` prints/saves the table; the dashboard reads the saved snapshot at `/risk-test` and shows the evidence next to the levels on each stock page. Retrospective by construction (a replay of history, not a forward test).

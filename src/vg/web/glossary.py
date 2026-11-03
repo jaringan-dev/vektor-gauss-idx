@@ -156,6 +156,17 @@ _T = [
     Term("position_size", "Position size (lots)", "The number of lots such that, if the stop level is hit, the loss does not exceed the share of "
          "capital you chose. 1 lot = 100 shares.", "risk",
          how="lots = (capital × risk%) ÷ ((price − stop + fee per share) × 100)"),
+    Term("hold_10", "Hold 10 days", "Buying at the reference price and simply selling 10 trading days later, with no stop and no target. "
+         "It is the yardstick the stop-and-target rule has to beat.", "risk",
+         how="(close 10 trading days later ÷ reference price) − 1 − trading costs"),
+    Term("stop_hit", "Stopped out", "The share of trades where price touched the stop level within 10 trading days. A gap down through the stop exits "
+         "at the open, which is worse than planned.", "risk"),
+    Term("target_hit", "Target reached", "The share of trades where price reached the target within 10 trading days before touching the stop. "
+         "If both fall inside one day's range, the test assumes the stop was hit first.", "risk"),
+    Term("time_exit", "Time exit", "Neither the stop nor the target was touched in 10 trading days, so the trade is closed at that day's close.", "risk"),
+    Term("avg_net", "Average result after costs", "The average return of all the trades in the test after subtracting the round-trip trading cost "
+         "(about 1.7%). Below zero means the typical trade lost money.", "risk"),
+    Term("win_rate", "Winning trades", "The share of trades that ended above the reference price after costs.", "risk"),
     Term("ref_price", "Reference price", "The latest closing price, used as the calculation point. Not the price you will get when you trade.", "risk"),
 ]
 
