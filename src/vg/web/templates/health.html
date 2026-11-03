@@ -15,7 +15,7 @@
 
     <div class="panel">
       <h2>Checks</h2>
-      <table class="cards-off">
+      <table class="cards-off" aria-label="Health checks">
         <thead><tr><th scope="col" style="text-align:left">Check</th><th scope="col" style="text-align:left">Status</th><th scope="col" style="text-align:left">Detail</th></tr></thead>
         <tbody>
           {% for c in h.checks %}
@@ -50,7 +50,7 @@
     <div class="panel">
       <h2>Latest run of each job (last 3 days)</h2>
       {% if h.recent %}
-      <table>
+      <table aria-label="Latest run of each job">
         <thead><tr><th scope="col" style="text-align:left">Job</th><th scope="col" style="text-align:left">Result</th><th scope="col">Rows</th><th scope="col" style="text-align:left">Started</th></tr></thead>
         <tbody>
           {% for r in h.recent %}

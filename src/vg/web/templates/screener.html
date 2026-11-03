@@ -46,7 +46,7 @@
         {% if p.sort == 'foreign_1w' and p.dir == 'desc' %}Default order: 1-week foreign flow, largest first.{% else %}Sorted by {{ p.sort|replace('_', ' ') }} ({{ 'lowest first' if p.dir == 'asc' else 'highest first' }}).{% endif %}
         {{ term('liquid', 'Liquid') }} = traded above Rp5 billion today.
       </p>
-      <table id="screener" class="cards" role="table">
+      <table id="screener" class="cards" role="table" aria-label="Stocks with patterns">
         <thead role="rowgroup">
           <tr role="row">
             {{ sh('ticker', 'Stock', none, true) }}

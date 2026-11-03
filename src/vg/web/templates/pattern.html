@@ -45,7 +45,7 @@
          The full history is context only: it tends to be too optimistic.</p>
       {% if v.forward or v.full %}
       <p class="scrollhint">Swipe the table sideways to see every column →</p>
-      <table class="sticky">
+      <table class="sticky" aria-label="Pattern track record">
         <thead><tr><th scope="col" style="text-align:left">Period</th>{{ th('n', 'n') }}{{ th('span', 'span') }}{{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_h10', 'edge 10d') }}
           {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}{{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}{{ th('edge_after_cost', 'after costs') }}<th scope="col">Verdict</th></tr></thead>
         <tbody>
@@ -64,7 +64,7 @@
       <p>{% if research_row.candidate %}<b>{{ research_row.strength }}.</b>{% else %}<b>{{ research_row.strength }}.</b>{% endif %}
          Across {{ '{:,}'.format(research_row.n) }} signals on {{ research_row.days }} days (about {{ research_row.eff }} {{ term('eff_blocks', 'independent observations') }}),
          the edge is shown three ways, each with a {{ term('ci95', '95% interval') }}:</p>
-      <table>
+      <table aria-label="Edge measures with confidence intervals">
         <thead><tr><th scope="col" style="text-align:left">Measure</th><th scope="col">Edge [interval]</th></tr></thead>
         <tbody>
           <tr><td style="text-align:left">Raw (vs all stocks)</td>{{ cic(research_row.raw) }}</tr>
@@ -75,7 +75,7 @@
       <p class="wide-note">{{ term('fdr_q', 'False-discovery q-value') }}: <b>{{ research_row.q }}</b> · {{ term('folds_pos', 'half-year periods with a positive edge after costs') }}: <b>{{ research_row.folds_pos }}</b>.</p>
       {% if research_row.folds %}
       <details><summary>Edge after costs by half-year, and by {{ term('regime', 'market regime') }}</summary>
-        <table>
+        <table aria-label="Edge after costs by half-year and market regime">
           <thead><tr><th scope="col" style="text-align:left">Period</th><th scope="col">n</th><th scope="col">Edge after costs</th></tr></thead>
           <tbody>
             {% for f in research_row.folds %}<tr><td style="text-align:left">{{ f.label }}</td><td>{{ '{:,}'.format(f.n) }}</td>
@@ -94,7 +94,7 @@
     <div class="panel">
       <h2>Month by month</h2>
       <p class="note">Does the edge hold up across different market moods, or come from one good month? Months with fewer than 30 occurrences are marked and should not be trusted.</p>
-      <table>
+      <table aria-label="Month-by-month edge">
         <thead><tr><th scope="col" style="text-align:left">Month</th>{{ th('n', 'n') }}{{ th('edge_h5', 'edge 5d') }}{{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}</tr></thead>
         <tbody>
           {% for m in v.monthly %}
@@ -112,7 +112,7 @@
       <p class="note">Average result per trade after the {{ v.rule_test.cost }} cost when entering on this pattern with a 2 × {{ term('atr', 'ATR') }} {{ term('mech_stop', 'stop') }} and a {{ term('r_target', 'target') }}
          (replay of {{ '{:,}'.format(v.rule_test.n) }} signals, {{ v.rule_test.window[0] }} to {{ v.rule_test.window[1] }}). The bottom row is the same rule on every stock.
          <a href="/risk-test">See the full test →</a></p>
-      <table>
+      <table aria-label="Stop and target results">
         <thead><tr><th scope="col" style="text-align:left">Entry</th>{{ th('hold_10', 'Hold 10d') }}{% for t in v.rule_test.targets %}<th scope="col">Target {{ t }}R</th>{% endfor %}</tr></thead>
         <tbody>
           <tr><td style="text-align:left">This pattern</td><td class="{{ v.rule_test.hold.c }}">{{ v.rule_test.hold.t }}</td>
@@ -136,7 +136,7 @@
       <h2>Flagged on the latest session{% if v.last_day %} ({{ v.last_day }}){% endif %}</h2>
       {% if v.latest %}
       <p class="note">{{ '{:,}'.format(v.n_latest) }} stock{{ 's' if v.n_latest != 1 else '' }} flagged; the {{ v.latest|length }} with the largest traded value are shown. Click one for its full picture.</p>
-      <table>
+      <table aria-label="Stocks flagged on the latest session">
         <thead><tr><th scope="col" style="text-align:left">Stock</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}<th scope="col">Traded value</th></tr></thead>
         <tbody>
           {% for r in v.latest %}

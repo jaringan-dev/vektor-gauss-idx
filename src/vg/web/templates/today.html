@@ -2,9 +2,9 @@
 {% from "_macros.html" import term, th, ticker, quad, tag_chip, db_error, disclaimer %}
 {% block subtitle %}Today{% endblock %}
 
-{% macro flow_table(rows, empty) %}
+{% macro flow_table(rows, empty, label) %}
   {% if rows %}
-  <table>
+  <table aria-label="{{ label }}">
     <thead><tr><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}
       {{ th('foreign_today', 'Foreign today') }}{{ th('foreign_1w', 'Foreign 1 week') }}<th scope="col">Patterns</th></tr></thead>
     <tbody>
@@ -39,20 +39,20 @@
     <div class="panel">
       <h2>Your stocks</h2>
       <p class="note">Your watchlist and holdings (<span aria-hidden="true">★</span> watchlist, <span aria-hidden="true">📌</span> held). Click a stock for charts, brokers and the risk plan.</p>
-      {{ flow_table(v.watch, '') }}
+      {{ flow_table(v.watch, '', 'Your watchlist and holdings') }}
     </div>
     {% endif %}
 
     <div class="panel">
       <h2>Foreign money flowing in</h2>
       <p class="note">Rule: {{ term('liquid', 'liquid stocks') }} (traded above Rp{{ v.liquid_bn }} billion today), ranked by {{ term('foreign_1w', 'net foreign flow over the last week') }}, largest first.</p>
-      {{ flow_table(v.inflow, 'No liquid stocks with foreign flow data today.') }}
+      {{ flow_table(v.inflow, 'No liquid stocks with foreign flow data today.', 'Liquid stocks with the largest foreign inflow') }}
     </div>
 
     <div class="panel">
       <h2>Foreign money flowing out</h2>
       <p class="note">Same rule, ranked from the largest outflow.</p>
-      {{ flow_table(v.outflow, 'No liquid stocks with foreign flow data today.') }}
+      {{ flow_table(v.outflow, 'No liquid stocks with foreign flow data today.', 'Liquid stocks with the largest foreign outflow') }}
     </div>
 
     <div class="panel">
@@ -61,9 +61,9 @@
          and the price pattern fits: {{ tag_chip('BROKER2-ASING-AKUM') }} and {{ tag_chip('BROKER2-ASING-DIST') }}. Largest by traded value. These patterns have not passed the forward test.</p>
       <div class="grid">
         <div><h3 style="font-size:14px;margin:0 0 4px">Certainly buying into weakness ({{ v.certain.buy_n }} today)</h3>
-          {% if v.certain.buy %}<table><tbody>{% for r in v.certain.buy %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
+          {% if v.certain.buy %}<table aria-label="Stocks the data says foreign brokers are certainly buying"><tbody>{% for r in v.certain.buy %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
         <div><h3 style="font-size:14px;margin:0 0 4px">Certainly selling into strength ({{ v.certain.sell_n }} today)</h3>
-          {% if v.certain.sell %}<table><tbody>{% for r in v.certain.sell %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
+          {% if v.certain.sell %}<table aria-label="Stocks the data says foreign brokers are certainly selling"><tbody>{% for r in v.certain.sell %}<tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.chg.t }}</td><td>{{ r.bounds or '—' }}</td></tr>{% endfor %}</tbody></table>{% else %}<p class="note">None today.</p>{% endif %}</div>
       </div>
       <p class="wide-note">The right-hand figure is the range of net foreign-broker flow as a share of traded value.</p>
     </div>

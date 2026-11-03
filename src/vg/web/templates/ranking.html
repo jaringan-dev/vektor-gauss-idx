@@ -16,7 +16,7 @@
       in the broker feed, so they are <b>not</b> rankings of the entire market. Each panel says how many stocks it was ranked from.</div>
     <div class="panel">
       <h2>Time window</h2>
-      <nav class="nav" style="margin-top:8px">
+      <nav class="nav" style="margin-top:8px" aria-label="Time window">
         <a href="/ranking?h=1d" class="{{ 'active' if h == '1d' else '' }}">1 day</a>
         <a href="/ranking?h=5d" class="{{ 'active' if h == '5d' else '' }}">5 days</a>
       </nav>
@@ -27,7 +27,7 @@
       <h2>{{ p.title }}</h2>
       <p class="note">{{ p.note }} · ranked from {{ p.total }} stocks with data.</p>
       {% if p.rows %}
-      <table class="cards" role="table">
+      <table class="cards" role="table" aria-label="{{ p.title }}">
         <thead role="rowgroup">
           <tr role="row"><th scope="col" role="columnheader">#</th><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th>
               <th scope="col">Net flow</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}

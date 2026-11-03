@@ -35,7 +35,7 @@
       <p class="note" style="margin-top:8px">Calculated {{ computed_at }}. Edges are 5-day returns in excess of the comparison group, with a {{ term('ci95', '95% interval') }} in brackets
          (bold = the whole interval is above zero). “After costs” subtracts the modelled cost shown in the Cost column.</p>
       <p class="scrollhint">Swipe the table sideways to see every column →</p>
-      <table class="sticky">
+      <table class="sticky" aria-label="Edge analysis by pattern">
         <thead><tr>
           <th scope="col" style="text-align:left">Pattern</th>{{ th('n', 'n') }}<th scope="col">days</th>{{ th('eff_blocks', 'indep.') }}
           <th scope="col">Raw edge</th>{{ th('neutral_edge', 'Matched edge') }}{{ th('net_edge', 'After costs') }}<th scope="col">Cost</th>

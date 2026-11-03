@@ -74,7 +74,7 @@
       <h2>{{ term('pattern', 'Patterns') }} flagged today</h2>
       {% if v.tags_today %}
       <p class="note">Each pattern is a fixed rule. The verdict shows how that rule has actually performed in the {{ term('forward_test', 'forward test') }}, after costs.</p>
-      <table>
+      <table aria-label="Patterns flagged today with their verdicts">
         <thead><tr><th scope="col" style="text-align:left">Pattern</th>{{ th('n', 'n') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">Verdict</th></tr></thead>
         <tbody>
           {% for t in v.tags_today %}
@@ -98,7 +98,7 @@
       {% if v.history %}
       <details>
         <summary>Pattern history (last {{ v.history|length }} flagged days)</summary>
-        <table>
+        <table aria-label="Pattern history">
           <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col" style="text-align:left">Patterns</th></tr></thead>
           <tbody>
             {% for h in v.history %}
@@ -154,7 +154,7 @@
 
     <div class="panel">
       <h2>Last 10 sessions</h2>
-      <table>
+      <table aria-label="Last 10 sessions">
         <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col">Close</th><th scope="col">Change</th>{{ th('foreign_today', 'Foreign flow') }}<th scope="col">Traded value</th></tr></thead>
         <tbody>
           {% for r in v.recent %}
@@ -171,9 +171,9 @@
       <p class="note">{{ term('gross', 'Gross') }} value per broker (buying and selling are not netted). One broker serves many clients, so this is not the identity of a single party.</p>
       <div class="grid">
         <div><h3 style="font-size:14px;margin:0 0 4px">Largest buyers</h3>
-          <table><tbody>{% for b in v.buyers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
+          <table aria-label="Largest buyers by broker"><tbody>{% for b in v.buyers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
         <div><h3 style="font-size:14px;margin:0 0 4px">Largest sellers</h3>
-          <table><tbody>{% for b in v.sellers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
+          <table aria-label="Largest sellers by broker"><tbody>{% for b in v.sellers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
       </div>
       {% else %}
       <p class="note">Broker data is not available for this stock. Per-broker coverage is limited to about 200 liquid stocks.</p>
@@ -183,7 +183,7 @@
     <div class="panel">
       <h2>Ownership (KSEI, monthly)</h2>
       {% if v.ownership %}
-      <table>
+      <table aria-label="KSEI ownership by month">
         <thead><tr><th scope="col" style="text-align:left">Month end</th><th scope="col">Local individuals</th><th scope="col">Local institutions</th><th scope="col">Foreign</th></tr></thead>
         <tbody>{% for o in v.ownership %}<tr><td style="text-align:left">{{ o.month }}</td><td>{{ o.indiv }}</td><td>{{ o.inst }}</td><td>{{ o.foreign }}</td></tr>{% endfor %}</tbody>
       </table>
@@ -196,7 +196,7 @@
     {% if v.corp %}
     <div class="panel">
       <h2>Recent corporate actions</h2>
-      <table><thead><tr><th scope="col" style="text-align:left">Ex-date</th><th scope="col" style="text-align:left">Type</th><th scope="col">Detail (DPS / ratio)</th></tr></thead>
+      <table aria-label="Recent corporate actions"><thead><tr><th scope="col" style="text-align:left">Ex-date</th><th scope="col" style="text-align:left">Type</th><th scope="col">Detail (DPS / ratio)</th></tr></thead>
         <tbody>{% for c in v.corp %}<tr><td style="text-align:left">{{ c.date }}</td><td style="text-align:left">{{ c.type }}</td><td>{{ c.ratio }}</td></tr>{% endfor %}</tbody></table>
     </div>
     {% endif %}
