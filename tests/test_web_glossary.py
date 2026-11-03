@@ -33,7 +33,8 @@ def test_every_key_used_in_templates_exists_in_the_glossary():
         used |= set(re.findall(r'data-term="([a-z0-9_]+)"', text))
         used |= set(re.findall(r'href="/guide#([a-z0-9_]+)"', text))
     assert used, "no term usages found — the regex is broken"
-    assert used - set(glossary.TERMS) == set()
+    section_anchors = {"patterns"}                       # page sections of /guide, not glossary terms
+    assert used - set(glossary.TERMS) - section_anchors == set()
 
 
 def test_every_quadrant_the_engine_assigns_has_a_term():

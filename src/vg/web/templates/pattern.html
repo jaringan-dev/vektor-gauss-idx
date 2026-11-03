@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, th, ticker, verdict, db_error, disclaimer %}
+{% block title %}{{ v.name if v else code }} — Vektor Gauss{% endblock %}
+{% block subtitle %}{% if v %}{{ v.name }} <code style="font-weight:400;font-size:13px;color:var(--muted)">{{ v.tag }}</code>{% else %}Pattern{% endif %}{% endblock %}
+
+{% macro stats_row(label, r, with_verdict=true) -%}
+<tr><td style="text-align:left">{{ label }}</td>
+  <td>{{ r.n }}</td><td>{{ r.span_days }}d</td>
+  <td class="{{ r.edge_h1.c }}">{{ r.edge_h1.t }}</td><td class="{{ r.edge_h5.c }}">{{ r.edge_h5.t }}</td><td class="{{ r.edge_h10.c }}">{{ r.edge_h10.t }}</td>
+  <td>{{ r.hit }}</td><td>{{ r.univ_hit }}</td><td>{{ r.n_liquid }}</td><td class="{{ r.edge_h5_liquid.c }}">{{ r.edge_h5_liquid.t }}</td>
+  <td class="{{ r.edge_after_cost.c }}">{{ r.edge_after_cost.t }}</td>
+  <td>{% if with_verdict %}{{ verdict(r.status.code, r.status.label) }}{% else %}<span class="note">context only</span>{% endif %}</td></tr>
+{%- endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not_found %}
+    <div class="panel">
+      <h2>Unknown pattern “{{ code }}”</h2>
+      <p class="note">There is no pattern with that code. See <a href="/guide#patterns">all patterns</a> in the guide.</p>
+    </div>
+  {% else %}
+    <div class="answer"><span class="q">What does this pattern say?</span>
+      {{ v.what }}
+      {% if v.forward %}
+        In the {{ term('forward_test', 'forward test') }} since {{ forward_since }} it appeared <b>{{ v.forward.n }}</b> times and its {{ term('edge_after_cost', 'edge after costs') }} is
+        <b class="{{ v.forward.edge_after_cost.c }}">{{ v.forward.edge_after_cost.t }}</b>: {{ verdict(v.forward.status.code, v.forward.status.label) }}.
+      {% else %}
+        It has no forward-test record yet.
+      {% endif %}
+      A pattern describes data. It is not a trade instruction.</div>
+
+    <div class="panel">
+      <h2>The exact rule</h2>
+      <p>{{ v.rule }}</p>
+      {% if v.caveat %}<p class="wide-note"><b>Keep in mind:</b> {{ v.caveat }}</p>{% endif %}
+      <p class="wide-note">Click any dotted word on this page for its meaning. All patterns are listed in the <a href="/guide#patterns">guide</a>.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Track record</h2>
+      <p class="note">The forward test is the only record that decides a pass (n ≥ {{ min_n }}, span ≥ {{ min_span }} days, edge still positive after about {{ cost_bp }} bp of costs).
+         The full history is context only: it tends to be too optimistic.</p>
+      {% if v.forward or v.full %}
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Period</th>{{ th('n', 'n') }}{{ th('span', 'span') }}{{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_h10', 'edge 10d') }}
+          {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}{{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}{{ th('edge_after_cost', 'after costs') }}<th scope="col">Verdict</th></tr></thead>
+        <tbody>
+          {% if v.forward %}{{ stats_row('Forward test since ' ~ forward_since, v.forward) }}{% endif %}
+          {% if v.full %}{{ stats_row('Full history', v.full, false) }}{% endif %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">No matured results for this pattern yet.</p>
+      {% endif %}
+    </div>
+
+    {% if v.monthly %}
+    <div class="panel">
+      <h2>Month by month</h2>
+      <p class="note">Does the edge hold up across different market moods, or come from one good month? Months with fewer than 30 occurrences are marked and should not be trusted.</p>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Month</th>{{ th('n', 'n') }}{{ th('edge_h5', 'edge 5d') }}{{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}</tr></thead>
+        <tbody>
+          {% for m in v.monthly %}
+          <tr><td style="text-align:left">{{ m.month }}</td><td>{{ '{:,}'.format(m.n) }}{% if m.small %} <a class="badge warn t" href="/guide#small_n" data-term="small_n">small n</a>{% endif %}</td>
+              <td class="{{ m.edge.c }}">{{ m.edge.t }}</td><td>{{ m.hit }}</td><td>{{ m.uhit }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if v.rule_test %}
+    <div class="panel">
+      <h2>With a stop and a target</h2>
+      <p class="note">Average result per trade after the {{ v.rule_test.cost }} cost when entering on this pattern with a 2 × {{ term('atr', 'ATR') }} {{ term('mech_stop', 'stop') }} and a {{ term('r_target', 'target') }}
+         (replay of {{ '{:,}'.format(v.rule_test.n) }} signals, {{ v.rule_test.window[0] }} to {{ v.rule_test.window[1] }}). The bottom row is the same rule on every stock.
+         <a href="/risk-test">See the full test →</a></p>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Entry</th>{{ th('hold_10', 'Hold 10d') }}{% for t in v.rule_test.targets %}<th scope="col">Target {{ t }}R</th>{% endfor %}</tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">This pattern</td><td class="{{ v.rule_test.hold.c }}">{{ v.rule_test.hold.t }}</td>
+              {% for t in v.rule_test.targets %}<td class="{{ v.rule_test.mine[t].net.c }}">{{ v.rule_test.mine[t].net.t }}</td>{% endfor %}</tr>
+          <tr><td style="text-align:left">All stocks (same rule)</td><td class="{{ v.rule_test.base_hold.c }}">{{ v.rule_test.base_hold.t }}</td>
+              {% for t in v.rule_test.targets %}<td class="{{ v.rule_test.base[t].net.c }}">{{ v.rule_test.base[t].net.t }}</td>{% endfor %}</tr>
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if v.chart %}
+    <div class="panel">
+      <h2>How often it fires</h2>
+      <p class="note">Stocks flagged on each of the last 90 sessions. Spikes mean the pattern is picking up a market-wide move rather than single stocks.</p>
+      {{ v.chart|safe }}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h2>Flagged on the latest session{% if v.last_day %} ({{ v.last_day }}){% endif %}</h2>
+      {% if v.latest %}
+      <p class="note">{{ '{:,}'.format(v.n_latest) }} stock{{ 's' if v.n_latest != 1 else '' }} flagged; the {{ v.latest|length }} with the largest traded value are shown. Click one for its full picture.</p>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Stock</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}<th scope="col">Traded value</th></tr></thead>
+        <tbody>
+          {% for r in v.latest %}
+          <tr><td style="text-align:left">{{ ticker(r.ticker) }}</td><td>{{ r.price }}</td><td class="{{ r.chg.c }}">{{ r.chg.t }}</td><td>{{ r.value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">This pattern has never been flagged.</p>
+      {% endif %}
+    </div>
+
+    {% if v.siblings %}
+    <div class="panel">
+      <h2>Related patterns</h2>
+      <p>{% for s in v.siblings %}<a class="chip tg" href="/pattern/{{ s.tag }}">{{ s.name }}</a>{% endfor %}</p>
+    </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}

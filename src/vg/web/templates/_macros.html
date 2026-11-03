@@ -14,7 +14,7 @@
 {%- endmacro %}
 
 {% macro tag_chip(code) -%}
-<a class="chip tg" href="/guide#tag-{{ code }}" data-term="tag:{{ code }}" title="{{ code }}">{{ plain_tag(code) }}</a>
+<a class="chip tg" href="/pattern/{{ code }}" data-term="tag:{{ code }}" title="{{ code }}">{{ plain_tag(code) }}</a>
 {%- endmacro %}
 
 {% macro tag_chips(codes, limit=3, more_href=none) -%}

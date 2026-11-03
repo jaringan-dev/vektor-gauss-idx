@@ -25,6 +25,7 @@ from ..db import connect
 from . import coverage as cov
 from . import freshness, fmt, glossary
 from . import status as gate
+from . import pattern as patternmod
 from . import stock as stockmod
 from .cache import TTLCache
 
@@ -458,6 +459,42 @@ def search(q: str = ""):
     ctx["terms"] = [t for t in glossary.TERMS.values() if ql in t.name.lower() or ql in t.key or ql in t.short.lower()][:12]
     ctx["tags"] = [t for t in glossary.TAGS.values() if ql in t.name.lower() or ql in t.tag.lower()][:12]
     return _render("search.html", ctx)
+
+
+def _rule_all_targets(code: str) -> dict | None:
+    """The saved stop/target test for one pattern at every target, next to the all-stocks baseline. None without a snapshot."""
+    payload, _computed = _risk_snapshot()
+    if not payload:
+        return None
+    rows = {r["tag"]: r for r in payload["scopes"]["all"]}
+    mine, base = rows.get(code), rows.get(payload["baseline"])
+    if not mine or not base:
+        return None
+    cells = lambda r: {k: _rule_cells(v) for k, v in r["r"].items()}  # noqa: E731
+    return {"targets": payload["targets"], "window": payload["window"], "cost": f"{payload['cost'] * 100:.1f}%",
+            "n": mine["n"], "mine": cells(mine), "hold": fmt.cell(mine["hold"]), "base": cells(base),
+            "base_n": base["n"], "base_hold": fmt.cell(base["hold"])}
+
+
+@app.get("/pattern/{tag}", response_class=HTMLResponse)
+def pattern_detail(tag: str) -> HTMLResponse:
+    code = tag.strip().upper()
+    ctx: dict = {"active_page": "tracker", "code": code, "error": None, "not_found": False, "v": None,
+                 "min_n": gate.MIN_SIGNALS, "min_span": gate.MIN_SPAN_DAYS, "cost_bp": round(gate.ROUND_TRIP_COST * 10000),
+                 "forward_since": CONFIG.forward_since}
+    if code not in glossary.TAGS:
+        ctx["not_found"] = True
+        return _render("pattern.html", ctx, status_code=404)
+    try:
+        raw = patternmod.load(code)
+        forward = full = None
+        if CONFIG.forward_since:
+            forward = next((r for r in _cached_view_rows(CONFIG.forward_since)[0] if r["tag"] == code), None)
+        full = next((r for r in _cached_view_rows(None)[0] if r["tag"] == code), None)
+        ctx["v"] = patternmod.build_view(raw, forward, full, _rule_all_targets(code))
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("pattern.html", ctx)
 
 
 @app.get("/stock/{ticker}", response_class=HTMLResponse)

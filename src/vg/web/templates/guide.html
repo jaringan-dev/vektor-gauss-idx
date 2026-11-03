@@ -62,7 +62,7 @@
     <dl class="gl" style="margin:0">
       {% for t in f.tags %}
       <div class="gl-item" id="tag-{{ t.tag }}" data-q="{{ t.name|lower }} {{ t.tag|lower }} {{ t.what|lower }}" style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <dt style="font-weight:600">{{ t.name }} <code style="font-weight:400;font-size:11px">{{ t.tag }}</code></dt>
+        <dt style="font-weight:600"><a class="tk" href="/pattern/{{ t.tag }}">{{ t.name }}</a> <code style="font-weight:400;font-size:11px">{{ t.tag }}</code></dt>
         <dd style="margin:2px 0 0">{{ t.what }}
           <div class="wide-note"><b>Rule:</b> {{ t.rule }}</div>
           {% if t.caveat %}<div class="wide-note"><b>Keep in mind:</b> {{ t.caveat }}</div>{% endif %}

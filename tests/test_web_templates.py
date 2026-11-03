@@ -307,8 +307,8 @@ def _tracker(**over):
 def test_small_n_tag_is_labelled_and_large_n_is_not():
     out = _tracker()
     rows = out.split("<tr>")
-    seg_small = next(r for r in rows if "#tag-FLOAT-ASING-PADAT" in r)
-    seg_large = next(r for r in rows if "#tag-BROKER-ASING-AKUM" in r)
+    seg_small = next(r for r in rows if "/pattern/FLOAT-ASING-PADAT" in r)
+    seg_large = next(r for r in rows if "/pattern/BROKER-ASING-AKUM" in r)
     assert "small n" in seg_small
     assert "small n" not in seg_large
 

@@ -116,7 +116,7 @@ def test_stock_page_renders_the_explanations_the_plan_calls_for(client, monkeypa
     assert r.status_code == 200
     for needle in ("What happened to BBCA?", "Bank Central Asia", "classed as Accumulation", "Risk plan",
                    "mechanical, not a forecast", "4,600", "38 lots", "certain bounds", "Pattern history",
-                   'href="/guide#tag-BROKER2-ASING-AKUM"', "Not investment advice"):
+                   'href="/pattern/BROKER2-ASING-AKUM"', "Not investment advice"):
         assert needle in r.text, needle
     assert "buy now" not in r.text.lower()
     assert 'id="gl-data"' in r.text                          # popover data shipped with the page
@@ -212,7 +212,7 @@ def test_risk_test_page_states_the_result_and_the_limits(client, monkeypatch):
     r = client.get("/risk-test")
     assert r.status_code == 200
     for needle in ("Does the stop-and-target rule make the patterns pay?", "-1.70%", "simply", "Results by pattern",
-                   "not a forward test", "All stocks (same rule)", 'href="/guide#tag-BROKER2-ASING-AKUM"',
+                   "not a forward test", "All stocks (same rule)", 'href="/pattern/BROKER2-ASING-AKUM"',
                    'href="/risk-test?scope=liquid"'):
         assert needle in r.text, needle
     assert client.get("/risk-test?scope=liquid").status_code == 200
@@ -263,3 +263,66 @@ def test_stock_page_embeds_the_charts_with_their_explanations(client, monkeypatc
     for needle in ("Price, last 90 sessions", "hollow = closed above the open", "per day", "certain range</a>",
                    'aria-labelledby="price-t price-d"', "<polyline"):
         assert needle in r.text, needle
+
+
+# ---- pattern detail page ------------------------------------------------------------------------
+
+def _pattern_raw():
+    D = Decimal
+    cal = [LATEST - timedelta(days=i) for i in range(30)][::-1]
+    return {"tag": "BROKER2-ASING-AKUM",
+            "monthly": [(date(2026, 10, 1), 400, D("0.0021"), 0.34, D("0.31")), (date(2026, 9, 1), 12, D("-0.0300"), 0.2, D("0.3"))],
+            "last_day": LATEST, "n_latest": 77,
+            "latest": [("BBCA", D(4840), D(4980), D(250_000_000_000)), ("TLKM", D(3000), D(3000), D(90_000_000_000))],
+            "calendar": cal, "counts": {cal[-1]: 77, cal[-2]: 10}}
+
+
+def _fwd_row(code="probation"):
+    status = type("S", (), {"code": code, "label": code.upper()})()
+    cell = lambda t, c="": {"t": t, "c": c}  # noqa: E731
+    return {"tag": "BROKER2-ASING-AKUM", "n": 1105, "span_days": 59, "edge_h1": cell("-0.07%", "neg"), "edge_h5": cell("+0.15%", "pos"),
+            "edge_h10": cell("-0.24%", "neg"), "hit": "34%", "univ_hit": "31%", "n_liquid": 887, "edge_h5_liquid": cell("+0.79%", "pos"),
+            "edge_after_cost": cell("-1.55%", "neg"), "status": status, "small_n": False}
+
+
+def test_pattern_view_formats_months_and_latest_signals():
+    from vg.web import pattern as patternmod
+
+    v = patternmod.build_view(_pattern_raw(), _fwd_row(), None, None)
+    assert v["name"] == "Foreign brokers certainly net buying into weakness" and v["family"] == "broker"
+    assert v["monthly"][0] == {"month": "Oct 2026", "n": 400, "small": False, "edge": {"t": "+0.21%", "c": "pos"}, "hit": "34%", "uhit": "31%"}
+    assert v["monthly"][1]["small"] is True
+    assert v["latest"][0]["ticker"] == "BBCA" and v["latest"][0]["chg"]["t"] == "-2.8%" and v["latest"][0]["value"] == "250.0B"
+    assert v["n_latest"] == 77 and v["chart"].startswith("<svg")
+    assert {s["tag"] for s in v["siblings"]} >= {"BROKER2-ASING-DIST", "BROKER-ASING-AKUM"} and v["tag"] not in {s["tag"] for s in v["siblings"]}
+
+
+def test_pattern_page_states_the_verdict_the_rule_and_the_evidence(client, monkeypatch):
+    import datetime as dt
+
+    from vg.web import pattern as patternmod
+
+    monkeypatch.setattr(patternmod, "load", lambda t: _pattern_raw())
+    monkeypatch.setattr(webapp, "_cached_view_rows", lambda since, fresh=False: ([_fwd_row()], 0.0, True))
+    monkeypatch.setattr(webapp.CONFIG, "forward_since", date(2026, 9, 4), raising=False)
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (_snapshot(), dt.datetime(2026, 11, 3, 9, 0)))
+    r = client.get("/pattern/broker2-asing-akum")
+    assert r.status_code == 200
+    for needle in ("What does this pattern say?", "The exact rule", "Lower bound of foreign broker net buying", "Track record",
+                   "Forward test since 2026-09-04", "PROBATION", "Month by month", "small n", "Flagged on the latest session",
+                   "77 stocks flagged", 'href="/stock/BBCA"', "How often it fires", "Related patterns", "Not investment advice"):
+        assert needle in r.text, needle
+    assert "BROKER2-ASING-AKUM" in r.text and "It is not a trade instruction" in r.text
+    assert r.text.count(">PROBATION<") == 2 and "context only" in r.text     # the full history never gets a verdict
+
+
+def test_unknown_pattern_is_404(client):
+    r = client.get("/pattern/NOT-A-PATTERN")
+    assert r.status_code == 404 and "Unknown pattern" in r.text
+
+
+def test_pattern_chips_everywhere_link_to_the_pattern_page(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw())
+    assert 'href="/pattern/BROKER2-ASING-AKUM"' in client.get("/stock/BBCA").text
+    assert 'href="/pattern/AKUM-ASING"' in client.get("/guide").text
+    assert "Open the pattern page" in client.get("/guide").text

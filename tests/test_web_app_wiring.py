@@ -22,7 +22,7 @@ def _ui_routes():
             if "GET" in (getattr(r, "methods", None) or ()) and r.path not in _NOT_UI}
 
 
-_DETAIL_ROUTES = {"/coverage/missing", "/stock/{ticker}", "/search"}       # reached by clicking inside a screen, not from the sidebar
+_DETAIL_ROUTES = {"/coverage/missing", "/stock/{ticker}", "/search", "/pattern/{tag}"}       # reached by clicking inside a screen, not from the sidebar
 
 
 def test_every_html_route_has_a_sidebar_link_and_vice_versa():

@@ -227,7 +227,8 @@
         var h = "<b>" + esc(d.name) + "</b><p>" + esc(d.short) + "</p>";
         if (d.how) h += '<p><span class="lbl">How it is calculated / the rule</span>' + esc(d.how) + "</p>";
         if (d.caveat) h += '<p><span class="lbl">Keep in mind</span>' + esc(d.caveat) + "</p>";
-        h += '<a class="more" href="' + esc(a.getAttribute("href")) + '">Read in the Guide ›</a>';
+        var isTag = String(a.getAttribute("data-term")).indexOf("tag:") === 0;
+        h += '<a class="more" href="' + esc(a.getAttribute("href")) + '">' + (isTag ? "Open the pattern page ›" : "Read in the Guide ›") + "</a>";
         card.innerHTML = h; card.hidden = false;
         var r = a.getBoundingClientRect(), x = r.left + window.scrollX, y = r.bottom + window.scrollY + 6;
         var maxX = window.scrollX + document.documentElement.clientWidth - card.offsetWidth - 12;

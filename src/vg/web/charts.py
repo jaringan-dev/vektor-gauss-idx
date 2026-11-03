@@ -209,3 +209,24 @@ def bounds_band(days: list[date], lo_pct: list[float | None], hi_pct: list[float
     desc = (f"Certain range of foreign-broker net flow as a share of traded value, {len(pts)} sessions from {ds[0].isoformat()} to "
             f"{ds[-1].isoformat()}. A bar entirely above zero means net buying is certain; entirely below, net selling; across zero, undetermined.")
     return _svg("band", height, "Foreign brokers: certain range of net flow", desc, "".join(body))
+
+
+def count_bars(days: list[date], counts: list[int], *, height: int = 140, label: str = "stocks flagged") -> str | None:
+    """How many stocks a pattern flagged on each day (zero days are drawn as empty, not skipped)."""
+    if len(days) < 5 or not any(counts):
+        return None
+    xs, step = _x_positions(len(days))
+    top, bottom = PAD_T, height - PAD_B
+    cmax = max(counts)
+    y = _scale(0, cmax, top, bottom)
+    cw = max(1.5, min(9.0, step * 0.62))
+    body = [f'<text x="{W - PAD_R + 4}" y="{y(cmax) + 8:.1f}" fill="var(--muted)">{cmax:,}</text>',
+            f'<text x="{W - PAD_R + 4}" y="{bottom:.1f}" fill="var(--muted)">0</text>']
+    for d, c, x in zip(days, counts, xs):
+        h = bottom - y(c)
+        body.append(f'<rect x="{x - cw / 2:.1f}" y="{y(c):.1f}" width="{cw:.1f}" height="{max(0.0, h):.1f}" fill="var(--fg)" opacity=".6">'
+                    f'<title>{d.isoformat()}: {c:,} {escape(label)}</title></rect>')
+    body.append(_axis_x(days, xs, top, bottom))
+    desc = (f"Number of {label} on each of the last {len(days)} sessions, from {days[0].isoformat()} to {days[-1].isoformat()}. "
+            f"Highest day {cmax:,}.")
+    return _svg("count", height, f"Daily number of {label}", desc, "".join(body))

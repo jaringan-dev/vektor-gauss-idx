@@ -24,7 +24,7 @@
       {% endif %}
       {% if tags %}
         <h3 style="font-size:14px;margin:10px 0 4px">Patterns</h3>
-        <ul>{% for t in tags %}<li><a href="/guide#tag-{{ t.tag }}"><b>{{ t.name }}</b></a> <code>{{ t.tag }}</code> — {{ t.what }}</li>{% endfor %}</ul>
+        <ul>{% for t in tags %}<li><a href="/pattern/{{ t.tag }}"><b>{{ t.name }}</b></a> <code>{{ t.tag }}</code> — {{ t.what }}</li>{% endfor %}</ul>
       {% endif %}
     </div>
   {% endif %}
