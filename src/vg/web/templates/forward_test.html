@@ -1,23 +1,24 @@
 {% extends "base.html" %}
-{% block subtitle %}Layar 3 — Forward-test / gate tracker{% endblock %}
+{% from "_macros.html" import term, th, tag_chip, verdict, db_error, disclaimer %}
+{% block subtitle %}Track record: do the patterns actually work?{% endblock %}
 
 {% macro eval_table(rows, show_status) %}
   <table>
     <thead>
       <tr>
-        <th>tag</th><th>n</th><th>span</th>
-        <th>edge H1</th><th>edge H5</th><th>edge H10</th>
-        <th>hit</th><th>uHit</th>
-        <th>nLiq</th><th>edge H5 (liq)</th>
-        {% if show_status %}<th>edge−biaya</th><th>status</th>{% endif %}
+        {{ th('pattern', 'pattern', true) }}{{ th('n', 'n') }}{{ th('span', 'span') }}
+        {{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_h10', 'edge 10d') }}
+        {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}
+        {{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}
+        {% if show_status %}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">verdict</th>{% endif %}
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
       <tr>
-        <td>{{ r.tag }}{% if r.small_n %}<span class="badge warn" title="Sampel terlalu kecil untuk dinilai">n kecil</span>{% endif %}</td>
+        <td style="text-align:left">{{ tag_chip(r.tag) }}{% if r.small_n %}<a class="badge warn t" href="/guide#small_n" data-term="small_n" title="Sample too small to judge">small n</a>{% endif %}</td>
         <td>{{ r.n }}</td>
-        <td>{{ r.span_days }}h</td>
+        <td>{{ r.span_days }}d</td>
         <td class="{{ r.edge_h1.c }}">{{ r.edge_h1.t }}</td>
         <td class="{{ r.edge_h5.c }}">{{ r.edge_h5.t }}</td>
         <td class="{{ r.edge_h10.c }}">{{ r.edge_h10.t }}</td>
@@ -27,7 +28,7 @@
         <td class="{{ r.edge_h5_liquid.c }}">{{ r.edge_h5_liquid.t }}</td>
         {% if show_status %}
         <td class="{{ r.edge_after_cost.c }}">{{ r.edge_after_cost.t }}</td>
-        <td><span class="badge {{ r.status.code }}">{{ r.status.label }}</span></td>
+        <td>{{ verdict(r.status.code, r.status.label) }}</td>
         {% endif %}
       </tr>
       {% endfor %}
@@ -37,52 +38,50 @@
 
 {% block content %}
   {% if error %}
-    <div class="panel">
-      <h2>Tidak bisa membaca data</h2>
-      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
-         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
-      <div class="err">{{ error }}</div>
-    </div>
+    {{ db_error(error) }}
   {% else %}
+    <div class="answer"><span class="q">The honest answer</span>
+      Each pattern below is a rule that flags stocks from transaction data. A pattern only counts as <b>proven</b> when it has at least
+      {{ min_n }} occurrences over at least {{ min_span }} days <i>and</i> its edge is still positive after about {{ cost_bp }} bp of trading costs.
+      {% if n_passed %}Right now <b>{{ n_passed }} pattern{{ 's' if n_passed != 1 else '' }} {{ 'has' if n_passed == 1 else 'have' }} passed</b>.{% else %}Right now <b>no pattern has passed</b>.{% endif %} Failures are shown as prominently as passes, because that is the point of this page.
+      Not sure what a column means? Click any dotted word.</div>
     <div class="panel">
-      <h2>Forward-test{% if forward_since %} — sejak {{ forward_since }}{% endif %}</h2>
+      <h2>{{ term('forward_test', 'Forward test') }}{% if forward_since %} — since {{ forward_since }}{% endif %}</h2>
       <p class="note">
-        Jendela out-of-sample — satu-satunya angka yang menentukan promosi. Gate:
-        n &ge; {{ min_n }}, span &ge; {{ min_span }} hari, dan edge H5 tetap positif
-        setelah biaya ~{{ cost_bp }}bp. Tag yang gagal ditampilkan sama jelasnya dengan yang lolos.
-        Tag dengan n &lt; {{ min_n }} diberi label <span class="badge warn">n kecil</span> dan selalu
-        diurut paling bawah — edge dari sampel sekecil itu bisa muncul karena kebetulan.
+        The only numbers that decide a pass. Patterns with n &lt; {{ min_n }} are marked <a class="badge warn t" href="/guide#small_n" data-term="small_n">small n</a>
+        and always sorted to the bottom: an edge from a sample that small can easily be luck.
       </p>
       {% if computed_at %}
-      <p class="note">Dihitung {{ computed_at }} (waktu server){% if cache_hit %} · dari cache {{ cache_minutes }} menit,
-         tambahkan <code>?fresh=1</code> di URL untuk menghitung ulang{% endif %}.</p>
+      <p class="note">Calculated {{ computed_at }} (server time){% if cache_hit %} · from a {{ cache_minutes }}-minute cache;
+         add <code>?fresh=1</code> to the URL to recalculate{% endif %}.</p>
       {% endif %}
       {% if forward %}
         {{ eval_table(forward, true) }}
       {% elif forward_since %}
-        <p class="note">Belum ada baris matang sejak {{ forward_since }}
-           (butuh ~2 minggu data + <code>vg backfill-outcomes</code>).</p>
+        <p class="note">No matured rows since {{ forward_since }} yet (about 2 weeks of data plus <code>vg backfill-outcomes</code> are needed).</p>
       {% else %}
-        <p class="note">VG_FORWARD_SINCE belum diset — jendela forward tidak aktif.</p>
+        <p class="note">VG_FORWARD_SINCE is not set, so the forward window is off.</p>
       {% endif %}
     </div>
 
-    <div class="panel">
-      <h2>In-sample (seluruh riwayat)</h2>
-      <p class="note">Konteks saja — in-sample cenderung over-optimistic, jadi TIDAK pernah
-         dipakai untuk promosi dan sengaja tidak diberi status.</p>
-      {% if insample %}
-        {{ eval_table(insample, false) }}
-      {% else %}
-        <p class="note">Belum ada baris signal_log yang matang.</p>
-      {% endif %}
-    </div>
+    <details>
+      <summary>Show the full-history table ({{ term('in_sample', 'in-sample') }}, context only)</summary>
+      <div class="panel">
+        <h2>Full history</h2>
+        <p class="note">Context only. In-sample results tend to be over-optimistic, so they are never used for promotion and are
+           deliberately given no verdict.</p>
+        {% if insample %}
+          {{ eval_table(insample, false) }}
+        {% else %}
+          <p class="note">No matured signal_log rows yet.</p>
+        {% endif %}
+      </div>
+    </details>
   {% endif %}
 {% endblock %}
 
 {% block footer %}
-  <p>edge H5 = return 5 hari tag dikurangi rata-rata universe hari yang sama.
-     hit/uHit = % hari positif tag vs universe. nLiq/edge H5 (liq) = idem untuk saham &gt;Rp5B/hari.</p>
-  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
-     Tidak ada perintah beli/jual.</p>
+  <p>Edge = the 5-day return of the pattern minus the average of all stocks on the same days. Hit rate = share of occurrences that ended higher
+     versus the same share for the whole market. "Liquid" = stocks trading more than Rp5B a day.</p>
+  {{ disclaimer() }}
 {% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_macros.html" import disclaimer %}
+{% block subtitle %}Guide &amp; glossary{% endblock %}
+
+{% block content %}
+  <div class="answer"><span class="q">What is this tool?</span>
+    Vektor Gauss reads publicly available Indonesian market data (prices, foreign flow, per-broker trades, KSEI ownership) and flags stocks whose
+    transaction pattern looks unusual. Every flag is produced by a fixed, written rule, so nothing here is a black box and nothing is a prediction.
+    The page called <a href="/">Track record</a> measures whether those flags have actually been useful. As of early November 2026 none had proven itself after trading costs; that page always shows the current verdict.</div>
+
+  <div class="panel">
+    <h2>How to read a stock row</h2>
+    <p class="note">Take a row like this one (an example from a past session) on <a href="/screener">Today's stocks</a>: <b>BBCA · Accumulation · 4,840 · −2.8% · foreign today −24.4B · foreign 1 week +486.6B</b>.</p>
+    <ol>
+      <li><b>Price and change</b>: the stock closed at Rp4,840, down 2.8% on the day.</li>
+      <li><b>Foreign today vs 1 week</b>: foreigners sold a net Rp24.4 billion today, but over five days they bought a net Rp486.6 billion. One quiet or negative day does not cancel a week of buying.</li>
+      <li><b>Quadrant</b>: "Accumulation" is the label for <i>price down or flat while foreigners buy on balance over the week</i>. It is a description, not a forecast.</li>
+      <li><b>Why it appears</b>: the patterns that fired. Click a stock for the full picture, or a pattern for its exact rule.</li>
+      <li><b>Verdict on the pattern</b>: shown on the stock page and on <a href="/">Track record</a>. A pattern that has not passed is not a reason to act on its own.</li>
+    </ol>
+  </div>
+
+  <div class="panel">
+    <h2>What this tool cannot do</h2>
+    <ul>
+      <li>It is <b>not investment advice</b>, it does not predict prices, and it never tells you to buy or sell.</li>
+      <li>The free data has gaps: per-broker data covers only about 200 liquid stocks, and KSEI ownership is monthly and late.</li>
+      <li>Round-trip trading costs are assumed to be about {{ cost_bp }} bp ({{ '%.1f' % (cost_bp / 100) }}%). A pattern must still beat the average stock after that; as of early November 2026 none had.</li>
+      <li>The stop-loss and target levels on a stock page are <b>mechanical arithmetic from volatility</b>. They are not forecasts and the price can gap past them.</li>
+    </ul>
+  </div>
+
+  <div class="panel">
+    <h2>Glossary</h2>
+    <p>
+      <label class="sr-only" for="gq">Filter the glossary</label>
+      <input id="gq" class="filter" type="search" autocomplete="off" placeholder="Filter terms… (e.g. edge, CR3, quadrant)">
+    </p>
+    <nav class="nav" aria-label="Glossary sections">
+      {% for g in groups %}<a href="#grp-{{ g.key }}">{{ g.title }}</a>{% endfor %}
+      <a href="#patterns">All patterns</a>
+    </nav>
+    {% for g in groups %}
+    <h3 id="grp-{{ g.key }}" style="margin:18px 0 6px;font-size:15px">{{ g.title }}</h3>
+    <dl class="gl" style="margin:0">
+      {% for t in g.terms %}
+      <div class="gl-item" id="{{ t.key }}" data-q="{{ t.name|lower }} {{ t.key }} {{ t.short|lower }}" style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <dt style="font-weight:600">{{ t.name }}</dt>
+        <dd style="margin:2px 0 0">{{ t.short }}
+          {% if t.how %}<div class="wide-note"><b>How it is calculated:</b> {{ t.how }}</div>{% endif %}
+          {% if t.caveat %}<div class="wide-note"><b>Keep in mind:</b> {{ t.caveat }}</div>{% endif %}
+        </dd>
+      </div>
+      {% endfor %}
+    </dl>
+    {% endfor %}
+
+    <h3 id="patterns" style="margin:22px 0 6px;font-size:15px">All patterns (tags)</h3>
+    <p class="note">The code in grey is the identifier used in the database and the Telegram digest. The rule is the exact trigger.</p>
+    {% for f in families %}
+    <h4 style="margin:14px 0 4px;font-size:14px">{{ f.title }}</h4>
+    <dl class="gl" style="margin:0">
+      {% for t in f.tags %}
+      <div class="gl-item" id="tag-{{ t.tag }}" data-q="{{ t.name|lower }} {{ t.tag|lower }} {{ t.what|lower }}" style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <dt style="font-weight:600">{{ t.name }} <code style="font-weight:400;font-size:11px">{{ t.tag }}</code></dt>
+        <dd style="margin:2px 0 0">{{ t.what }}
+          <div class="wide-note"><b>Rule:</b> {{ t.rule }}</div>
+          {% if t.caveat %}<div class="wide-note"><b>Keep in mind:</b> {{ t.caveat }}</div>{% endif %}
+        </dd>
+      </div>
+      {% endfor %}
+    </dl>
+    {% endfor %}
+  </div>
+
+  <script>
+    (function () {
+      var q = document.getElementById("gq");
+      var items = Array.prototype.slice.call(document.querySelectorAll(".gl-item"));
+      q.addEventListener("input", function () {
+        var t = q.value.trim().toLowerCase();
+        items.forEach(function (el) { el.style.display = !t || (el.getAttribute("data-q") || "").indexOf(t) !== -1 ? "" : "none"; });
+      });
+      if (location.hash) { var el = document.getElementById(location.hash.slice(1)); if (el) { el.scrollIntoView(); el.style.background = "var(--prob-bg)"; } }
+    })();
+  </script>
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}

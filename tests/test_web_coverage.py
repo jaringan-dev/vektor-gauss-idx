@@ -43,7 +43,7 @@ def test_incident_cell_reports_count_symbol_word_and_percentage():
     days, counts = _incident()
     row = next(r for r in cov.build_grid(days, counts)["rows"] if r["date"] == date(2026, 9, 15))
     c = row["cells"]["price"].as_dict()
-    assert c == {"level": "bad", "count": 5, "symbol": "✖", "word": "bolong", "pct": 1}
+    assert c == {"level": "bad", "count": 5, "symbol": "✖", "word": "gap", "pct": 1}
 
 
 def test_rows_are_newest_first():
@@ -183,4 +183,4 @@ def test_repair_commands_reject_an_unknown_source():
 
 def test_sources_are_stable():
     assert cov.SOURCE_KEYS == ("price", "index", "broker", "signal")
-    assert cov.source_label("price") == "Harga"
+    assert cov.source_label("price") == "Prices"

@@ -39,7 +39,7 @@ def test_the_september_price_gap_is_bad():
     """14/15/25 Sep had 5 price rows instead of ~962 — must be red."""
     items = _strip(price=5)
     assert _level(items, "price") == fr.BAD
-    assert "bolong" in next(i.text for i in items if i.key == "price")
+    assert "gap" in next(i.text for i in items if i.key == "price")
 
 
 def test_price_below_500_rows_is_bad_checklist_a2():
@@ -57,7 +57,7 @@ def test_price_partial_is_warn_and_healthy_is_ok():
 def test_broker_coverage_drop_is_warn_not_bad():
     items = _strip(broker=60)                                 # the 16-30 Oct situation: ~60 vs ~190
     assert _level(items, "broker") == fr.WARN
-    assert "bolong" in next(i.text for i in items if i.key == "broker")
+    assert "gap" in next(i.text for i in items if i.key == "broker")
 
 
 def test_broker_normal_is_ok():
@@ -111,7 +111,7 @@ def test_price_date_behind_calendar_is_stale():
     items = fr.build_strip(fr.FreshInputs(today=date(2026, 10, 31), eod_date=EOD, price_counts=counts,
                                           broker_counts=_counts(190, 190), ksei_month_end=date(2026, 9, 30)))
     price = next(i for i in items if i.key == "price")
-    assert price.level == fr.BAD and "tertinggal 3 hari bursa" in price.text
+    assert price.level == fr.BAD and "3 trading days behind" in price.text
 
 
 def test_no_data_at_all_is_bad_for_prices_but_only_warn_for_broker():
@@ -159,13 +159,30 @@ def test_worst_and_overall():
     assert fr.worst([]) == fr.OK
 
 
-def test_indonesian_date_formats():
-    assert fr.fmt_date(date(2026, 10, 30)) == "30 Okt 2026"
-    assert fr.fmt_date(date(2026, 5, 6)) == "6 Mei 2026"
-    assert fr.fmt_month(date(2026, 8, 31)) == "Agu 2026"
+def test_english_date_formats():
+    assert fr.fmt_date(date(2026, 10, 30)) == "30 Oct 2026"
+    assert fr.fmt_date(date(2026, 5, 6)) == "6 May 2026"
+    assert fr.fmt_month(date(2026, 8, 31)) == "Aug 2026"
     assert fr.fmt_date(None) == "—"
 
 
 def test_item_dict_carries_text_symbol_and_word_never_color_only():
-    d = fr.FreshItem("price", "Harga", "5 saham — bolong", fr.BAD).as_dict()
-    assert d["symbol"] == "✖" and d["word"] == "bermasalah" and d["level"] == "bad"
+    d = fr.FreshItem("price", "Prices", "5 stocks — gap", fr.BAD).as_dict()
+    assert d["symbol"] == "✖" and d["word"] == "problem" and d["level"] == "bad"
+
+
+# ---- broker floor: ~200 liquid names is the design, so >= BROKER_MIN_NAMES is healthy ---------
+
+def test_broker_at_or_above_the_floor_is_ok_even_when_older_days_were_bigger():
+    """3 Nov 2026: 202 names vs a median of ~262 from backfilled days used to be a permanent amber warning."""
+    items = fr.build_strip(fr.FreshInputs(today=date(2026, 10, 31), eod_date=EOD, price_counts=_counts(962),
+                                          broker_counts=_counts(202, normal=262), ksei_month_end=date(2026, 9, 30)))
+    assert _level(items, "broker") == fr.OK
+    assert "202 stocks" in next(i.text for i in items if i.key == "broker")
+
+
+def test_broker_just_below_the_floor_still_warns_against_normal():
+    items = fr.build_strip(fr.FreshInputs(today=date(2026, 10, 31), eod_date=EOD, price_counts=_counts(962),
+                                          broker_counts=_counts(fr.BROKER_MIN_NAMES - 1, normal=262),
+                                          ksei_month_end=date(2026, 9, 30)))
+    assert _level(items, "broker") == fr.WARN

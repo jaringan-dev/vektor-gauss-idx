@@ -9,7 +9,8 @@ part that touches Postgres and imports its driver lazily.
 
 Rules (all relative to what is NORMAL for that source, never absolute):
   prices : count on the latest day vs the median of the previous 60 days -> ok / partial / gap
-  broker : same, but capped at WARN (secondary source; coverage legitimately varies)
+  broker : at/above BROKER_MIN_NAMES stocks it is healthy; below it, relative to normal like prices, capped at WARN
+           (secondary source; coverage legitimately varies, ~200 liquid names is the design)
   EOD    : weekdays elapsed since the newest trading day (holidays can cause one false WARN)
   KSEI   : monthly file; age of the newest month-end vs the latest EOD
 """
@@ -23,16 +24,17 @@ from statistics import median
 OK, WARN, BAD = "ok", "warn", "bad"
 _RANK = {OK: 0, WARN: 1, BAD: 2}
 _SYMBOL = {OK: "✓", WARN: "⚠", BAD: "✖"}
-_WORD = {OK: "normal", WARN: "perhatian", BAD: "bermasalah"}
+_WORD = {OK: "normal", WARN: "attention", BAD: "problem"}
 
-PARTIAL_RATIO = 0.9     # below this share of the normal count  -> "parsial"
-GAP_RATIO = 0.5         # below this share                      -> "bolong"
+PARTIAL_RATIO = 0.9     # below this share of the normal count  -> "partial"
+GAP_RATIO = 0.5         # below this share                      -> "gap"
 BASELINE_DAYS = 60      # previous trading days that define "normal". Deliberately long: with 20 a
                         # sag lasting ~10 days BECAME the median and the warning vanished silently.
 KSEI_WARN_DAYS = 45     # age of the newest KSEI month-end vs the latest EOD
 KSEI_BAD_DAYS = 60
+BROKER_MIN_NAMES = 150  # broker feed covers ~200 liquid names by design: at/above this it is healthy, whatever the older days looked like
 
-_BULAN = ("Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des")
+_BULAN = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 def fmt_date(d: date | None) -> str:
@@ -84,56 +86,58 @@ def baseline(counts: dict, latest: date) -> float | None:
     return float(median(prev)) if prev else None
 
 
-def _count_item(key: str, label: str, counts: dict, eod: date | None, *, cap: str = BAD) -> FreshItem:
+def _count_item(key: str, label: str, counts: dict, eod: date | None, *, cap: str = BAD, floor: int | None = None) -> FreshItem:
     def capped(level: str) -> str:
         return level if _RANK[level] <= _RANK[cap] else cap
 
     if not counts:
-        return FreshItem(key, label, "belum ada data", capped(BAD))
+        return FreshItem(key, label, "no data yet", capped(BAD))
     latest = max(counts)
     n = counts[latest]
     if eod and latest < eod:
         lag = weekdays_in(latest, eod)
-        return FreshItem(key, label, f"s.d. {fmt_date(latest)} — tertinggal {lag} hari bursa",
+        return FreshItem(key, label, f"up to {fmt_date(latest)} — {lag} trading days behind",
                          capped(WARN if lag <= 2 else BAD))
+    if floor is not None and n >= floor:
+        return FreshItem(key, label, f"{n} stocks", OK)
     base = baseline(counts, latest)
     if base:
         ratio = n / base
         if ratio < GAP_RATIO:
-            return FreshItem(key, label, f"{n} saham — bolong (normal ≈ {round(base)})", capped(BAD))
+            return FreshItem(key, label, f"{n} stocks — gap (normal ≈ {round(base)})", capped(BAD))
         if ratio < PARTIAL_RATIO:
-            return FreshItem(key, label, f"{n} saham — parsial (normal ≈ {round(base)})", capped(WARN))
-    return FreshItem(key, label, f"{n} saham", OK)
+            return FreshItem(key, label, f"{n} stocks — partial (normal ≈ {round(base)})", capped(WARN))
+    return FreshItem(key, label, f"{n} stocks", OK)
 
 
 def _eod_item(eod: date | None, today: date) -> FreshItem:
     if eod is None:
-        return FreshItem("eod", "EOD", "belum ada data", BAD)
+        return FreshItem("eod", "EOD", "no data yet", BAD)
     # weekdays that have fully passed since the newest trading day (today is not yet due)
     lag = weekdays_in(eod, today - timedelta(days=1))
     if lag <= 0:
         return FreshItem("eod", "EOD", fmt_date(eod), OK)
     if lag == 1:
-        return FreshItem("eod", "EOD", f"{fmt_date(eod)} — tertinggal 1 hari bursa (libur?)", WARN)
-    return FreshItem("eod", "EOD", f"{fmt_date(eod)} — tertinggal {lag} hari bursa", BAD)
+        return FreshItem("eod", "EOD", f"{fmt_date(eod)} — 1 trading day behind (holiday?)", WARN)
+    return FreshItem("eod", "EOD", f"{fmt_date(eod)} — {lag} trading days behind", BAD)
 
 
 def _ksei_item(month_end: date | None, eod: date | None, today: date) -> FreshItem:
     if month_end is None:
-        return FreshItem("ksei", "KSEI", "belum ada data", BAD)
+        return FreshItem("ksei", "KSEI", "no data yet", BAD)
     age = ((eod or today) - month_end).days
     if age <= KSEI_WARN_DAYS:
         return FreshItem("ksei", "KSEI", fmt_month(month_end), OK)
     if age <= KSEI_BAD_DAYS:
-        return FreshItem("ksei", "KSEI", f"{fmt_month(month_end)} — {age} hari", WARN)
-    return FreshItem("ksei", "KSEI", f"{fmt_month(month_end)} — {age} hari, basi", BAD)
+        return FreshItem("ksei", "KSEI", f"{fmt_month(month_end)} — {age} days", WARN)
+    return FreshItem("ksei", "KSEI", f"{fmt_month(month_end)} — {age} days, stale", BAD)
 
 
 def build_strip(inp: FreshInputs) -> list[FreshItem]:
     return [
         _eod_item(inp.eod_date, inp.today),
-        _count_item("price", "Harga", inp.price_counts, inp.eod_date),
-        _count_item("broker", "Broker", inp.broker_counts, inp.eod_date, cap=WARN),
+        _count_item("price", "Prices", inp.price_counts, inp.eod_date),
+        _count_item("broker", "Broker", inp.broker_counts, inp.eod_date, cap=WARN, floor=BROKER_MIN_NAMES),
         _ksei_item(inp.ksei_month_end, inp.eod_date, inp.today),
     ]
 

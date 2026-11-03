@@ -1,0 +1,45 @@
+{# Shared building blocks (RENCANA-ROMBAK-UI-v3 §4). Every explainable word goes through `term`/`th`; every ticker through
+   `ticker`; every pattern through `tag_chip`. A test pins that each key used here exists in glossary.py. #}
+
+{% macro term(key, text) -%}
+<a class="t" href="/guide#{{ key }}" data-term="{{ key }}">{{ text }}</a>
+{%- endmacro %}
+
+{% macro th(key, label, left=false) -%}
+<th scope="col"{% if left %} style="text-align:left"{% endif %}><a class="t" href="/guide#{{ key }}" data-term="{{ key }}">{{ label }}</a></th>
+{%- endmacro %}
+
+{% macro ticker(code, wl=false, held=false) -%}
+{% if wl %}<span title="On your watchlist" aria-label="watchlist">★</span> {% endif %}<a class="tk" href="/stock/{{ code }}"><b>{{ code }}</b></a>{% if held %} <span title="Currently held" aria-label="held">📌</span>{% endif %}
+{%- endmacro %}
+
+{% macro tag_chip(code) -%}
+<a class="chip tg" href="/guide#tag-{{ code }}" data-term="tag:{{ code }}" title="{{ code }}">{{ plain_tag(code) }}</a>
+{%- endmacro %}
+
+{% macro tag_chips(codes, limit=3, more_href=none) -%}
+{% for c in codes[:limit] %}{{ tag_chip(c) }}{% endfor %}
+{%- if codes|length > limit %}<a class="chip more" href="{{ more_href or '#' }}">+{{ codes|length - limit }} more</a>{% endif %}
+{%- endmacro %}
+
+{% macro quad(q) -%}
+{%- if q and quad_key(q) %}<a class="t" href="/guide#{{ quad_key(q) }}" data-term="{{ quad_key(q) }}">{{ quad_word(q) }}</a>{% else %}<span class="quad">—</span>{% endif %}
+{%- endmacro %}
+
+{% macro db_error(error) -%}
+<div class="panel">
+  <h2>Cannot read the data</h2>
+  <p class="note">The app is running, but a database query failed. Make sure Postgres is up and the schema is applied
+     (<code>vg init-db</code>), then reload the page.</p>
+  <div class="err">{{ error }}</div>
+</div>
+{%- endmacro %}
+
+{% macro disclaimer() -%}
+<p class="disclaimer">A mechanical data-reading tool. Not investment advice and not a prediction. It never tells you to buy or sell.</p>
+{%- endmacro %}
+
+{% macro verdict(code, label) -%}
+{%- set k = {'ready': 'status_pass', 'failing': 'status_fail', 'probation': 'status_probation'}.get(code, 'status_probation') -%}
+<a class="badge {{ code }} t" href="/guide#{{ k }}" data-term="{{ k }}">{{ label }}</a>
+{%- endmacro %}

@@ -37,7 +37,7 @@ PROBATION = "probation"
 @dataclass(frozen=True)
 class TagStatus:
     code: str                       # READY | FAILING | PROBATION
-    label: str                      # short human label (Indonesian)
+    label: str                      # short human label
     edge_after_cost: float | None   # edge_h5 minus cost — the number the verdict turns on
     enough_data: bool               # has it been tested enough to judge at all?
 
@@ -77,5 +77,5 @@ def classify(row: dict) -> TagStatus:
     if not enough:
         return TagStatus(PROBATION, "PROBATION", edge_after_cost, False)
     if edge_after_cost is not None and edge_after_cost > 0:
-        return TagStatus(READY, "LULUS — berbobot", edge_after_cost, True)
-    return TagStatus(FAILING, "GAGAL — tak ada edge", edge_after_cost, True)
+        return TagStatus(READY, "PASS", edge_after_cost, True)
+    return TagStatus(FAILING, "FAIL — no edge", edge_after_cost, True)

@@ -1,53 +1,49 @@
 {% extends "base.html" %}
-{% block subtitle %}{% if m %}Yang hilang: {{ m.source_label }} · {{ m.date_label }}{% else %}Cakupan &amp; celah data{% endif %}{% endblock %}
+{% from "_macros.html" import db_error, disclaimer %}
+{% block subtitle %}{% if m %}What is missing: {{ m.source_label }} · {{ m.date_label }}{% else %}Data coverage &amp; gaps{% endif %}{% endblock %}
 
 {% block content %}
   {% if bad_request %}
     <div class="panel">
-      <h2>Permintaan tidak bisa diproses</h2>
+      <h2>That request cannot be processed</h2>
       <div class="err">{{ bad_request }}</div>
-      <p class="note" style="margin-top:10px"><a href="/coverage">← kembali ke peta cakupan</a></p>
+      <p class="note" style="margin-top:10px"><a href="/coverage">← back to the coverage map</a></p>
     </div>
   {% elif error %}
-    <div class="panel">
-      <h2>Tidak bisa membaca data</h2>
-      <p class="note">App hidup, tapi query ke database gagal.</p>
-      <div class="err">{{ error }}</div>
-    </div>
+    {{ db_error(error) }}
   {% else %}
     <div class="panel">
       <h2>{{ m.source_label }} — {{ m.date_label }}
         <span class="badge {{ {'ok':'ready','warn':'probation','bad':'failing','na':'probation'}[m.cell.level] }}">
           <span aria-hidden="true">{{ m.cell.symbol }}</span> {{ m.cell.word }}</span></h2>
       <p class="note">
-        {{ m.present }} {{ m.unit }} tersedia{% if m.baseline %}; normal ≈ {{ m.baseline }}{% endif %}
-        {% if m.cell.pct is not none %}({{ m.cell.pct }}% dari normal){% endif %}.
-        {% if m.ref_label %}Dibandingkan dengan <b>{{ m.ref_label }}</b> (hari normal terdekat, {{ m.expected }} {{ m.unit }}).
-        {% else %}Tidak ada hari normal sebagai acuan di rentang ini.{% endif %}
+        {{ m.present }} {{ m.unit }} available{% if m.baseline %}; normal ≈ {{ m.baseline }}{% endif %}
+        {% if m.cell.pct is not none %}({{ m.cell.pct }}% of normal){% endif %}.
+        {% if m.ref_label %}Compared with <b>{{ m.ref_label }}</b> (the nearest normal day, {{ m.expected }} {{ m.unit }}).
+        {% else %}There is no normal day in this range to compare against.{% endif %}
       </p>
       {% if m.missing_total %}
-        <h3 style="font-size:14px;margin:12px 0 6px">Hilang {{ m.missing_total }} dari {{ m.expected }}</h3>
+        <h3 style="font-size:14px;margin:12px 0 6px">Missing {{ m.missing_total }} of {{ m.expected }}</h3>
         <p>{% for t in m.missing %}<span class="chip">{{ t }}</span>{% endfor %}
-          {% if m.missing_total > m.missing|length %}<span class="note">… dan {{ m.missing_total - m.missing|length }} lainnya</span>{% endif %}</p>
+          {% if m.missing_total > m.missing|length %}<span class="note">… and {{ m.missing_total - m.missing|length }} more</span>{% endif %}</p>
       {% elif m.ref_label %}
-        <p class="note">Tidak ada yang hilang relatif terhadap hari acuan.</p>
+        <p class="note">Nothing is missing relative to the reference day.</p>
       {% endif %}
     </div>
 
     <div class="panel">
-      <h2>Perintah perbaikan</h2>
-      <p class="note">Jalankan di terminal WSL, di dalam repo dan venv-nya. Semuanya idempoten (aman diulang).</p>
+      <h2>Repair commands</h2>
+      <p class="note">Run these in the WSL terminal, inside the repo and its venv. All of them are idempotent (safe to repeat).</p>
       <pre class="cmd"><code>cd ~/vektor-gauss &amp;&amp; source .venv/bin/activate
 {% for c in m.commands %}{{ c }}
 {% endfor %}</code></pre>
-      <p class="note">Setelah mengisi data, urutan <code>vg compute</code> lalu <code>vg backfill-outcomes</code>
-         membuat sinyal dan hasil edge ikut diperbarui.</p>
-      <p class="note"><a href="/coverage">← kembali ke peta cakupan</a></p>
+      <p class="note">After filling the data, running <code>vg compute</code> and then <code>vg backfill-outcomes</code>
+         refreshes the signals and the edge results as well.</p>
+      <p class="note"><a href="/coverage">← back to the coverage map</a></p>
     </div>
   {% endif %}
 {% endblock %}
 
 {% block footer %}
-  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
-     Tidak ada perintah beli/jual.</p>
+  {{ disclaimer() }}
 {% endblock %}

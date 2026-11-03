@@ -1,36 +1,30 @@
 {% extends "base.html" %}
-{% block subtitle %}Cakupan &amp; celah data{% endblock %}
+{% from "_macros.html" import term, th, db_error, disclaimer %}
+{% block subtitle %}Data coverage &amp; gaps{% endblock %}
 
 {% block content %}
   {% if error %}
-    <div class="panel">
-      <h2>Tidak bisa membaca data</h2>
-      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
-         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
-      <div class="err">{{ error }}</div>
-    </div>
+    {{ db_error(error) }}
   {% elif not rows %}
     <div class="panel">
-      <h2>Belum ada hari bursa</h2>
-      <p class="note">Tabel <code>trading_calendar</code> kosong — jalankan <code>vg collect-price</code> dulu.</p>
+      <h2>No trading days yet</h2>
+      <p class="note">The <code>trading_calendar</code> table is empty. Run <code>vg collect-price</code> first.</p>
     </div>
   {% else %}
+    <div class="answer"><span class="q">Is the data complete?</span>
+      Each cell compares a day's row count with the {{ term('normal', 'normal count') }} for that source, not just "present or absent":
+      5 price rows on a day that normally has 962 is still a {{ term('gap', 'gap') }}. Cells marked ⚠ / ✖ can be clicked to see what is missing and the repair commands.</div>
     <div class="panel">
-      <h2>{{ n_days }} hari bursa terakhir</h2>
-      <p class="note">
-        Tiap sel dibandingkan dengan jumlah <b>normal</b> sumber itu (median sejak datanya ada), bukan
-        sekadar "ada atau tidak": 5 baris harga di hari yang biasanya 962 tetap bolong. Sel
-        ⚠ / ✖ bisa diklik untuk melihat apa yang hilang dan perintah perbaikannya.
-      </p>
-      <nav class="nav" aria-label="Rentang hari">
+      <h2>Last {{ n_days }} trading days</h2>
+      <nav class="nav" aria-label="Day range">
         {% for w in windows %}
-        <a href="/coverage?days={{ w }}"{% if w == n_days %} class="active" aria-current="true"{% endif %}>{{ w }} hari</a>
+        <a href="/coverage?days={{ w }}"{% if w == n_days %} class="active" aria-current="true"{% endif %}>{{ w }} days</a>
         {% endfor %}
       </nav>
       <table style="margin-top:12px">
-        <caption class="sr-only">Ringkasan per sumber data</caption>
-        <thead><tr><th scope="col">sumber</th><th scope="col">normal ≈</th><th scope="col">ada sejak</th>
-          <th scope="col">hari ✖ bolong</th><th scope="col">hari ⚠ parsial</th></tr></thead>
+        <caption class="sr-only">Summary per data source</caption>
+        <thead><tr><th scope="col">source</th><th scope="col">{{ term('normal', 'normal') }} ≈</th><th scope="col">available since</th>
+          <th scope="col">✖ {{ term('gap', 'gap') }} days</th><th scope="col">⚠ {{ term('partial', 'partial') }} days</th></tr></thead>
         <tbody>
           {% for s in summary %}
           <tr>
@@ -47,9 +41,9 @@
 
     <div class="panel">
       <table class="cov">
-        <caption class="sr-only">Cakupan data per hari bursa dan sumber, hari terbaru di atas</caption>
+        <caption class="sr-only">Data coverage per trading day and source, newest day first</caption>
         <thead>
-          <tr><th scope="col">hari</th>{% for s in summary %}<th scope="col">{{ s.label }}</th>{% endfor %}</tr>
+          <tr><th scope="col">day</th>{% for s in summary %}<th scope="col">{{ s.label }}</th>{% endfor %}</tr>
         </thead>
         <tbody>
           {% for r in rows %}
@@ -59,12 +53,12 @@
             <td class="cov-{{ c.level }}">
               {% if c.level in ('warn', 'bad') %}
               <a href="/coverage/missing?date={{ r.iso }}&amp;source={{ s.key }}"
-                 aria-label="{{ s.label }} {{ r.label }}: {{ c.word }}, {{ c.count }} dari normal sekitar {{ s.baseline }} — lihat yang hilang">
+                 aria-label="{{ s.label }} {{ r.label }}: {{ c.word }}, {{ c.count }} against a normal of about {{ s.baseline }} — see what is missing">
                 <span aria-hidden="true">{{ c.symbol }}</span> {{ c.count }}</a>
               {% elif c.level == 'ok' %}
               <span aria-hidden="true">{{ c.symbol }}</span> {{ c.count }}<span class="sr-only"> {{ c.word }}</span>
               {% else %}
-              <span aria-hidden="true">—</span><span class="sr-only">belum ada data</span>
+              <span aria-hidden="true">—</span><span class="sr-only">no data yet</span>
               {% endif %}
             </td>
             {% endfor %}
@@ -73,18 +67,17 @@
         </tbody>
       </table>
       <ul class="legend">
-        <li><span class="cov-ok sw">✓</span> normal (≥ 90% dari normal)</li>
-        <li><span class="cov-warn sw">⚠</span> parsial (50–90%)</li>
-        <li><span class="cov-bad sw">✖</span> bolong (&lt; 50%)</li>
-        <li><span class="sw">—</span> sumber belum punya data pada tanggal itu</li>
+        <li><span class="cov-ok sw">✓</span> normal (≥ 90% of normal)</li>
+        <li><span class="cov-warn sw">⚠</span> {{ term('partial', 'partial') }} (50–90%)</li>
+        <li><span class="cov-bad sw">✖</span> {{ term('gap', 'gap') }} (&lt; 50%)</li>
+        <li><span class="sw">—</span> the source has no data yet on that date</li>
       </ul>
     </div>
   {% endif %}
 {% endblock %}
 
 {% block footer %}
-  <p>Strip di atas setiap layar menilai hanya hari terbaru dan menahan <b>Broker</b> paling parah di ⚠
-     (sumber sekunder); peta ini deskriptif dan menampilkan ✖ apa adanya untuk semua sumber.</p>
-  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
-     Tidak ada perintah beli/jual.</p>
+  <p>The strip at the top of every screen judges only the latest day, and treats <b>Broker</b> as healthy from 150 stocks upward
+     (a secondary source by design); this map is descriptive and shows ✖ as-is for every source.</p>
+  {{ disclaimer() }}
 {% endblock %}

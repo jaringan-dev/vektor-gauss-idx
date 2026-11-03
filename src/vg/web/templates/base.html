@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -100,6 +100,39 @@
               font-size:12px; line-height:1.6; }
     pre.cmd code { background:none; padding:0; }
 
+    /* ---- explain-in-place (RENCANA-ROMBAK-UI-v3): terms, tags, tickers, search ---- */
+    a.t { color:inherit; text-decoration:none; border-bottom:1px dotted var(--muted); cursor:help; }
+    a.t:hover, a.t:focus-visible { border-bottom-style:solid; }
+    a.tk { color:inherit; text-decoration:none; }
+    a.tk:hover b, a.tk:focus-visible b { text-decoration:underline; }
+    a.chip.tg, a.chip.more { color:inherit; text-decoration:none; background:var(--prob-bg); cursor:help; }
+    a.chip.more { cursor:pointer; color:var(--muted); }
+    #gl-card { position:absolute; z-index:30; width:min(340px, calc(100vw - 24px)); background:var(--panel); color:var(--fg);
+               border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.5;
+               box-shadow:0 8px 28px rgba(0,0,0,.28); text-align:left; white-space:normal; font-weight:400; }
+    #gl-card b { display:block; font-size:14px; margin-bottom:4px; }
+    #gl-card p { margin:0 0 6px; }
+    #gl-card .lbl { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; display:block; }
+    #gl-card a.more { color:var(--fg); font-size:12px; }
+    .topsearch { padding:10px 20px 0; }
+    .topsearch form { display:flex; gap:8px; max-width:520px; }
+    .topsearch input { flex:1; min-width:0; padding:8px 12px; border:1px solid var(--border); border-radius:8px;
+                       background:var(--panel); color:var(--fg); font-size:14px; }
+    .topsearch button { padding:8px 14px; border:1px solid var(--border); border-radius:8px; background:var(--panel);
+                        color:var(--fg); cursor:pointer; font-size:14px; }
+    .answer { background:var(--panel); border:1px solid var(--border); border-left:4px solid var(--fg); border-radius:10px;
+              padding:12px 16px; margin-bottom:16px; font-size:14px; line-height:1.6; }
+    .answer .q { display:block; color:var(--muted); font-size:12px; margin-bottom:2px; }
+    .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); margin-bottom:16px; }
+    .kpi { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px; }
+    .kpi .k { color:var(--muted); font-size:12px; }
+    .kpi .v { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+    .kpi .s { color:var(--muted); font-size:12px; margin-top:2px; }
+    .wide-note { color:var(--muted); font-size:12px; margin:6px 0 0; }
+    td.wrap, th.wrap { white-space:normal; text-align:left; min-width:250px; }
+    .chip { white-space:nowrap; }
+    details > summary { cursor:pointer; color:var(--muted); font-size:13px; margin:8px 0; }
+
     /* coverage heatmap (F1): state = colour + symbol + number, never colour alone */
     table.cov th[scope="row"] { text-align:left; font-weight:500; color:var(--fg); }
     table.cov td, table.cov thead th { text-align:center; }
@@ -116,16 +149,16 @@
   <noscript><style>.sidebar { display:block !important; } .menu-btn { display:none; }</style></noscript>
 </head>
 <body>
-  <a class="skip" href="#main">Lewati ke konten</a>
+  <a class="skip" href="#main">Skip to content</a>
   <div class="layout">
     <div class="topbar">
       <button type="button" id="menu-btn" class="menu-btn" aria-controls="sidebar" aria-expanded="false">☰ Menu</button>
       <span class="brand" style="margin:0">Vektor Gauss</span>
     </div>
 
-    <aside id="sidebar" class="sidebar" aria-label="Navigasi utama">
-      <div class="brand">Vektor Gauss <span>Superadmin · lokal</span></div>
-      <nav aria-label="Layar">
+    <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+      <div class="brand">Vektor Gauss <span>Superadmin · local</span></div>
+      <nav aria-label="Screens">
         {% for g in nav_groups|default([]) %}
         <div class="grp">{{ g.title }}</div>
         <ul>
@@ -138,10 +171,17 @@
     </aside>
 
     <div class="content">
+      <div class="topsearch" role="search">
+        <form action="/search" method="get">
+          <label class="sr-only" for="q-global">Search a stock or term</label>
+          <input id="q-global" name="q" type="search" autocomplete="off" placeholder="Search a stock (e.g. BBCA) or a term (e.g. CR3)">
+          <button type="submit">Search</button>
+        </form>
+      </div>
       {% if strip %}
-      <section class="strip" aria-label="Kesegaran data">
+      <section class="strip" aria-label="Data freshness">
         {% if strip.error %}
-        <ul><li class="lv-bad"><span aria-hidden="true">✖</span> Kesegaran data tidak bisa diperiksa: {{ strip.error }}</li></ul>
+        <ul><li class="lv-bad"><span aria-hidden="true">✖</span> Data freshness could not be checked: {{ strip.error }}</li></ul>
         {% else %}
         <ul>
           {% for it in strip["items"] %}
@@ -149,7 +189,7 @@
             {{ it.text }}<span class="sr-only"> — status {{ it.word }}</span></li>
           {% endfor %}
         </ul>
-        <span class="checked">{% if strip.checked_at %}diperiksa {{ strip.checked_at }} · {% endif %}<a href="/coverage">cakupan data</a></span>
+        <span class="checked">{% if strip.checked_at %}checked {{ strip.checked_at }} · {% endif %}<a href="/coverage">data coverage</a></span>
         {% endif %}
       </section>
       {% endif %}
@@ -162,6 +202,51 @@
     </div>
   </div>
 
+  {% if glossary_json %}
+  <script type="application/json" id="gl-data">{{ glossary_json|safe }}</script>
+  <script>
+    /* Explain-in-place: a click (or Enter) on any dotted term opens a card; without JS the link goes to /guide. */
+    (function () {
+      var data = {};
+      try { data = JSON.parse(document.getElementById("gl-data").textContent || "{}"); } catch (e) {}
+      var card = document.createElement("div");
+      card.id = "gl-card"; card.setAttribute("role", "dialog"); card.setAttribute("aria-label", "Term explanation"); card.hidden = true;
+      document.body.appendChild(card);
+      var current = null;
+      function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+      function firstSentence(s) { var i = s.indexOf(". "); return i > 0 ? s.slice(0, i + 1) : s; }
+      Array.prototype.forEach.call(document.querySelectorAll("a[data-term]"), function (a) {
+        var d = data[a.getAttribute("data-term")];
+        if (d && !a.getAttribute("title")) a.setAttribute("title", firstSentence(d.short));
+        a.setAttribute("aria-haspopup", "dialog");
+      });
+      function close() { if (current) { current.removeAttribute("aria-expanded"); current = null; } card.hidden = true; }
+      function open(a) {
+        var d = data[a.getAttribute("data-term")];
+        if (!d) return false;
+        var h = "<b>" + esc(d.name) + "</b><p>" + esc(d.short) + "</p>";
+        if (d.how) h += '<p><span class="lbl">How it is calculated / the rule</span>' + esc(d.how) + "</p>";
+        if (d.caveat) h += '<p><span class="lbl">Keep in mind</span>' + esc(d.caveat) + "</p>";
+        h += '<a class="more" href="' + esc(a.getAttribute("href")) + '">Read in the Guide ›</a>';
+        card.innerHTML = h; card.hidden = false;
+        var r = a.getBoundingClientRect(), x = r.left + window.scrollX, y = r.bottom + window.scrollY + 6;
+        var maxX = window.scrollX + document.documentElement.clientWidth - card.offsetWidth - 12;
+        card.style.left = Math.max(window.scrollX + 12, Math.min(x, maxX)) + "px"; card.style.top = y + "px";
+        a.setAttribute("aria-expanded", "true"); current = a; return true;
+      }
+      document.addEventListener("click", function (e) {
+        var a = e.target.closest ? e.target.closest("a[data-term]") : null;
+        if (a && !(e.ctrlKey || e.metaKey || e.shiftKey)) {
+          if (current === a) { e.preventDefault(); close(); return; }
+          if (open(a)) e.preventDefault();
+          return;
+        }
+        if (!card.hidden && !(e.target.closest && e.target.closest("#gl-card"))) close();
+      });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !card.hidden) { var a = current; close(); if (a) a.focus(); } });
+    })();
+  </script>
+  {% endif %}
   <script>
     (function () {
       var btn = document.getElementById("menu-btn"), side = document.getElementById("sidebar");

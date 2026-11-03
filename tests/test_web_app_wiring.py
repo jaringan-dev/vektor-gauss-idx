@@ -22,7 +22,7 @@ def _ui_routes():
             if "GET" in (getattr(r, "methods", None) or ()) and r.path not in _NOT_UI}
 
 
-_DETAIL_ROUTES = {"/coverage/missing"}       # reached by clicking inside a screen, not from the sidebar
+_DETAIL_ROUTES = {"/coverage/missing", "/stock/{ticker}", "/search"}       # reached by clicking inside a screen, not from the sidebar
 
 
 def test_every_html_route_has_a_sidebar_link_and_vice_versa():
@@ -34,7 +34,7 @@ def test_every_html_route_has_a_sidebar_link_and_vice_versa():
 
 def test_every_nav_key_is_an_active_page_used_by_a_route():
     keys = {it["key"] for g in webapp._NAV for it in g["items"]}
-    assert keys == {"tracker", "screener", "ranking", "coverage"}   # the active_page values the routes pass
+    assert keys == {"tracker", "screener", "ranking", "coverage", "guide"}   # the active_page values the routes pass
 
 
 @pytest.fixture()
@@ -64,7 +64,7 @@ def test_pages_render_inside_the_shell_with_a_healthy_strip(client, path, active
     assert len(current) == 1
     expected = {"tracker": 'href="/"', "screener": 'href="/screener"', "ranking": 'href="/ranking"'}[active]
     assert expected in current[0]
-    assert "Kesegaran data" in r.text and "962 saham" in r.text and "30 Okt 2026" in r.text
+    assert "Data freshness" in r.text and "962 stocks" in r.text and "30 Oct 2026" in r.text
     assert 'class="lv-bad"' not in r.text and 'class="lv-warn"' not in r.text
 
 
@@ -80,7 +80,7 @@ def test_a_price_gap_turns_the_strip_red_on_every_page(client, monkeypatch):
     for path in ("/", "/screener", "/ranking"):
         r = client.get(path)
         assert r.status_code == 200
-        assert 'class="lv-bad"' in r.text and "bolong" in r.text
+        assert 'class="lv-bad"' in r.text and "gap" in r.text
 
 
 def test_a_failing_freshness_query_does_not_break_the_page(client, monkeypatch):
@@ -91,7 +91,7 @@ def test_a_failing_freshness_query_does_not_break_the_page(client, monkeypatch):
     webapp._STRIP_CACHE.clear()
     r = client.get("/screener")
     assert r.status_code == 200
-    assert "Kesegaran data tidak bisa diperiksa" in r.text and "db down" in r.text
+    assert "Data freshness could not be checked" in r.text and "db down" in r.text
 
 
 # ---- F1: coverage pages (DB stubbed with the real incident's numbers) --------------------------
@@ -134,18 +134,18 @@ def test_coverage_page_shows_exactly_the_incident_days_as_links(cov_client):
     assert r.status_code == 200
     links = set(re.findall(r'/coverage/missing\?date=(\d{4}-\d{2}-\d{2})&amp;source=price', r.text))
     assert links == {d.isoformat() for d in _GAP}
-    assert "60 hari bursa terakhir" in r.text
+    assert "Last 60 trading days" in r.text
 
 
 @pytest.mark.parametrize("asked,used", [(9999, 250), (1, 10), (0, 10), (-5, 10), (60, 60)])
 def test_coverage_window_is_clamped(cov_client, asked, used):
-    assert f"{used} hari bursa terakhir" in cov_client.get(f"/coverage?days={asked}").text
+    assert f"Last {used} trading days" in cov_client.get(f"/coverage?days={asked}").text
 
 
 def test_missing_page_for_the_incident_day(cov_client):
     r = cov_client.get("/coverage/missing?date=2026-09-15&source=price")
     assert r.status_code == 200
-    assert "Hilang 957 dari 962" in r.text
+    assert "Missing 957 of 962" in r.text
     assert "16 Sep 2026" in r.text                              # nearest HEALTHY day (14th is a gap too)
     assert "vg collect-price --date 2026-09-15" in r.text
     assert "vg compute --date 2026-09-15" in r.text
@@ -153,11 +153,11 @@ def test_missing_page_for_the_incident_day(cov_client):
 
 
 @pytest.mark.parametrize("path,status,fragment", [
-    ("/coverage/missing?date=2026-09-15&source=nope", 400, "Sumber tidak dikenal"),
-    ("/coverage/missing?date=banana&source=price", 400, "Tanggal tidak valid"),
-    ("/coverage/missing?source=price", 400, "Tanggal tidak valid"),
-    ("/coverage/missing?date=2026-09-12&source=price", 404, "bukan hari bursa"),       # a Saturday
-    ("/coverage/missing?date=2019-01-02&source=price", 404, "bukan hari bursa"),       # outside the window
+    ("/coverage/missing?date=2026-09-15&source=nope", 400, "Unknown source"),
+    ("/coverage/missing?date=banana&source=price", 400, "Invalid date"),
+    ("/coverage/missing?source=price", 400, "Invalid date"),
+    ("/coverage/missing?date=2026-09-12&source=price", 404, "is not one of the last 250 trading days"),       # a Saturday
+    ("/coverage/missing?date=2019-01-02&source=price", 404, "is not one of the last 250 trading days"),       # outside the window
 ])
 def test_missing_page_rejects_bad_input_with_a_real_status_code(cov_client, path, status, fragment):
     r = cov_client.get(path)
@@ -180,7 +180,7 @@ def test_a_database_failure_on_the_coverage_pages_is_an_error_panel_not_a_crash(
     webapp._COVERAGE_CACHE.clear()
     for path in ("/coverage", "/coverage/missing?date=2026-09-15&source=price"):
         r = cov_client.get(path)
-        assert r.status_code == 200 and "Tidak bisa membaca data" in r.text and "db down" in r.text
+        assert r.status_code == 200 and "Cannot read the data" in r.text and "db down" in r.text
 
 
 def test_every_recommended_repair_command_is_a_real_cli_command():

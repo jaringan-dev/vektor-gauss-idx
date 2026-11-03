@@ -1,7 +1,7 @@
 """Coverage heatmap data (checklist F1, RANCANGAN-UI-UX-v2 §5.4).
 
 Day x source grid: how many rows each source has per trading day, judged against what is NORMAL for
-that source — so a day with 5 price rows (the 14/15/25 Sep incident) reads "bolong" even though
+that source — so a day with 5 price rows (the 14/15/25 Sep incident) reads "gap" even though
 "some data exists". Clicking a non-normal cell lists the tickers that are missing relative to the
 nearest healthy day, with the repair commands to run.
 
@@ -20,14 +20,14 @@ from .freshness import GAP_RATIO, PARTIAL_RATIO, fmt_date
 OK, WARN, BAD, NA = "ok", "warn", "bad", "na"
 REFERENCE_MAX_RATIO = 1.5      # a day above 1.5x the normal count is a one-off, not a reference
 _SYMBOL = {OK: "✓", WARN: "⚠", BAD: "✖", NA: "—"}
-_WORD = {OK: "normal", WARN: "parsial", BAD: "bolong", NA: "belum ada data"}
+_WORD = {OK: "normal", WARN: "partial", BAD: "gap", NA: "no data yet"}
 
 # key, label, unit, table, entity column
 SOURCES = (
-    ("price", "Harga", "saham", "price_bars", "ticker"),
-    ("index", "Indeks", "indeks", "index_bars", "index_code"),
-    ("broker", "Broker", "saham", "broker_flows", "ticker"),
-    ("signal", "Sinyal", "saham", "signal_components", "ticker"),
+    ("price", "Prices", "stocks", "price_bars", "ticker"),
+    ("index", "Indices", "indices", "index_bars", "index_code"),
+    ("broker", "Broker", "stocks", "broker_flows", "ticker"),
+    ("signal", "Signals", "stocks", "signal_components", "ticker"),
 )
 SOURCE_KEYS = tuple(s[0] for s in SOURCES)
 _META = {s[0]: s for s in SOURCES}
@@ -94,7 +94,7 @@ def build_grid(days: list[date], counts: dict) -> dict:
 
 
 def grid_view(grid: dict) -> tuple[list[dict], list[dict]]:
-    """Template-ready (rows, summary) from `build_grid` output: plain dicts and Indonesian dates."""
+    """Template-ready (rows, summary) from `build_grid` output: plain dicts and formatted dates."""
     rows = [
         {"date": r["date"], "label": fmt_date(r["date"]), "iso": r["date"].isoformat(),
          "cells": {k: c.as_dict() for k, c in r["cells"].items()}}

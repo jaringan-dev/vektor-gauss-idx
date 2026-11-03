@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ticker, db_error, disclaimer %}
+{% block subtitle %}Search{% endblock %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% endif %}
+  {% if not q %}
+    <div class="panel"><p class="note">Type a stock code (for example BBCA) or a term (for example CR3 or edge) in the search box above.</p></div>
+  {% else %}
+    <div class="panel">
+      <h2>Results for “{{ q }}”</h2>
+      {% if not tickers and not terms and not tags %}
+        <p class="note">Nothing matches. Try the stock code (such as BBCA) or a word like “foreign”, “edge” or “quadrant”.</p>
+      {% endif %}
+      {% if tickers %}
+        <h3 style="font-size:14px;margin:10px 0 4px">Stocks</h3>
+        <p>{% for t in tickers %}<span class="chip">{{ ticker(t.ticker) }}{% if t.name %} <span class="note">{{ t.name }}</span>{% endif %}</span>{% endfor %}</p>
+      {% endif %}
+      {% if terms %}
+        <h3 style="font-size:14px;margin:10px 0 4px">Terms</h3>
+        <ul>{% for t in terms %}<li><a href="/guide#{{ t.key }}"><b>{{ t.name }}</b></a> — {{ t.short }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if tags %}
+        <h3 style="font-size:14px;margin:10px 0 4px">Patterns</h3>
+        <ul>{% for t in tags %}<li><a href="/guide#tag-{{ t.tag }}"><b>{{ t.name }}</b></a> <code>{{ t.tag }}</code> — {{ t.what }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}

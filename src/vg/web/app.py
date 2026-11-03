@@ -8,36 +8,45 @@ as the public "Rapor Publik" (§4.2), once the gate is cleared.
 
 from __future__ import annotations
 
+import json
+import re
 import threading
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from .. import engine
+from .. import engine, risk
 from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
-from . import freshness
+from . import freshness, fmt, glossary
 from . import status as gate
+from . import stock as stockmod
 from .cache import TTLCache
 
 _TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+glossary.install(_TEMPLATES.env)
+# Popover data for the explain-in-place cards; `</` is escaped so it can never close the <script> tag early.
+_GLOSSARY_JSON = json.dumps(glossary.popover_data(), ensure_ascii=False).replace("</", "<\\/")
 
 # Sidebar (A1). `key` must equal the `active_page` each route passes to its template.
 _NAV = [
-    {"title": "Pola", "items": [
-        {"key": "tracker", "label": "Forward-test", "href": "/"},
+    {"title": "Patterns", "items": [
+        {"key": "tracker", "label": "Track record", "href": "/"},
     ]},
-    {"title": "Saham", "items": [
-        {"key": "screener", "label": "Saham hari ini", "href": "/screener"},
-        {"key": "ranking", "label": "Top / Ranking", "href": "/ranking"},
+    {"title": "Stocks", "items": [
+        {"key": "screener", "label": "Today's stocks", "href": "/screener"},
+        {"key": "ranking", "label": "Top rankings", "href": "/ranking"},
     ]},
     {"title": "Data", "items": [
-        {"key": "coverage", "label": "Cakupan & celah", "href": "/coverage"},
+        {"key": "coverage", "label": "Coverage & gaps", "href": "/coverage"},
+    ]},
+    {"title": "Help", "items": [
+        {"key": "guide", "label": "Guide & glossary", "href": "/guide"},
     ]},
 ]
 
@@ -72,6 +81,7 @@ def _render(name: str, ctx: dict, status_code: int = 200) -> HTMLResponse:
     the TemplateResponse positional signature, which changed across Starlette versions."""
     ctx["nav_groups"] = _NAV
     ctx["strip"] = _strip_ctx()
+    ctx["glossary_json"] = _GLOSSARY_JSON
     return HTMLResponse(_TEMPLATES.get_template(name).render(ctx), status_code=status_code)
 
 # Tag-eval tables are slow (in-sample ≈ 2.9s) but only change after `vg compute` /
@@ -101,45 +111,9 @@ async def _lifespan(_app: FastAPI):
 app = FastAPI(title="Vektor Gauss — Superadmin", lifespan=_lifespan)
 
 
-def _pct(x: float | None, dp: int = 2) -> str:
-    """Indonesian-format signed percent (comma decimal), matching the digest (§2.5)."""
-    return f"{x * 100:+.{dp}f}%".replace(".", ",") if x is not None else "n/a"
-
-
-def _cell(x: float | None, dp: int = 2) -> dict:
-    """A numeric cell: formatted text + a sign class for green/red (never color-only — §4.5)."""
-    return {"t": _pct(x, dp), "c": "" if x is None else ("pos" if x >= 0 else "neg")}
-
-
-def _hit(x: float | None) -> str:
-    return f"{x * 100:.0f}%" if x is not None else "-"
-
-
-# Visual vocabulary shared with the Telegram digest (RENCANA-UI-UX §2.5).
-_QUAD_EMOJI = {"MARKUP": "📈", "AKUMULASI": "🟢", "DISTRIBUSI": "🔻", "MARKDOWN": "📉", "NETRAL": "▪️"}
+# Formatting lives in fmt.py (shared with the plain-language summaries); short aliases keep the call sites readable.
+_pct, _cell, _hit, _price, _idr, _signcls = fmt.pct, fmt.cell, fmt.hit, fmt.price, fmt.idr, fmt.signcls
 _TREND = {"up": "↑", "down": "↓", "flat": "→", "nodata": "?"}
-
-
-def _price(v) -> str:
-    return f"{float(v):,.0f}".replace(",", ".") if v is not None else "?"
-
-
-def _idr(x: float | None) -> str:
-    """Rupiah magnitude with sign, Indonesian decimal comma (matches digest._idr)."""
-    if x is None:
-        return "n/a"
-    a = abs(x)
-    if a >= 1e12:
-        return f"{x / 1e12:+.1f}T".replace(".", ",")
-    if a >= 1e9:
-        return f"{x / 1e9:+.1f}B".replace(".", ",")
-    if a >= 1e6:
-        return f"{x / 1e6:+.0f}Jt".replace(".", ",")
-    return f"{x:+.0f}"
-
-
-def _signcls(x: float | None) -> str:
-    return "" if x is None else ("pos" if x >= 0 else "neg")
 
 
 def _eval_version() -> tuple:
@@ -200,6 +174,7 @@ def forward_tracker(fresh: bool = False) -> HTMLResponse:
         "computed_at": None,
         "cache_hit": False,
         "cache_minutes": int(_EVAL_CACHE.ttl // 60),
+        "n_passed": 0,
     }
     try:
         ctx["insample"], t_in, hit_in = _cached_view_rows(None, fresh)
@@ -207,6 +182,7 @@ def forward_tracker(fresh: bool = False) -> HTMLResponse:
             ctx["forward"], t_fw, hit_fw = _cached_view_rows(CONFIG.forward_since, fresh)
         else:
             t_fw, hit_fw = t_in, hit_in
+        ctx["n_passed"] = sum(1 for r in ctx["forward"] if r["status"].code == gate.READY)
         # Report the OLDER of the two timestamps: the page is only as fresh as its stalest table.
         ctx["computed_at"] = datetime.fromtimestamp(min(t_in, t_fw)).strftime("%d %b %Y %H:%M:%S")
         ctx["cache_hit"] = hit_in and hit_fw
@@ -233,7 +209,6 @@ def _screener_view() -> tuple:
                     "in_wl": r["ticker"] in wl,
                     "held": r["ticker"] in held,
                     "quad": r.get("quadrant") or "",
-                    "quad_emoji": _QUAD_EMOJI.get(r.get("quadrant") or "", "▪️"),
                     "price": _price(close),
                     "chg": _cell(chg, 1),
                     "nff_d0": _idr(r.get("nff_d0")), "nff_d0_c": _signcls(r.get("nff_d0")),
@@ -244,6 +219,7 @@ def _screener_view() -> tuple:
                     "cons": f"{int(cons)}/10" if cons is not None else "—",
                     "ksei": _TREND.get(r.get("ksei_foreign_trend_3m") or "", "?"),
                     "tags": r.get("tags") or "",
+                    "tag_list": glossary.split_tags(r.get("tags")),
                 }
             )
     return sd, rows
@@ -270,10 +246,10 @@ def _rank_rows(column: str, desc: bool) -> tuple:
                 "rank": i,
                 "ticker": r["ticker"],
                 "quad": r.get("quadrant") or "",
-                "quad_emoji": _QUAD_EMOJI.get(r.get("quadrant") or "", "▪️"),
                 "val": _idr(r.get("val")), "val_c": _signcls(r.get("val")),
                 "price": _price(close), "chg": _cell(chg, 1),
                 "tags": r.get("tags") or "",
+                "tag_list": glossary.split_tags(r.get("tags")),
             }
         )
     return sd, total, rows
@@ -286,11 +262,11 @@ def _ranking_view(h: str) -> tuple:
     bcol = "bkr_foreign_net_d0" if h == "1d" else "bkr_foreign_net_5d"
     # (title, column, desc, note)
     spec = [
-        ("Top Akum Asing", fcol, True, "arus asing bersih — akumulasi tertinggi (se-pasar)"),
-        ("Top Distribusi Asing", fcol, False, "arus asing bersih — distribusi terbesar (se-pasar)"),
-        ("Top Akum Bandar", bcol, True, "net broker asing — hanya universe broker vektorgauss"),
-        ("Top Retail Jualan", "bkr_dom_retail_net", False,
-         "net retail broker, jual terbesar — universe broker, selalu 1D"),
+        ("Biggest foreign buying", fcol, True, "net foreign flow, largest inflow (whole market)"),
+        ("Biggest foreign selling", fcol, False, "net foreign flow, largest outflow (whole market)"),
+        ("Foreign brokers buying most", bcol, True, "net buying by foreign brokers (broker-feed stocks only)"),
+        ("Retail brokers selling most", "bkr_dom_retail_net", False,
+         "net selling by domestic retail brokers (broker-feed stocks only, always 1 day)"),
     ]
     sd = None
     panels = []
@@ -337,16 +313,16 @@ def _missing_error(message: str, status: int) -> HTMLResponse:
 def coverage_missing(d: str = Query("", alias="date"), source: str = "price") -> HTMLResponse:
     """Which tickers/indices a source is missing on a day, relative to its nearest healthy day."""
     if source not in cov.SOURCE_KEYS:
-        return _missing_error(f"Sumber tidak dikenal: {source!r}. Pilihan: {', '.join(cov.SOURCE_KEYS)}.", 400)
+        return _missing_error(f"Unknown source: {source!r}. Options: {', '.join(cov.SOURCE_KEYS)}.", 400)
     try:
         target = date.fromisoformat(d)
     except ValueError:
-        return _missing_error(f"Tanggal tidak valid: {d!r}. Gunakan format YYYY-MM-DD.", 400)
+        return _missing_error(f"Invalid date: {d!r}. Use the format YYYY-MM-DD.", 400)
     ctx: dict = {"active_page": "coverage", "error": None, "bad_request": None, "m": None}
     try:
         day_list, counts = _counts(250)
         if target not in day_list:
-            return _missing_error(f"{target} bukan hari bursa dalam 250 hari bursa terakhir.", 404)
+            return _missing_error(f"{target} is not one of the last 250 trading days.", 404)
         grid = cov.build_grid(day_list, counts)
         meta = grid["summary"][source]
         cell = next(r["cells"][source] for r in grid["rows"] if r["date"] == target)
@@ -366,6 +342,81 @@ def coverage_missing(d: str = Query("", alias="date"), source: str = "price") ->
     except Exception as exc:  # noqa: BLE001
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("coverage_missing.html", ctx)
+
+
+def _track_by_tag() -> dict:
+    """Forward-test verdict per tag, for the pattern chips on the stock page. Never raises (the page still renders)."""
+    try:
+        rows, _t, _hit_ = _cached_view_rows(CONFIG.forward_since)
+    except Exception:  # noqa: BLE001
+        return {}
+    return {
+        r["tag"]: {"code": r["status"].code, "label": r["status"].label, "n": r["n"], "small_n": r["small_n"],
+                   "edge_h5": r["edge_h5"], "edge_after_cost": r["edge_after_cost"]}
+        for r in rows
+    }
+
+
+@app.get("/guide", response_class=HTMLResponse)
+def guide() -> HTMLResponse:
+    groups = [{"key": k, "title": title, "terms": [t for t in glossary.TERMS.values() if t.group == k]}
+              for k, title in glossary.GROUPS]
+    families = [{"key": k, "title": title, "tags": [t for t in glossary.TAGS.values() if t.family == k]}
+                for k, title in glossary.TAG_FAMILIES.items()]
+    return _render("guide.html", {"active_page": "guide", "groups": groups, "families": families,
+                                  "cost_bp": round(gate.ROUND_TRIP_COST * 10000), "min_n": gate.MIN_SIGNALS,
+                                  "min_span": gate.MIN_SPAN_DAYS})
+
+
+def _ticker_exists(ticker: str) -> bool:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM price_bars WHERE ticker = %s LIMIT 1", (ticker,))
+        return cur.fetchone() is not None
+
+
+@app.get("/search", response_class=HTMLResponse)
+def search(q: str = ""):
+    q = q.strip()[:60]
+    ctx: dict = {"active_page": "", "q": q, "tickers": [], "terms": [], "tags": [], "error": None}
+    if not q:
+        return _render("search.html", ctx)
+    up = q.upper()
+    try:
+        if stockmod.TICKER_RE.match(up) and _ticker_exists(up):
+            return RedirectResponse(f"/stock/{up}", status_code=303)
+        like = f"%{q}%"
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT ticker, name FROM tickers WHERE ticker ILIKE %s OR name ILIKE %s ORDER BY ticker LIMIT 20",
+                        (f"{q}%", like))
+            ctx["tickers"] = [{"ticker": r[0], "name": r[1] or ""} for r in cur.fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    ql = q.lower()
+    ctx["terms"] = [t for t in glossary.TERMS.values() if ql in t.name.lower() or ql in t.key or ql in t.short.lower()][:12]
+    ctx["tags"] = [t for t in glossary.TAGS.values() if ql in t.name.lower() or ql in t.tag.lower()][:12]
+    return _render("search.html", ctx)
+
+
+@app.get("/stock/{ticker}", response_class=HTMLResponse)
+def stock_detail(ticker: str, capital: float | None = None, risk_pct: float = 1.0) -> HTMLResponse:
+    t = ticker.strip().upper()
+    ctx: dict = {"active_page": "screener", "ticker": t, "error": None, "not_found": False, "v": None,
+                 "capital": capital, "risk_pct": risk_pct}
+    if not stockmod.TICKER_RE.match(t):
+        ctx["not_found"] = True
+        return _render("stock.html", ctx, status_code=404)
+    try:
+        raw = stockmod.load(t)
+        if raw is None:
+            ctx["not_found"] = True
+            return _render("stock.html", ctx, status_code=404)
+        rp = min(max(risk_pct, 0.1), 5.0)
+        ctx["risk_pct"] = rp
+        balance = capital * 1_000_000 if capital and capital > 0 else None
+        ctx["v"] = stockmod.build_view(raw, _track_by_tag(), balance=balance, risk_pct=rp / 100)
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("stock.html", ctx)
 
 
 @app.get("/healthz")

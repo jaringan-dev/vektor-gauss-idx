@@ -1,45 +1,49 @@
 {% extends "base.html" %}
-{% block subtitle %}Saham hari ini — screener per-saham{% endblock %}
+{% from "_macros.html" import term, th, ticker, tag_chips, quad, db_error, disclaimer %}
+{% block subtitle %}Today's stocks{% endblock %}
 
 {% block content %}
   {% if error %}
-    <div class="panel">
-      <h2>Tidak bisa membaca data</h2>
-      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
-         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
-      <div class="err">{{ error }}</div>
-    </div>
+    {{ db_error(error) }}
   {% elif not session_date %}
     <div class="panel">
-      <h2>Belum ada sinyal</h2>
-      <p class="note">Belum ada baris di <code>signal_log</code> — jalankan <code>vg compute</code> dulu.</p>
+      <h2>No signals yet</h2>
+      <p class="note">There are no rows in <code>signal_log</code>. Run <code>vg compute</code> first.</p>
     </div>
   {% else %}
+    <div class="answer"><span class="q">Which stocks showed something unusual on {{ session_date }}?</span>
+      These {{ rows|length }} stocks triggered at least one {{ term('pattern', 'pattern') }} on the latest session. A pattern describes what the
+      transaction data looked like; it is not a prediction and not a trade instruction. Click a stock to see the details behind it, or any dotted word for an explanation.</div>
     <div class="panel">
-      <h2>Saham ber-tag — sesi {{ session_date }}</h2>
+      <h2>Stocks with patterns — session {{ session_date }}</h2>
       <p class="note">
-        {{ rows|length }} saham kena minimal satu tag pada sesi terakhir yang punya sinyal.
-        ★ = watchlist Anda · 📌 = sedang dipegang. Diurut arus asing 1 minggu (terbesar dulu).
+        <span aria-hidden="true">★</span> = on your watchlist · <span aria-hidden="true">📌</span> = currently held.
+        Sorted by 1-week foreign flow (largest first).
       </p>
       <p>
+        <label class="sr-only" for="q">Filter the table</label>
         <input id="q" class="filter" type="search" autocomplete="off"
-               placeholder="Cari saham atau tag…  (mis. BBRI, BROKER-ASING-AKUM)">
+               placeholder="Filter by stock or pattern…  (e.g. BBRI, accumulation)">
         <span id="count" class="count"></span>
       </p>
       <table id="screener">
         <thead>
           <tr>
-            <th>saham</th><th>kuadran</th><th>harga</th><th>chg</th>
-            <th>asing hari ini</th><th>asing 1mg</th>
-            <th>broker net</th><th>CR3</th><th>konsist.</th><th>KSEI</th>
-            <th style="text-align:left">tag</th>
+            <th scope="col" style="text-align:left">Stock</th>
+            {{ th('quadrant', 'Quadrant', true) }}
+            <th scope="col">Price</th>
+            {{ th('change_today', 'Change') }}
+            {{ th('foreign_today', 'Foreign today') }}{{ th('foreign_1w', 'Foreign 1 week') }}
+            {{ th('broker_net', 'Foreign brokers') }}{{ th('cr3', 'Top-3 share') }}
+            {{ th('consistency', 'Days in a row') }}{{ th('ksei', 'KSEI trend') }}
+            {{ th('pattern', 'Why it appears', true) }}
           </tr>
         </thead>
         <tbody>
           {% for r in rows %}
-          <tr data-search="{{ r.ticker }} {{ r.tags }}">
-            <td>{% if r.in_wl %}★ {% endif %}<b>{{ r.ticker }}</b>{% if r.held %} 📌{% endif %}</td>
-            <td>{{ r.quad_emoji }} <span class="quad">{{ r.quad|capitalize if r.quad else '—' }}</span></td>
+          <tr data-search="{{ r.ticker }} {{ r.tags }} {% for c in r.tag_list %}{{ plain_tag(c) }} {% endfor %}{{ quad_word(r.quad) }}">
+            <td style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
+            <td style="text-align:left">{{ quad(r.quad) }}</td>
             <td>{{ r.price }}</td>
             <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
             <td class="{{ r.nff_d0_c }}">{{ r.nff_d0 }}</td>
@@ -48,10 +52,10 @@
             <td>{{ r.cr3 }}</td>
             <td>{{ r.cons }}</td>
             <td>{{ r.ksei }}</td>
-            <td style="text-align:left">{{ r.tags }}</td>
+            <td class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
           </tr>
           {% endfor %}
-          <tr id="nomatch" style="display:none"><td colspan="11" class="note">Tidak ada yang cocok.</td></tr>
+          <tr id="nomatch" style="display:none"><td colspan="11" class="note">Nothing matches.</td></tr>
         </tbody>
       </table>
     </div>
@@ -74,7 +78,7 @@
             if (show) vis++;
           }
           if (nomatch) nomatch.style.display = vis === 0 ? "" : "none";
-          count.textContent = vis + " / " + rows.length + " saham";
+          count.textContent = vis + " / " + rows.length + " stocks";
         }
         q.addEventListener("input", apply);
         apply();
@@ -84,9 +88,7 @@
 {% endblock %}
 
 {% block footer %}
-  <p>asing = net foreign flow (domisili), hari ini &amp; 1 minggu. broker net = net broker asing
-     (feed vektorgauss, Tier 3). CR3 = konsentrasi 3 broker teratas. konsist. = berapa dari 10 hari
-     arus asing searah. KSEI = arah %asing 3 bulan (↑/↓/→).</p>
-  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
-     Tidak ada perintah beli/jual.</p>
+  <p>Foreign figures come from IDX's stock summary (almost the whole market). "Foreign brokers" comes from per-broker trade data, which covers only
+     about 200 liquid stocks. Money is in rupiah: T = trillion, B = billion, M = million.</p>
+  {{ disclaimer() }}
 {% endblock %}

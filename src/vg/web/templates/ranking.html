@@ -1,59 +1,54 @@
 {% extends "base.html" %}
-{% block subtitle %}Top / Ranking — peringkat per metrik{% endblock %}
+{% from "_macros.html" import term, th, ticker, tag_chips, quad, db_error, disclaimer %}
+{% block subtitle %}Top rankings{% endblock %}
 
 {% block content %}
   {% if error %}
-    <div class="panel">
-      <h2>Tidak bisa membaca data</h2>
-      <p class="note">App hidup, tapi query ke database gagal. Pastikan Postgres jalan &amp;
-         schema sudah di-apply (<code>vg init-db</code>), lalu muat ulang halaman.</p>
-      <div class="err">{{ error }}</div>
-    </div>
+    {{ db_error(error) }}
   {% elif not session_date %}
     <div class="panel">
-      <h2>Belum ada data</h2>
-      <p class="note">Belum ada baris <code>signal_components</code> — jalankan <code>vg compute</code> dulu.</p>
+      <h2>No data yet</h2>
+      <p class="note">There are no <code>signal_components</code> rows. Run <code>vg compute</code> first.</p>
     </div>
   {% else %}
+    <div class="answer"><span class="q">Who is being bought or sold the most?</span>
+      Rankings for session {{ session_date }}. Foreign flow covers almost the whole market; the broker-based panels cover only the roughly 200 stocks
+      in the broker feed, so they are <b>not</b> rankings of the entire market. Each panel says how many stocks it was ranked from.</div>
     <div class="panel">
-      <h2>Peringkat — sesi {{ session_date }}</h2>
-      <p class="note">
-        Angka "dari N saham" di tiap panel adalah cakupan sebenarnya pada sesi ini. Arus asing berasal
-        dari IDX (mencakup hampir seluruh saham); <b>bandar &amp; retail berasal dari feed broker yang
-        cakupannya lebih sempit</b> — jadi belum tentu peringkat seluruh pasar.
-      </p>
+      <h2>Time window</h2>
       <nav class="nav" style="margin-top:8px">
-        <a href="/ranking?h=1d" class="{{ 'active' if h == '1d' else '' }}">1 hari (1D)</a>
-        <a href="/ranking?h=5d" class="{{ 'active' if h == '5d' else '' }}">5 hari (5D)</a>
+        <a href="/ranking?h=1d" class="{{ 'active' if h == '1d' else '' }}">1 day</a>
+        <a href="/ranking?h=5d" class="{{ 'active' if h == '5d' else '' }}">5 days</a>
       </nav>
     </div>
 
     {% for p in panels %}
     <div class="panel">
       <h2>{{ p.title }}</h2>
-      <p class="note">{{ p.note }} · dari {{ p.total }} saham dengan data.</p>
+      <p class="note">{{ p.note }} · ranked from {{ p.total }} stocks with data.</p>
       {% if p.rows %}
       <table>
         <thead>
-          <tr><th>#</th><th>saham</th><th>kuadran</th><th>nilai</th><th>harga</th><th>chg</th>
-              <th style="text-align:left">tag</th></tr>
+          <tr><th scope="col">#</th><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th>
+              <th scope="col">Net flow</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}
+              {{ th('pattern', 'Patterns', true) }}</tr>
         </thead>
         <tbody>
           {% for r in p.rows %}
           <tr>
             <td>{{ r.rank }}</td>
-            <td><b>{{ r.ticker }}</b></td>
-            <td>{{ r.quad_emoji }} <span class="quad">{{ r.quad|capitalize if r.quad else '—' }}</span></td>
+            <td style="text-align:left">{{ ticker(r.ticker) }}</td>
+            <td style="text-align:left">{{ quad(r.quad) }}</td>
             <td class="{{ r.val_c }}">{{ r.val }}</td>
             <td>{{ r.price }}</td>
             <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-            <td style="text-align:left">{{ r.tags }}</td>
+            <td class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
       {% else %}
-      <p class="note">Tidak ada data untuk metrik ini pada sesi terakhir.</p>
+      <p class="note">No data for this metric on the latest session.</p>
       {% endif %}
     </div>
     {% endfor %}
@@ -61,9 +56,7 @@
 {% endblock %}
 
 {% block footer %}
-  <p>nilai = net flow (Rp) metrik terkait. "arus asing" dari IDX Stock Summary gratis (hampir
-     seluruh saham). "bandar"/"retail" dari feed broker vektorgauss (Tier 3) yang hanya mencakup
-     sebagian saham — bukan peringkat seluruh pasar, beda dari platform berbayar.</p>
-  <p class="disclaimer">Alat pembaca data mekanis — bukan nasihat investasi, bukan prediksi.
-     Tidak ada perintah beli/jual.</p>
+  <p>Net flow = buying minus selling in rupiah (T = trillion, B = billion, M = million). Foreign flow comes from IDX's free stock summary (almost the whole
+     market); broker panels come from the broker feed, which covers only part of the market, unlike paid platforms.</p>
+  {{ disclaimer() }}
 {% endblock %}

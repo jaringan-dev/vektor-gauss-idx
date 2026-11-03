@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, th, tag_chip, verdict, db_error, disclaimer %}
+{% block title %}{{ ticker }} — Vektor Gauss{% endblock %}
+{% block subtitle %}{{ ticker }}{% if v and v.name %} <span style="font-weight:400;color:var(--muted);font-size:15px">· {{ v.name }}{% if v.sector %} · {{ v.sector }}{% endif %}</span>{% endif %}{% endblock %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not_found %}
+    <div class="panel">
+      <h2>No data for “{{ ticker }}”</h2>
+      <p class="note">That code has no price history here. Check the spelling, or use the search box above (try the stock code, for example BBCA).</p>
+      <p class="note"><a href="/screener">← back to today's stocks</a></p>
+    </div>
+  {% else %}
+    <div class="answer"><span class="q">What happened to {{ ticker }}?</span>
+      {% for s in v.summary %}{{ s }} {% endfor %}
+    </div>
+
+    <div class="grid">
+      <div class="kpi"><div class="k">Price (session {{ v.latest }})</div><div class="v">{{ v.close }}</div>
+        <div class="s {{ v.chg.c }}">{{ v.chg.t }} today</div></div>
+      {% if v.comp %}
+      <div class="kpi"><div class="k">{{ term('quadrant', 'Quadrant') }}</div>
+        <div class="v">{% if v.comp.quad_key %}{{ term(v.comp.quad_key, v.comp.quad_word) }}{% else %}—{% endif %}</div>
+        <div class="s">5-day price {{ v.comp.chg5.t }}</div></div>
+      <div class="kpi"><div class="k">{{ term('foreign_today', 'Foreign flow today') }}</div>
+        <div class="v {{ v.comp.nff_d0_c }}">{{ v.comp.nff_d0 }}</div><div class="s">rupiah, net</div></div>
+      <div class="kpi"><div class="k">{{ term('foreign_1w', 'Foreign flow, 1 week') }}</div>
+        <div class="v {{ v.comp.nff_w1_c }}">{{ v.comp.nff_w1 }}</div>
+        <div class="s">{{ term('consistency', 'net buying days') }}: {{ v.comp.cons }}</div></div>
+      <div class="kpi"><div class="k">{{ term('cr3', 'Top-3 broker share') }}</div><div class="v">{{ v.comp.cr3 }}</div>
+        <div class="s">{{ term('ksei', 'KSEI foreign trend') }}: {{ v.comp.ksei }}</div></div>
+      {% endif %}
+    </div>
+
+    {% if v.comp and v.comp.bounds %}
+    <div class="panel">
+      <h2>Foreign brokers today: {{ term('certain_bounds', 'certain bounds') }}</h2>
+      <p>Net foreign-broker flow was between <b>{{ v.comp.bounds }}</b>. It is a range, not a single number, because the sell side of the
+         broker table is only partly visible; the true value is guaranteed to be inside it.</p>
+      <p class="wide-note">The older single-figure measure ({{ term('broker_net', 'foreign brokers net') }}) shows {{ v.comp.bkr_net_old }}; it only adds up net buyers and can disagree with the range.</p>
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h2>{{ term('pattern', 'Patterns') }} flagged today</h2>
+      {% if v.tags_today %}
+      <p class="note">Each pattern is a fixed rule. The verdict shows how that rule has actually performed in the {{ term('forward_test', 'forward test') }}, after costs.</p>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Pattern</th>{{ th('n', 'n') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">Verdict</th></tr></thead>
+        <tbody>
+          {% for t in v.tags_today %}
+          <tr>
+            <td style="text-align:left">{{ tag_chip(t.code) }}</td>
+            {% if t.track %}
+            <td>{{ t.track.n }}</td>
+            <td class="{{ t.track.edge_h5.c }}">{{ t.track.edge_h5.t }}</td>
+            <td class="{{ t.track.edge_after_cost.c }}">{{ t.track.edge_after_cost.t }}</td>
+            <td>{{ verdict(t.track.code, t.track.label) }}{% if t.track.small_n %} <a class="badge warn t" href="/guide#small_n" data-term="small_n">small n</a>{% endif %}</td>
+            {% else %}
+            <td colspan="4" class="note">No forward-test record yet.</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">No pattern was flagged for this stock on the latest session.</p>
+      {% endif %}
+      {% if v.history %}
+      <details>
+        <summary>Pattern history (last {{ v.history|length }} flagged days)</summary>
+        <table>
+          <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col" style="text-align:left">Patterns</th></tr></thead>
+          <tbody>
+            {% for h in v.history %}
+            <tr><td style="text-align:left">{{ h.date }}</td><td class="wrap">{% for c in h.tags %}{{ tag_chip(c) }}{% endfor %}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Risk plan <span class="badge probation">mechanical, not a forecast</span></h2>
+      {% if v.risk %}
+      <p class="note">A volatility-based way to size risk, using the latest close as the {{ term('ref_price', 'reference price') }} and the {{ term('atr', 'ATR') }}.
+         It does not say whether to trade this stock, and price can gap through any stop level. Auto-rejection limits are not modelled.</p>
+      <div class="grid">
+        <div class="kpi"><div class="k">{{ term('ref_price', 'Reference price') }}</div><div class="v">{{ v.risk.ref }}</div><div class="s">ATR(14) {{ v.risk.atr }} · tick {{ v.risk.tick }}</div></div>
+        <div class="kpi"><div class="k">{{ term('mech_stop', 'Stop level') }} (2 × ATR)</div><div class="v neg">{{ v.risk.stop }}</div><div class="s">{{ v.risk.risk_pct }} below · Rp{{ v.risk.risk_per_share }} per share</div></div>
+        {% for t in v.risk.targets %}
+        <div class="kpi"><div class="k">{{ term('r_target', 'Target') }} {{ t.r }}</div><div class="v pos">{{ t.price }}</div><div class="s">{{ t.gain }} from the reference</div></div>
+        {% endfor %}
+      </div>
+      {% for w in v.risk.warnings %}<p class="wide-note"><b>Note:</b> {{ w }}</p>{% endfor %}
+      <form method="get" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px;align-items:end">
+        <label>Capital for trading (Rp million)<br>
+          <input class="filter" style="max-width:200px" name="capital" type="number" min="1" step="any" inputmode="decimal" value="{{ capital if capital else '' }}" placeholder="e.g. 100">
+        </label>
+        <label>Risk per trade (%)<br>
+          <input class="filter" style="max-width:120px" name="risk_pct" type="number" min="0.1" max="5" step="0.1" value="{{ risk_pct }}">
+        </label>
+        <button type="submit" class="menu-btn">Calculate {{ term('position_size', 'position size') }}</button>
+      </form>
+      {% if v.risk.lots %}
+      <p style="margin-top:10px">With the capital and risk above: <b>{{ v.risk.lots.lots }} lots</b> ({{ v.risk.lots.shares }} shares, about Rp{{ v.risk.lots.value }}).
+         If the stop level is hit exactly, the loss is about <b>Rp{{ v.risk.lots.max_loss }}</b> including a {{ '%.1f' % 0.4 }}% round-trip fee.
+         {% if v.risk.lots.capped %}The size was capped by what your capital can buy.{% endif %}</p>
+      {% endif %}
+      {% else %}
+      <p class="note">No risk plan: the ATR is not available for this stock on the latest session (for example after a split), or the stop would fall at or below zero.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Last 10 sessions</h2>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col">Close</th><th scope="col">Change</th>{{ th('foreign_today', 'Foreign flow') }}<th scope="col">Traded value</th></tr></thead>
+        <tbody>
+          {% for r in v.recent %}
+          <tr><td style="text-align:left">{{ r.date }}</td><td>{{ r.close }}</td><td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+              <td class="{{ r.foreign_c }}">{{ r.foreign }}</td><td>{{ r.value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Biggest brokers on the latest broker session{% if v.levels_day %} ({{ v.levels_day }}){% endif %}</h2>
+      {% if v.buyers or v.sellers %}
+      <p class="note">{{ term('gross', 'Gross') }} value per broker (buying and selling are not netted). One broker serves many clients, so this is not the identity of a single party.</p>
+      <div class="grid">
+        <div><h3 style="font-size:14px;margin:0 0 4px">Largest buyers</h3>
+          <table><tbody>{% for b in v.buyers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
+        <div><h3 style="font-size:14px;margin:0 0 4px">Largest sellers</h3>
+          <table><tbody>{% for b in v.sellers %}<tr><td style="text-align:left"><b>{{ b.code }}</b> <span class="note">{{ b.name }}</span></td><td>{{ b.val }}</td></tr>{% endfor %}</tbody></table></div>
+      </div>
+      {% else %}
+      <p class="note">Broker data is not available for this stock. Per-broker coverage is limited to about 200 liquid stocks.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>Ownership (KSEI, monthly)</h2>
+      {% if v.ownership %}
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Month end</th><th scope="col">Local individuals</th><th scope="col">Local institutions</th><th scope="col">Foreign</th></tr></thead>
+        <tbody>{% for o in v.ownership %}<tr><td style="text-align:left">{{ o.month }}</td><td>{{ o.indiv }}</td><td>{{ o.inst }}</td><td>{{ o.foreign }}</td></tr>{% endfor %}</tbody>
+      </table>
+      <p class="wide-note">Each column is that group's share of the three groups shown together. {{ term('ksei', 'KSEI data') }} is monthly and published late.</p>
+      {% else %}
+      <p class="note">No KSEI ownership data for this stock.</p>
+      {% endif %}
+    </div>
+
+    {% if v.corp %}
+    <div class="panel">
+      <h2>Recent corporate actions</h2>
+      <table><thead><tr><th scope="col" style="text-align:left">Ex-date</th><th scope="col" style="text-align:left">Type</th><th scope="col">Detail (DPS / ratio)</th></tr></thead>
+        <tbody>{% for c in v.corp %}<tr><td style="text-align:left">{{ c.date }}</td><td style="text-align:left">{{ c.type }}</td><td>{{ c.ratio }}</td></tr>{% endfor %}</tbody></table>
+    </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}
