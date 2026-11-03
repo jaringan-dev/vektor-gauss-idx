@@ -149,7 +149,7 @@ Fase dikerjakan berurutan; tiap butir selesai hanya bila bukti yang tertulis ter
 - [x] **K5** (P1) Perbaiki Q4/Q5 (tandai baris sumber cadangan, NULL-kan `open` di luar rentang).
 
 **Fase 1 — Cakupan (± 1–3 minggu, kuota memengaruhi)**
-- [ ] **K6** (P1) Tarik ulang sisi jual 105 hari (perkiraan ±6,5 ribu panggilan).
+- [x] **K6** (P1) Tarik ulang sisi jual 105 hari (3 Jun–30 Okt). **Selesai 3 Nov 2026**: 22.445 panggilan (8.926 jendela forward-test + 13.519 sisa 64 hari), 0 hari tersisa. Total 22.446, bukan ±6,5 ribu seperti perkiraan awal yang keliru. Backup `backup-2026-11-03` memuatnya.
 - [ ] **K7** (P1) Backfill broker 2023→Mei 2026, lalu 2020→2022 (perkiraan total ±300 ribu panggilan ≈ 15 hari kuota; **perkiraan, belum diuji**).
 - [ ] **K8** (P1) `security_master`: delisting, perubahan nama, sektor PIT, keanggotaan indeks historis.
 - [ ] **K9** (P1) Peta JASICA→IDX-IC (Q6) dan `ksei_coverage` (Q7).
@@ -219,3 +219,28 @@ dihitung ulang, 7 `close` di `signal_log` dikoreksi. Tiap baris yang disentuh me
 **Mengubah data produksi (semua aditif/terlacak):** tabel baru `broker_levels`, `adj_factor`, `price_adj`, view `price_bars_adj`, kolom
 baru `raw_sha`, `parser_version`, `quality_note`, `bkr_foreign_net_lo/hi`; 17 baris harga + 16 `open` diperbaiki; sinyal 14 Sep–30 Okt
 dihitung ulang; 3 saham ditarik ulang untuk uji ujung-ke-ujung. Backup `backup-2026-11-02` mendahului semua ini.
+
+## 10. Hasil K6 (2 Nov 2026) — sisi jual jendela forward-test, **retrospektif**
+
+**Eksekusi:** `collect-broker-summary --full --backfill 2026-09-04 2026-10-30 --levels-only`: 8.926 panggilan, 41 hari bursa, 0 error,
+0 no_data, 3 jam 01 menit (02:10–05:11 WIB). Lalu `compute` ulang 41 hari, `backfill-outcomes` (1.463 baris), `eval --since 2026-09-04`.
+Sisa tarikan di jendela ini: 0. Seluruh 105 hari: 8.927 dari 22.446 pasangan saham-hari terisi (39,8%).
+
+**Hasil `eval` (edge H5 = tag dikurangi rata-rata universe hari yang sama; "likuid" = >Rp5M/hari, dibanding universe likuid):**
+
+| tag | n | hit / hit universe | edge H5 (semua) | n likuid | edge H5 (likuid) |
+|---|---|---|---|---|---|
+| `BROKER2-ASING-AKUM` | 1.062 | 32% / 28% | +0,15% | 847 | +0,84% |
+| `BROKER2-ASING-DIST` | 319 | 27% / 25% | −1,13% | 319 | **+1,07%** |
+
+**Pembacaan jujur:**
+- Tak satu pun melewati ~170bp biaya, dan tak satu pun memenuhi gerbang promosi (n≥50 ya, rentang ≥60 hari **tidak**: 41 hari).
+- `AKUM` kecil dan positif di sisi likuid (+0,84%), tetapi n efektif jauh di bawah 1.062 (sinyal bergerombol per tanggal; 41 hari saja) dan
+  belum ada selang kepercayaan (K10). `DIST` **bertanda berlawanan** menurut dua ukuran: −1,13% terhadap universe penuh (searah klaim distribusi)
+  tetapi +1,07% terhadap universe likuid (berlawanan). Karena seluruh 319 sinyal likuid, selisih 2,2 poin itu murni selisih pembanding,
+  bukan selisih sinyal; pembanding universe penuh didominasi saham kecil yang bergerak lain. Kesimpulan: arah `DIST` **tidak terbukti**.
+- Tag broker v1 nyaris tidak berubah (mis. `BROKER-ASING-AKUM` edge H5 −0,42% → −0,40%), sesuai harapan karena ia tidak membaca `broker_levels`.
+  Pergeseran kecil pada `DOM-RETAIL`/`FOREIGN-INST` (n +28/+22) berasal dari penghitungan ulang pada data harga terkoreksi (K5), bukan dari K6.
+- **Retrospektif / in-sample:** aturan dan pita (`BROKER_FOREIGN_BAND`) ditetapkan sebelum angka ini dilihat dan tidak disetel ulang, tetapi
+  sinyalnya dihitung setelah hasil harga diketahui. Ini **bukan** forward-test. Sampel forward sungguhan baru terkumpul dari hari EOD yang
+  menarik `broker_levels` sejak deploy 2 Nov.
