@@ -24,6 +24,7 @@ from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
 from . import freshness, fmt, glossary
+from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
 from . import stock as stockmod
@@ -111,6 +112,8 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Vektor Gauss — Superadmin", lifespan=_lifespan)
+# Password gate + security headers. Credentials are read per request; with no VG_WEB_PASSWORD only the headers apply.
+app.add_middleware(AuthMiddleware, creds=lambda: (CONFIG.web_user, CONFIG.web_password))
 
 
 # Formatting lives in fmt.py (shared with the plain-language summaries); short aliases keep the call sites readable.

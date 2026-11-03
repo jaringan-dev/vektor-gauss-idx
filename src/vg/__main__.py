@@ -195,7 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--save", action="store_true", help="store both scopes in analysis_snapshot for the dashboard (/risk-test)")
 
     sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
-    sv.add_argument("--host", default="127.0.0.1", help="bind host (default: local-only, §3.6)")
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="bind host (default: local-only). Any other address REQUIRES VG_WEB_PASSWORD (>= 12 chars) in .env")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--reload", action="store_true", help="auto-reload on code change (dev)")
 
@@ -690,7 +691,15 @@ def main(argv: list[str] | None = None) -> int:
         except ModuleNotFoundError:
             print('web extra not installed. Run:  pip install -e ".[web]"')
             return 1
-        print(f"superadmin dashboard → http://{args.host}:{args.port}  (Ctrl-C to stop)")
+        from .config import CONFIG
+        from .web.auth import startup_error
+
+        problem = startup_error(args.host, CONFIG.web_password)
+        if problem:
+            print(problem)
+            return 2
+        gate = "password required" if CONFIG.web_password else "no password (local only)"
+        print(f"superadmin dashboard → http://{args.host}:{args.port}  [{gate}]  (Ctrl-C to stop)")
         uvicorn.run("vg.web.app:app", host=args.host, port=args.port, reload=args.reload)
         return 0
 

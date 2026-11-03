@@ -59,6 +59,9 @@ class Config:
     fee_pct: float
     atr_sl_mult: float
     target_r: float
+    # Dashboard access (web/auth.py). Empty password = loopback-only use; required to listen on any other address.
+    web_user: str = "vg"
+    web_password: str = ""
 
     @staticmethod
     def load() -> "Config":
@@ -102,6 +105,8 @@ class Config:
             fee_pct=float(os.environ.get("VG_FEE_PCT", "0.3")) / 100.0,
             atr_sl_mult=float(os.environ.get("VG_ATR_SL_MULT", "2.0")),
             target_r=float(os.environ.get("VG_TARGET_R", "2.5")),
+            web_user=os.environ.get("VG_WEB_USER", "vg").strip() or "vg",
+            web_password=os.environ.get("VG_WEB_PASSWORD", ""),
         )
 
 
