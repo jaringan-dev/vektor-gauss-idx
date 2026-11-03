@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, db_error, disclaimer %}
+{% block subtitle %}System health{% endblock %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% else %}
+    <div class="answer" style="border-left-color:{{ 'var(--neg)' if h.level == 'bad' else ('var(--warn-fg)' if h.level == 'warn' else 'var(--pos)') }}">
+      <span class="q">Is the system running?</span>
+      <b>{{ {'ok': '✓', 'warn': '⚠', 'bad': '✖'}[h.level] }} {{ h.headline }}.</b>
+      Checked {{ h.now }}{% if h.last_report %}; the last full report (with backups and the backfill plan) was made {{ h.last_report }}{% endif %}.
+      The same checks are sent to Telegram every day, so no message means something is wrong with the machine itself.
+    </div>
+
+    <div class="panel">
+      <h2>Checks</h2>
+      <table class="cards-off">
+        <thead><tr><th scope="col" style="text-align:left">Check</th><th scope="col" style="text-align:left">Status</th><th scope="col" style="text-align:left">Detail</th></tr></thead>
+        <tbody>
+          {% for c in h.checks %}
+          <tr>
+            <td style="text-align:left"><b>{{ c.name }}</b></td>
+            <td style="text-align:left" class="{{ 'neg' if c.level == 'bad' else ('' if c.level == 'ok' else 'warnfg') }}"><span aria-hidden="true">{{ c.mark }}</span> {{ {'ok': 'OK', 'warn': 'Attention', 'bad': 'Problem'}[c.level] }}</td>
+            <td class="wrap">{{ c.text }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if h.progress %}
+    <div class="panel">
+      <h2>Broker history backfill (K7)</h2>
+      <p class="note">Fills 2023 to mid-2026 broker data, newest first, about {{ '{:,}'.format(h.budget) }} feed calls a night. The edge analysis gets its real test when it finishes.</p>
+      <div role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ h.progress.pct }}" aria-label="Backfill progress"
+           style="background:var(--prob-bg);border-radius:8px;height:16px;overflow:hidden;max-width:520px">
+        <div style="width:{{ h.progress.pct }}%;background:var(--pos);height:100%"></div>
+      </div>
+      <p style="margin:6px 0 0"><b>{{ h.progress.pct }}%</b> · {{ h.progress.done_days }} of {{ h.progress.total_days }} days filled ·
+         {{ h.progress.pending_days }} days and about {{ '{:,}'.format(h.progress.pending_calls) }} calls left (about {{ '%.1f' % h.progress.nights }} nights)</p>
+      {% if h.last_deep %}
+      <p class="wide-note">Last run: {{ h.last_deep.status }}, {{ '{:,}'.format(h.last_deep.calls) }} calls, started {{ h.last_deep.started_at[:16].replace('T', ' ') }}{% if h.last_deep.error %} · {{ h.last_deep.error }}{% endif %}.</p>
+      {% else %}
+      <p class="wide-note">No run recorded yet; the first one starts after the midnight quota reset.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+      <h2>Latest run of each job (last 3 days)</h2>
+      {% if h.recent %}
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Job</th><th scope="col" style="text-align:left">Result</th><th scope="col">Rows</th><th scope="col" style="text-align:left">Started</th></tr></thead>
+        <tbody>
+          {% for r in h.recent %}
+          <tr><td style="text-align:left">{{ r.phase }}</td><td style="text-align:left" class="{{ '' if r.status in ('ok', 'no_data') else 'neg' }}">{{ r.status }}</td>
+              <td>{{ '{:,}'.format(r.rows) }}</td><td style="text-align:left">{{ r.started_at[:16].replace('T', ' ') }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">No job runs recorded in the last 3 days.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h2>When you hear from the system</h2>
+      <ul>
+        <li><b>After each EOD run</b> (about 19:30): a status message, delivered silently when everything is fine.</li>
+        <li><b>After each backfill night</b> (early morning): progress, silent when fine.</li>
+        <li><b>Every morning at 08:00</b> (once the morning task is registered): a status message with a sound. It is independent of the EOD script, so it also reports a missed EOD.</li>
+        <li><b>Any problem</b> is delivered with a notification sound.</li>
+        <li><b>If the whole PC is off</b> nothing can be sent. Add an outside check (healthchecks.io) so a missing message reaches you another way; see the README, "Uptime monitoring".</li>
+      </ul>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  {{ disclaimer() }}
+{% endblock %}

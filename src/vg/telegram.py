@@ -42,7 +42,7 @@ class TelegramSender:
     def configured(self) -> bool:
         return bool(self.token and self.chat_id)
 
-    def send(self, text: str, parse_mode: str = "HTML") -> int:
+    def send(self, text: str, parse_mode: str = "HTML", silent: bool = False) -> int:
         if not self.configured:
             raise RuntimeError(
                 "VG_TELEGRAM_BOT_TOKEN / VG_TELEGRAM_CHAT_ID not set — use --dry-run to preview"
@@ -58,6 +58,7 @@ class TelegramSender:
                         "text": chunk,
                         "parse_mode": parse_mode,
                         "disable_web_page_preview": True,
+                        "disable_notification": silent,
                     },
                 )
                 resp.raise_for_status()

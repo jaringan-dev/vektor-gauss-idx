@@ -459,3 +459,36 @@ def test_research_glossary_terms_exist_for_every_term_the_page_uses():
 
     for key in ("ci95", "eff_blocks", "neutral_edge", "net_edge", "fdr_q", "folds_pos", "regime"):
         assert key in glossary.TERMS and glossary.TERMS[key].group == "research"
+
+
+# ---- /health ---------------------------------------------------------------------------------------
+
+def test_health_page_shows_checks_progress_and_when_you_hear_from_the_system(client, monkeypatch):
+    from vg import status as st
+
+    view = {"level": "warn", "headline": "1 warning", "now": "04 Nov 2026 08:00", "last_report": "04 Nov 2026 07:59", "budget": 15000,
+            "checks": [{"level": "ok", "name": "EOD", "text": "3 Nov 2026", "mark": "\u2713"},
+                       {"level": "warn", "name": "Backup", "text": "backup-2026-10-20 (15 days old)", "mark": "\u26a0"}],
+            "progress": st.deep_progress({"total_days": 805, "pending_days": 705, "pending_calls": 150_000}),
+            "last_deep": {"status": "ok", "calls": 15000, "error": None, "started_at": "2026-11-04T00:12:00+07:00"},
+            "recent": [{"phase": "compute", "status": "ok", "rows": 361, "started_at": "2026-11-03T19:25:00+07:00"},
+                       {"phase": "collect_broker", "status": "error", "rows": 0, "started_at": "2026-11-03T19:26:00+07:00"}]}
+    monkeypatch.setattr(webapp, "_health_view", lambda: view)
+    webapp._HEALTH_CACHE.clear()
+    r = client.get("/health")
+    assert r.status_code == 200
+    for needle in ("Is the system running?", "1 warning", "backup-2026-10-20 (15 days old)", 'role="progressbar"', 'aria-valuenow="12"',
+                   "705 days and about 150,000 calls left", "Latest run of each job", "When you hear from the system",
+                   "healthchecks.io", "no message means something is wrong"):
+        assert needle in r.text, needle
+    assert 'href="/health"' in r.text
+
+
+def test_health_page_database_failure_is_an_error_panel_not_a_crash(client, monkeypatch):
+    def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(webapp, "_health_view", boom)
+    webapp._HEALTH_CACHE.clear()
+    r = client.get("/health")
+    assert r.status_code == 200 and "Cannot read the data" in r.text and "db down" in r.text

@@ -84,6 +84,9 @@ fi
 
 vg digest || true
 
+# Tell the owner how the run went (silent when everything is fine, with a sound when something is not).
+vg status --telegram --kind evening || true
+
 if [ -n "${VG_HEALTHCHECK_URL:-}" ]; then
   # Dead-man's-switch: tells an OUTSIDE service the machine/cron is still alive.
   # Catches "PC/WSL/internet died entirely" (Task Scheduler never even fires this

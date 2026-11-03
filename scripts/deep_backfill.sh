@@ -14,4 +14,5 @@ LOG="${VG_DEEP_LOG:-$HOME/deep_backfill.log}"
   vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --budget "${VG_DEEP_BUDGET:-15000}" --compute
   echo "rc=$?  $(date -Is)"
   vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --plan
+  vg status --telegram --kind backfill   # progress after every night; loud only when something is wrong
 } >> "$LOG" 2>&1

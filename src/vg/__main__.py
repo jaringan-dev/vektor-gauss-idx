@@ -194,6 +194,11 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--min-n", type=int, default=30)
     rv.add_argument("--save", action="store_true", help="store both scopes in analysis_snapshot for the dashboard (/risk-test)")
 
+    st = sub.add_parser("status", help="is the system running? checks + Telegram status message (daily); the dashboard shows the same at /health")
+    st.add_argument("--telegram", action="store_true", help="send the report to Telegram (OK reports from evening/backfill are silent)")
+    st.add_argument("--kind", choices=("morning", "evening", "backfill"), default="morning")
+    st.add_argument("--no-save", action="store_true", help="do not store the report for the dashboard")
+
     bd = sub.add_parser("broker-deep", help="K7: fill broker history newest->oldest inside a feed-call budget (resumable; run nightly)")
     bd.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 2))
     bd.add_argument("--end", type=date.fromisoformat, default=date(2026, 6, 2))
@@ -698,6 +703,30 @@ def main(argv: list[str] | None = None) -> int:
             print("saved to analysis_snapshot (dashboard: /risk-test)")
         return 0
 
+    if args.cmd == "status":
+        import re as _re
+
+        from . import status as _status
+
+        level, text, facts, checks = _status.report(args.kind)
+        print(_re.sub(r"</?b>", "", text))
+        if not args.no_save:
+            try:
+                _status.save_snapshot(facts, checks)
+            except Exception as exc:  # noqa: BLE001
+                print(f"(could not store the report: {type(exc).__name__}: {exc})")
+        if args.telegram:
+            sender = TelegramSender()
+            if not sender.configured:
+                print("Telegram is not configured (VG_TELEGRAM_BOT_TOKEN / VG_TELEGRAM_CHAT_ID): nothing sent")
+                return 2
+            try:
+                sender.send(text, silent=_status.should_be_silent(level, args.kind))
+            except Exception as exc:  # noqa: BLE001 — surface it: an unsent status report is itself a problem
+                print(f"TELEGRAM SEND FAILED: {type(exc).__name__}: {exc}")
+                return 2
+        return 1 if level == _status.BAD else 0
+
     if args.cmd == "broker-deep":
         res = collect.backfill_broker_deep(args.start, args.end, budget=args.budget, plan_only=args.plan)
         print(f"range {args.start}..{args.end}: {res['days_total']} trading days; left to fetch: {res['pending_days']} days, "
@@ -708,6 +737,12 @@ def main(argv: list[str] | None = None) -> int:
               + (f" ({res['filled'][-1]}..{res['filled'][0]})" if res["filled"] else ""))
         for o in res["outcomes"][:20]:
             print(f"  {o.session_date} {o.status}: {o.detail}")
+        try:
+            from . import status as _status
+
+            _status.log_deep_run(res["calls"], res["error"])
+        except Exception as exc:  # noqa: BLE001 — logging must never hide the run's own result
+            print(f"(run_log write failed: {type(exc).__name__}: {exc})")
         if res["filled"] and args.compute:
             for d in sorted(res["filled"]):
                 engine.compute_day(d)

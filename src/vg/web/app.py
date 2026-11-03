@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import engine, research, risk, risk_eval
+from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
@@ -47,6 +48,7 @@ _NAV = [
         {"key": "ranking", "label": "Top rankings", "href": "/ranking"},
     ]},
     {"title": "Data", "items": [
+        {"key": "health", "label": "System health", "href": "/health"},
         {"key": "coverage", "label": "Coverage & gaps", "href": "/coverage"},
     ]},
     {"title": "Help", "items": [
@@ -451,6 +453,39 @@ def research_page(scope: str = "all", sample: str = "full") -> HTMLResponse:
                    window=payload["window"], forward_since=payload.get("forward_since"),
                    has_forward=bool(payload["results"].get(scope, {}).get("forward")))
     return _render("research.html", ctx)
+
+
+_HEALTH_CACHE = TTLCache(ttl_seconds=60)
+
+
+def _health_view() -> dict:
+    """Live-light facts (fast queries only) merged with what the last `vg status` run saved (GitHub, the backfill plan)."""
+    f = sysstatus.gather(full=False)
+    checks = sysstatus.build_checks(f)
+    level, head = sysstatus.headline(checks)
+    saved = None
+    try:
+        saved = sysstatus.load_snapshot()
+    except Exception:  # noqa: BLE001
+        pass
+    prog = sysstatus.deep_progress(f.get("deep"))
+    return {
+        "level": level, "headline": head, "checks": [c.as_dict() for c in checks], "progress": prog,
+        "last_deep": (f.get("deep") or {}).get("last"), "recent": f.get("recent_runs", []),
+        "now": f["now"].strftime("%d %b %Y %H:%M"),
+        "last_report": saved[1].astimezone().strftime("%d %b %Y %H:%M") if saved else None,
+        "budget": sysstatus.DEEP_BUDGET,
+    }
+
+
+@app.get("/health", response_class=HTMLResponse)
+def system_health() -> HTMLResponse:
+    ctx: dict = {"active_page": "health", "error": None, "h": None}
+    try:
+        ctx["h"], _wall, _hit = _HEALTH_CACHE.get_or_compute(("health",), _health_view)
+    except Exception as exc:  # noqa: BLE001
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("health.html", ctx)
 
 
 @app.get("/risk-test", response_class=HTMLResponse)
