@@ -104,10 +104,15 @@ def _build_charts(raw: dict, plan) -> dict:
     days = [r[0] for r in flow]
     lo = [(_f(r[2]) / _f(r[4])) if (r[2] is not None and r[4]) else None for r in flow]
     hi = [(_f(r[3]) / _f(r[4])) if (r[3] is not None and r[4]) else None for r in flow]
+    flows = [_f(r[1]) for r in flow]
+    m = charts.W_MOBILE                                   # a narrower variant keeps the text legible on phones (CSS swaps them)
     return {
         "price": charts.candles(bars, levels=levels, tag_counts=counts),
-        "flow": charts.flow_bars(days, [_f(r[1]) for r in flow]),
+        "price_m": charts.candles(bars, levels=levels, tag_counts=counts, width=m, uid="price-m"),
+        "flow": charts.flow_bars(days, flows),
+        "flow_m": charts.flow_bars(days, flows, width=m, uid="flow-m"),
         "band": charts.bounds_band(days, lo, hi),
+        "band_m": charts.bounds_band(days, lo, hi, width=m, uid="band-m"),
     }
 
 

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import term, th, ticker, verdict, db_error, disclaimer %}
+{% from "_macros.html" import term, th, ticker, verdict, chart, db_error, disclaimer %}
 {% block title %}{{ v.name if v else code }} — Vektor Gauss{% endblock %}
 {% block subtitle %}{% if v %}{{ v.name }} <code style="font-weight:400;font-size:13px;color:var(--muted)">{{ v.tag }}</code>{% else %}Pattern{% endif %}{% endblock %}
 
@@ -43,7 +43,8 @@
       <p class="note">The forward test is the only record that decides a pass (n ≥ {{ min_n }}, span ≥ {{ min_span }} days, edge still positive after about {{ cost_bp }} bp of costs).
          The full history is context only: it tends to be too optimistic.</p>
       {% if v.forward or v.full %}
-      <table>
+      <p class="scrollhint">Swipe the table sideways to see every column →</p>
+      <table class="sticky">
         <thead><tr><th scope="col" style="text-align:left">Period</th>{{ th('n', 'n') }}{{ th('span', 'span') }}{{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_h10', 'edge 10d') }}
           {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}{{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}{{ th('edge_after_cost', 'after costs') }}<th scope="col">Verdict</th></tr></thead>
         <tbody>
@@ -94,7 +95,7 @@
     <div class="panel">
       <h2>How often it fires</h2>
       <p class="note">Stocks flagged on each of the last 90 sessions. Spikes mean the pattern is picking up a market-wide move rather than single stocks.</p>
-      {{ v.chart|safe }}
+      {{ chart(v.chart, v.chart_m) }}
     </div>
     {% endif %}
 

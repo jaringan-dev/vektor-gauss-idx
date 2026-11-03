@@ -254,7 +254,7 @@ def test_view_builds_the_three_charts_and_draws_the_risk_levels_on_the_price_cha
 
 def test_view_without_chart_data_has_no_charts_instead_of_empty_frames():
     v = stockmod.build_view(_raw(), TRACK)
-    assert v["charts"] == {"price": None, "flow": None, "band": None}
+    assert set(v["charts"]) == {"price", "price_m", "flow", "flow_m", "band", "band_m"} and not any(v["charts"].values())
 
 
 def test_stock_page_embeds_the_charts_with_their_explanations(client, monkeypatch):
@@ -326,3 +326,40 @@ def test_pattern_chips_everywhere_link_to_the_pattern_page(client, monkeypatch):
     assert 'href="/pattern/BROKER2-ASING-AKUM"' in client.get("/stock/BBCA").text
     assert 'href="/pattern/AKUM-ASING"' in client.get("/guide").text
     assert "Open the pattern page" in client.get("/guide").text
+
+
+# ---- phones ---------------------------------------------------------------------------------------
+
+def test_stock_page_ships_both_chart_variants_and_css_swaps_them(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _with_charts(_raw()))
+    t = client.get("/stock/BBCA").text
+    assert t.count('class="chart-wide"') == 3 and t.count('class="chart-narrow"') == 3
+    assert 'aria-labelledby="price-t price-d"' in t and 'aria-labelledby="price-m-t price-m-d"' in t
+    assert ".chart-wide { display:none; }" in t and "grid kpis" in t
+
+
+def test_screener_and_ranking_lists_become_cards_with_a_label_on_every_value(client, monkeypatch):
+    row = {"ticker": "BBCA", "in_wl": False, "held": False, "quad": "AKUMULASI", "price": "4,840", "chg": {"t": "-2.8%", "c": "neg"},
+           "nff_d0": "-24B", "nff_d0_c": "neg", "nff_w1": "+486B", "nff_w1_c": "pos", "bkr_net": "+1B", "bkr_net_c": "pos", "cr3": "62%",
+           "cons": "2/10", "ksei": "↓", "tags": "AKUM-ASING", "tag_list": ["AKUM-ASING"]}
+    monkeypatch.setattr(webapp, "_screener_view", lambda: (date(2026, 11, 3), [row]))
+    t = client.get("/screener").text
+    assert 'class="cards"' in t and 'role="cell"' in t
+    for label in ("Quadrant", "Price", "Change", "Foreign today", "Foreign 1 week", "Foreign brokers", "Top-3 share",
+                  "Days in a row", "KSEI trend", "Why it appears"):
+        assert f'data-label="{label}"' in t, label
+    panel = {"title": "Biggest foreign buying", "note": "n", "total": 5,
+             "rows": [{"rank": 1, "ticker": "BBCA", "quad": "AKUMULASI", "val": "+1B", "val_c": "pos", "price": "4,840",
+                       "chg": {"t": "-2.8%", "c": "neg"}, "tags": "AKUM-ASING", "tag_list": ["AKUM-ASING"]}]}
+    monkeypatch.setattr(webapp, "_ranking_view", lambda h: (date(2026, 11, 3), "5d", [panel]))
+    r = client.get("/ranking").text
+    assert 'class="cards"' in r and 'class="rk">#1<' in r and 'data-label="Net flow"' in r
+
+
+def test_wide_analysis_tables_get_a_sticky_first_column_and_a_swipe_hint(client, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (_snapshot(), dt.datetime(2026, 11, 3, 9, 0)))
+    t = client.get("/risk-test").text
+    assert 'class="sticky"' in t and "Swipe the table sideways" in t
+    assert "table.sticky th:first-child" in t

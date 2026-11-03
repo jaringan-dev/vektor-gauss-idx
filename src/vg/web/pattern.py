@@ -66,8 +66,10 @@ def build_view(raw: dict, forward: dict | None, full: dict | None, rule: dict | 
         latest.append({"ticker": tk, "price": fmt.price(close), "chg": fmt.cell((close / prev - 1) if (close and prev) else None, 1),
                        "value": fmt.idr(_f(value)).lstrip("+")})
     cal = raw["calendar"]
-    chart = charts.count_bars(cal, [raw["counts"].get(d, 0) for d in cal]) if cal else None
+    series = [raw["counts"].get(d, 0) for d in cal]
+    chart = charts.count_bars(cal, series) if cal else None
+    chart_m = charts.count_bars(cal, series, width=charts.W_MOBILE, uid="count-m") if cal else None
     return {"tag": tag, "name": info.name, "what": info.what, "rule": info.rule, "caveat": info.caveat, "family": info.family,
             "forward": forward, "full": full, "monthly": monthly, "latest": latest, "n_latest": raw["n_latest"],
-            "last_day": raw["last_day"].isoformat() if raw["last_day"] else None, "chart": chart, "rule_test": rule,
+            "last_day": raw["last_day"].isoformat() if raw["last_day"] else None, "chart": chart, "chart_m": chart_m, "rule_test": rule,
             "siblings": [{"tag": t.tag, "name": plain_tag(t.tag)} for t in TAGS.values() if t.family == info.family and t.tag != tag]}

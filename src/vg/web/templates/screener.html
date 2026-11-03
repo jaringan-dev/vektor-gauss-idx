@@ -26,10 +26,10 @@
                placeholder="Filter by stock or pattern…  (e.g. BBRI, accumulation)">
         <span id="count" class="count"></span>
       </p>
-      <table id="screener">
-        <thead>
-          <tr>
-            <th scope="col" style="text-align:left">Stock</th>
+      <table id="screener" class="cards" role="table">
+        <thead role="rowgroup">
+          <tr role="row">
+            <th scope="col" role="columnheader" style="text-align:left">Stock</th>
             {{ th('quadrant', 'Quadrant', true) }}
             <th scope="col">Price</th>
             {{ th('change_today', 'Change') }}
@@ -39,20 +39,20 @@
             {{ th('pattern', 'Why it appears', true) }}
           </tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {% for r in rows %}
-          <tr data-search="{{ r.ticker }} {{ r.tags }} {% for c in r.tag_list %}{{ plain_tag(c) }} {% endfor %}{{ quad_word(r.quad) }}">
-            <td style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
-            <td style="text-align:left">{{ quad(r.quad) }}</td>
-            <td>{{ r.price }}</td>
-            <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-            <td class="{{ r.nff_d0_c }}">{{ r.nff_d0 }}</td>
-            <td class="{{ r.nff_w1_c }}">{{ r.nff_w1 }}</td>
-            <td class="{{ r.bkr_net_c }}">{{ r.bkr_net }}</td>
-            <td>{{ r.cr3 }}</td>
-            <td>{{ r.cons }}</td>
-            <td>{{ r.ksei }}</td>
-            <td class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
+          <tr role="row" data-search="{{ r.ticker }} {{ r.tags }} {% for c in r.tag_list %}{{ plain_tag(c) }} {% endfor %}{{ quad_word(r.quad) }}">
+            <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
+            <td role="cell" data-label="Quadrant" style="text-align:left">{{ quad(r.quad) }}</td>
+            <td role="cell" data-label="Price">{{ r.price }}</td>
+            <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td role="cell" data-label="Foreign today" class="{{ r.nff_d0_c }}">{{ r.nff_d0 }}</td>
+            <td role="cell" data-label="Foreign 1 week" class="{{ r.nff_w1_c }}">{{ r.nff_w1 }}</td>
+            <td role="cell" data-label="Foreign brokers" class="{{ r.bkr_net_c }}">{{ r.bkr_net }}</td>
+            <td role="cell" data-label="Top-3 share">{{ r.cr3 }}</td>
+            <td role="cell" data-label="Days in a row">{{ r.cons }}</td>
+            <td role="cell" data-label="KSEI trend">{{ r.ksei }}</td>
+            <td role="cell" data-label="Why it appears" class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
           </tr>
           {% endfor %}
           <tr id="nomatch" style="display:none"><td colspan="11" class="note">Nothing matches.</td></tr>

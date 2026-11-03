@@ -27,22 +27,22 @@
       <h2>{{ p.title }}</h2>
       <p class="note">{{ p.note }} · ranked from {{ p.total }} stocks with data.</p>
       {% if p.rows %}
-      <table>
-        <thead>
-          <tr><th scope="col">#</th><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th>
+      <table class="cards" role="table">
+        <thead role="rowgroup">
+          <tr role="row"><th scope="col" role="columnheader">#</th><th scope="col" style="text-align:left">Stock</th><th scope="col" style="text-align:left">Quadrant</th>
               <th scope="col">Net flow</th><th scope="col">Price</th>{{ th('change_today', 'Change') }}
               {{ th('pattern', 'Patterns', true) }}</tr>
         </thead>
-        <tbody>
+        <tbody role="rowgroup">
           {% for r in p.rows %}
-          <tr>
-            <td>{{ r.rank }}</td>
-            <td style="text-align:left">{{ ticker(r.ticker) }}</td>
-            <td style="text-align:left">{{ quad(r.quad) }}</td>
-            <td class="{{ r.val_c }}">{{ r.val }}</td>
-            <td>{{ r.price }}</td>
-            <td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-            <td class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
+          <tr role="row">
+            <td role="cell" class="rankcell">{{ r.rank }}</td>
+            <td role="cell" class="key" style="text-align:left"><span class="rk">#{{ r.rank }}</span>{{ ticker(r.ticker) }}</td>
+            <td role="cell" data-label="Quadrant" style="text-align:left">{{ quad(r.quad) }}</td>
+            <td role="cell" data-label="Net flow" class="{{ r.val_c }}">{{ r.val }}</td>
+            <td role="cell" data-label="Price">{{ r.price }}</td>
+            <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td role="cell" data-label="Patterns" class="wrap">{{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}</td>
           </tr>
           {% endfor %}
         </tbody>

@@ -133,6 +133,42 @@
     .chip { white-space:nowrap; }
     details > summary { cursor:pointer; color:var(--muted); font-size:13px; margin:8px 0; }
 
+    /* ---- phones: legible charts, 2-column KPI tiles, card lists, sticky first column, 16px inputs ---- */
+    .chart-narrow { display:none; }
+    .scrollhint { display:none; color:var(--muted); font-size:12px; margin:0 0 6px; }
+    .rk { display:none; }
+    @media (max-width:640px) {
+      main { padding:12px 14px; }
+      .topsearch { padding:10px 14px 0; }
+      .topsearch input, .filter, input[type=number] { font-size:16px; }
+      .strip { padding:8px 14px; }
+      .chart-wide { display:none; }
+      .chart-narrow { display:block; }
+      .grid.kpis { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .kpi .v { font-size:18px; }
+      .panel { padding:12px; }
+      .answer { padding:10px 12px; }
+      a.chip { padding:6px 10px; margin:3px 4px 3px 0; }
+      a.t { position:relative; }
+      a.t::after { content:""; position:absolute; inset:-8px -3px; }   /* bigger tap area without moving the underline */
+      .menu-btn, .topsearch button, nav.nav a { min-height:40px; }
+      .scrollhint { display:block; }
+      table.sticky th:first-child, table.sticky td:first-child { position:sticky; left:0; z-index:1; background:var(--panel); }
+      table.sticky th:first-child, table.sticky td:first-child { width:140px; max-width:140px; min-width:110px; white-space:normal; }
+      table.sticky td:first-child .chip { white-space:normal; display:inline-block; }
+      table.cards, table.cards tbody, table.cards tr, table.cards td { display:block; }
+      table.cards thead { position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden; }
+      table.cards tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2px 14px; border:1px solid var(--border);
+                       border-radius:10px; margin:0 0 10px; padding:10px 12px; }
+      table.cards td { border:0; padding:2px 0; text-align:left !important; white-space:normal; }
+      table.cards td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:11px; }
+      table.cards td.key { grid-column:1 / -1; font-size:16px; padding-bottom:4px; }
+      table.cards td.wrap { grid-column:1 / -1; min-width:0; }
+      table.cards td.rankcell { display:none; }
+      table.cards .rk { display:inline; color:var(--muted); margin-right:6px; font-weight:400; }
+      table.cards #nomatch td, table.cards td.note { grid-column:1 / -1; }
+    }
+
     /* coverage heatmap (F1): state = colour + symbol + number, never colour alone */
     table.cov th[scope="row"] { text-align:left; font-weight:500; color:var(--fg); }
     table.cov td, table.cov thead th { text-align:center; }

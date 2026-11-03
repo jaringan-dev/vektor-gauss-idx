@@ -93,3 +93,13 @@ def test_bounds_band_clips_outlier_days_but_keeps_their_real_values():
     assert "1 day beyond the scale" in svg
     assert "between +50.0% and +56.0% of traded value" in svg        # tooltip keeps the true range
     assert "+56%" not in svg                                           # the axis is not stretched to the outlier
+
+
+def test_narrow_variant_fits_a_phone_and_keeps_ids_unique():
+    wide = charts.candles(_bars())
+    narrow = charts.candles(_bars(), width=charts.W_MOBILE, uid="price-m")
+    assert 'viewBox="0 0 720 ' in wide and f'viewBox="0 0 {charts.W_MOBILE} ' in narrow
+    assert 'id="price-t"' in wide and 'id="price-m-t"' in narrow and 'id="price-t"' not in narrow
+    _parse(narrow)
+    xs = [float(x) for x in __import__("re").findall(r'x2="([\d.]+)"', narrow)]
+    assert max(xs) <= charts.W_MOBILE                                 # nothing is drawn beyond the narrow canvas

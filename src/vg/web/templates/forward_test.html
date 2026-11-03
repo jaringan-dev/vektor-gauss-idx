@@ -3,7 +3,8 @@
 {% block subtitle %}Track record: do the patterns actually work?{% endblock %}
 
 {% macro eval_table(rows, show_status) %}
-  <table>
+  <p class="scrollhint">Swipe the table sideways to see every column →</p>
+  <table class="sticky">
     <thead>
       <tr>
         {{ th('pattern', 'pattern', true) }}{{ th('n', 'n') }}{{ th('span', 'span') }}

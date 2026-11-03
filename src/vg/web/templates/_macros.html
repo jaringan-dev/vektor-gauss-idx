@@ -6,7 +6,7 @@
 {%- endmacro %}
 
 {% macro th(key, label, left=false) -%}
-<th scope="col"{% if left %} style="text-align:left"{% endif %}><a class="t" href="/guide#{{ key }}" data-term="{{ key }}">{{ label }}</a></th>
+<th scope="col" role="columnheader"{% if left %} style="text-align:left"{% endif %}><a class="t" href="/guide#{{ key }}" data-term="{{ key }}">{{ label }}</a></th>
 {%- endmacro %}
 
 {% macro ticker(code, wl=false, held=false) -%}
@@ -24,6 +24,11 @@
 
 {% macro quad(q) -%}
 {%- if q and quad_key(q) %}<a class="t" href="/guide#{{ quad_key(q) }}" data-term="{{ quad_key(q) }}">{{ quad_word(q) }}</a>{% else %}<span class="quad">—</span>{% endif %}
+{%- endmacro %}
+
+{# A wide and a narrow variant of one chart; CSS shows the one that fits (text stays legible on phones). #}
+{% macro chart(wide, narrow) -%}
+<div class="chart-wide">{{ wide|safe }}</div>{% if narrow %}<div class="chart-narrow">{{ narrow|safe }}</div>{% endif %}
 {%- endmacro %}
 
 {% macro db_error(error) -%}

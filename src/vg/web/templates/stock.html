@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import term, th, tag_chip, verdict, db_error, disclaimer %}
+{% from "_macros.html" import term, th, tag_chip, verdict, chart, db_error, disclaimer %}
 {% block title %}{{ ticker }} — Vektor Gauss{% endblock %}
 {% block subtitle %}{{ ticker }}{% if v and v.name %} <span style="font-weight:400;color:var(--muted);font-size:15px">· {{ v.name }}{% if v.sector %} · {{ v.sector }}{% endif %}</span>{% endif %}{% endblock %}
 
@@ -17,7 +17,7 @@
       {% for s in v.summary %}{{ s }} {% endfor %}
     </div>
 
-    <div class="grid">
+    <div class="grid kpis">
       <div class="kpi"><div class="k">Price (session {{ v.latest }})</div><div class="v">{{ v.close }}</div>
         <div class="s {{ v.chg.c }}">{{ v.chg.t }} today</div></div>
       {% if v.comp %}
@@ -40,7 +40,7 @@
       <p class="note">Candles: hollow = closed above the open, solid = closed below. Dashed lines are the {{ term('mech_stop', 'stop level') }} (red) and the
          {{ term('r_target', 'targets') }} (green) of the risk plan below. Bars underneath are volume, then (grey) how many {{ term('pattern', 'patterns') }} were flagged each day.
          Hover a candle for its numbers. Prices are adjusted for splits and bonus issues.</p>
-      {{ v.charts.price|safe }}
+      {{ chart(v.charts.price, v.charts.price_m) }}
     </div>
     {% endif %}
     {% if v.charts.flow %}
@@ -48,7 +48,7 @@
       <h2>{{ term('foreign_today', 'Foreign flow') }} per day</h2>
       <p class="note">Bars: net foreign flow each day (green above the zero line = net buying, red below = net selling). The thin line is the running total over the period.
          Hover a bar or the line for the exact amount.</p>
-      {{ v.charts.flow|safe }}
+      {{ chart(v.charts.flow, v.charts.flow_m) }}
     </div>
     {% endif %}
     {% if v.charts.band %}
@@ -57,7 +57,7 @@
       <p class="note">Each bar is the range that is guaranteed to contain foreign-broker net flow that day, as a share of traded value. A bar entirely above zero means
          net buying is certain; entirely below, net selling is certain; a bar that crosses zero means the data cannot tell. A short bar is a precise answer.
          Only days with broker data are drawn.</p>
-      {{ v.charts.band|safe }}
+      {{ chart(v.charts.band, v.charts.band_m) }}
     </div>
     {% endif %}
 
@@ -115,7 +115,7 @@
       {% if v.risk %}
       <p class="note">A volatility-based way to size risk, using the latest close as the {{ term('ref_price', 'reference price') }} and the {{ term('atr', 'ATR') }}.
          It does not say whether to trade this stock, and price can gap through any stop level. Auto-rejection limits are not modelled.</p>
-      <div class="grid">
+      <div class="grid kpis">
         <div class="kpi"><div class="k">{{ term('ref_price', 'Reference price') }}</div><div class="v">{{ v.risk.ref }}</div><div class="s">ATR(14) {{ v.risk.atr }} · tick {{ v.risk.tick }}</div></div>
         <div class="kpi"><div class="k">{{ term('mech_stop', 'Stop level') }} (2 × ATR)</div><div class="v neg">{{ v.risk.stop }}</div><div class="s">{{ v.risk.risk_pct }} below · Rp{{ v.risk.risk_per_share }} per share</div></div>
         {% for t in v.risk.targets %}
