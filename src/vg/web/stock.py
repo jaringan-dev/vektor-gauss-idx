@@ -11,12 +11,13 @@ import re
 from datetime import date, timedelta
 
 from .. import risk
-from . import fmt
+from . import charts, fmt
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import stock_summary
 
 TICKER_RE = re.compile(r"^[A-Z0-9]{3,6}$")
-HISTORY_DAYS = 120
+HISTORY_DAYS = 190
+CHART_SESSIONS = 90
 
 
 def _f(v):
@@ -43,6 +44,17 @@ def load(ticker: str) -> dict | None:
             "FROM signal_components WHERE ticker = %s ORDER BY session_date DESC LIMIT 15", (ticker,))
         comps = cur.fetchall()
         cur.execute(
+            "SELECT b.session_date, b.open, b.high, b.low, b.close, b.volume, COALESCE(a.split_factor, 1) "
+            "FROM price_bars b LEFT JOIN price_adj a USING (session_date, ticker) "
+            "WHERE b.ticker = %s AND b.close > 0 AND b.high > 0 AND b.low > 0 ORDER BY b.session_date DESC LIMIT %s",
+            (ticker, CHART_SESSIONS))
+        chart_bars = cur.fetchall()[::-1]
+        cur.execute(
+            "SELECT sc.session_date, sc.nff_d0, sc.bkr_foreign_net_lo, sc.bkr_foreign_net_hi, pb.value "
+            "FROM signal_components sc JOIN price_bars pb ON pb.session_date = sc.session_date AND pb.ticker = sc.ticker "
+            "WHERE sc.ticker = %s ORDER BY sc.session_date DESC LIMIT %s", (ticker, CHART_SESSIONS))
+        chart_flow = cur.fetchall()[::-1]
+        cur.execute(
             "SELECT session_date, tag, ret_h5, ret_vs_ihsg_h5 FROM signal_log WHERE ticker = %s AND session_date >= %s "
             "ORDER BY session_date DESC, tag", (ticker, latest - timedelta(days=HISTORY_DAYS)))
         tags = cur.fetchall()
@@ -62,7 +74,8 @@ def load(ticker: str) -> dict | None:
             "SELECT ex_date, type, exercise_ratio, proceed_ratio FROM corp_actions WHERE ticker = %s "
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
-    return {"ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
+    return {"chart_bars": chart_bars, "chart_flow": chart_flow,
+            "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
             "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest}
 
 
@@ -72,6 +85,30 @@ def _ownership_row(o) -> dict:
     total = sum(v for v in vals if v)
     cells = [fmt.pct_plain(v / total, 1) if (v is not None and total) else "—" for v in vals]
     return {"month": o[0].strftime("%b %Y"), "indiv": cells[0], "inst": cells[1], "foreign": cells[2]}
+
+
+def _build_charts(raw: dict, plan) -> dict:
+    """SVG strings (or None when there is not enough data). Split/bonus-adjusted prices; risk levels drawn only if a plan exists."""
+    bars = []
+    for d, o, h, l, c, v, f in raw.get("chart_bars", []):
+        f = float(f)
+        bars.append({"d": d, "o": float(o) * f if o else None, "h": float(h) * f, "l": float(l) * f, "c": float(c) * f,
+                     "v": float(v) if v is not None else 0.0})
+    counts: dict[date, int] = {}
+    for sd, _tag, _r5, _rv in raw["tags"]:
+        counts[sd] = counts.get(sd, 0) + 1
+    levels = []
+    if plan:
+        levels = [{"price": plan.stop, "label": "Stop", "kind": "stop"}] +                  [{"price": t.price, "label": f"{t.r:g}R", "kind": "target"} for t in plan.targets]
+    flow = raw.get("chart_flow", [])
+    days = [r[0] for r in flow]
+    lo = [(_f(r[2]) / _f(r[4])) if (r[2] is not None and r[4]) else None for r in flow]
+    hi = [(_f(r[3]) / _f(r[4])) if (r[3] is not None and r[4]) else None for r in flow]
+    return {
+        "price": charts.candles(bars, levels=levels, tag_counts=counts),
+        "flow": charts.flow_bars(days, [_f(r[1]) for r in flow]),
+        "band": charts.bounds_band(days, lo, hi),
+    }
 
 
 def _pct_of(a, b):
@@ -157,7 +194,9 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
                 "max_loss": f"{lots.max_loss:,.0f}", "capped": lots.capped_by_balance},
         }
 
+    charts_view = _build_charts(raw, plan)
     return {
+        "charts": charts_view,
         "ticker": t, "name": name, "sector": sector, "latest": raw["latest"].isoformat(),
         "close": fmt.price(close), "chg": fmt.cell(chg, 1), "comp": comp_view, "tags_today": tags_today_view,
         "summary": stock_summary(summary_in), "recent": recent, "history": history, "buyers": buyers,

@@ -34,6 +34,33 @@
       {% endif %}
     </div>
 
+    {% if v.charts.price %}
+    <div class="panel">
+      <h2>Price, last 90 sessions</h2>
+      <p class="note">Candles: hollow = closed above the open, solid = closed below. Dashed lines are the {{ term('mech_stop', 'stop level') }} (red) and the
+         {{ term('r_target', 'targets') }} (green) of the risk plan below. Bars underneath are volume, then (grey) how many {{ term('pattern', 'patterns') }} were flagged each day.
+         Hover a candle for its numbers. Prices are adjusted for splits and bonus issues.</p>
+      {{ v.charts.price|safe }}
+    </div>
+    {% endif %}
+    {% if v.charts.flow %}
+    <div class="panel">
+      <h2>{{ term('foreign_today', 'Foreign flow') }} per day</h2>
+      <p class="note">Bars: net foreign flow each day (green above the zero line = net buying, red below = net selling). The thin line is the running total over the period.
+         Hover a bar or the line for the exact amount.</p>
+      {{ v.charts.flow|safe }}
+    </div>
+    {% endif %}
+    {% if v.charts.band %}
+    <div class="panel">
+      <h2>Foreign brokers per day: the {{ term('certain_bounds', 'certain range') }}</h2>
+      <p class="note">Each bar is the range that is guaranteed to contain foreign-broker net flow that day, as a share of traded value. A bar entirely above zero means
+         net buying is certain; entirely below, net selling is certain; a bar that crosses zero means the data cannot tell. A short bar is a precise answer.
+         Only days with broker data are drawn.</p>
+      {{ v.charts.band|safe }}
+    </div>
+    {% endif %}
+
     {% if v.comp and v.comp.bounds %}
     <div class="panel">
       <h2>Foreign brokers today: {{ term('certain_bounds', 'certain bounds') }}</h2>

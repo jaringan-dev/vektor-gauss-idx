@@ -235,3 +235,31 @@ def test_stock_page_shows_the_evidence_next_to_the_levels(client, monkeypatch):
     assert "On " in r.text and "signals (3)" in r.text                      # the stock's own flagged pattern is listed
     monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (None, None))
     assert "Has a rule like this paid off?" not in client.get("/stock/BBCA").text
+
+
+def _with_charts(raw, n=30):
+    D = Decimal
+    days = [LATEST - timedelta(days=i) for i in range(n)][::-1]
+    raw["chart_bars"] = [(d, D(4800 + i), D(4850 + i), D(4780 + i), D(4820 + i), D(1_000_000), D(1)) for i, d in enumerate(days)]
+    raw["chart_flow"] = [(d, D(1_000_000_000 * (-1) ** i), D(-15_000_000_000), D(-1_000_000_000), D(250_000_000_000))
+                         for i, d in enumerate(days)]
+    return raw
+
+
+def test_view_builds_the_three_charts_and_draws_the_risk_levels_on_the_price_chart():
+    v = stockmod.build_view(_with_charts(_raw(atr=120)), TRACK)
+    assert v["charts"]["price"].startswith("<svg") and "Stop 4,600" in v["charts"]["price"]
+    assert v["charts"]["flow"].startswith("<svg") and v["charts"]["band"].startswith("<svg")
+
+
+def test_view_without_chart_data_has_no_charts_instead_of_empty_frames():
+    v = stockmod.build_view(_raw(), TRACK)
+    assert v["charts"] == {"price": None, "flow": None, "band": None}
+
+
+def test_stock_page_embeds_the_charts_with_their_explanations(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _with_charts(_raw()))
+    r = client.get("/stock/BBCA")
+    for needle in ("Price, last 90 sessions", "hollow = closed above the open", "per day", "certain range</a>",
+                   'aria-labelledby="price-t price-d"', "<polyline"):
+        assert needle in r.text, needle
