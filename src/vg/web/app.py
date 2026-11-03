@@ -182,9 +182,15 @@ def _track_summary() -> dict | None:
     return {"n": len(rows), "passed": codes.count(gate.READY), "failing": codes.count(gate.FAILING), "probation": codes.count(gate.PROBATION)}
 
 
+# Today and pattern pages run several aggregate queries (about 1.5 s cold) but only change after the EOD run, so the built view is kept for
+# 10 minutes per signal date; `?fresh=1` recomputes. The page prints when it was built, so the cache is never hidden.
+_TODAY_CACHE = TTLCache(ttl_seconds=600)
+_PATTERN_CACHE = TTLCache(ttl_seconds=600)
+
+
 @app.get("/", response_class=HTMLResponse)
-def today() -> HTMLResponse:
-    ctx: dict = {"active_page": "today", "error": None, "v": None, "empty": False,
+def today(fresh: bool = False) -> HTMLResponse:
+    ctx: dict = {"active_page": "today", "error": None, "v": None, "empty": False, "computed_at": None, "cache_hit": False,
                  "wl": set(CONFIG.watchlist), "held": set(CONFIG.holdings)}
     try:
         sd = engine.latest_signal_date()
@@ -192,7 +198,9 @@ def today() -> HTMLResponse:
             ctx["empty"] = True
         else:
             watch = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
-            ctx["v"] = todaymod.build_view(todaymod.load(sd, watch), _track_summary())
+            ctx["v"], wall, ctx["cache_hit"] = _TODAY_CACHE.get_or_compute(
+                ("today", sd, tuple(watch)), lambda: todaymod.build_view(todaymod.load(sd, watch), _track_summary()), fresh=fresh)
+            ctx["computed_at"] = datetime.fromtimestamp(wall).strftime("%H:%M")
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("today.html", ctx)
@@ -613,7 +621,7 @@ def _rule_all_targets(code: str) -> dict | None:
 
 
 @app.get("/pattern/{tag}", response_class=HTMLResponse)
-def pattern_detail(tag: str) -> HTMLResponse:
+def pattern_detail(tag: str, fresh: bool = False) -> HTMLResponse:
     code = tag.strip().upper()
     ctx: dict = {"active_page": "tracker", "code": code, "error": None, "not_found": False, "v": None,
                  "min_n": gate.MIN_SIGNALS, "min_span": gate.MIN_SPAN_DAYS, "cost_bp": round(gate.ROUND_TRIP_COST * 10000),
@@ -622,7 +630,7 @@ def pattern_detail(tag: str) -> HTMLResponse:
         ctx["not_found"] = True
         return _render("pattern.html", ctx, status_code=404)
     try:
-        raw = patternmod.load(code)
+        raw, _wall, _hit = _PATTERN_CACHE.get_or_compute(("pattern", code, engine.latest_signal_date()), lambda: patternmod.load(code), fresh=fresh)
         forward = full = None
         if CONFIG.forward_since:
             forward = next((r for r in _cached_view_rows(CONFIG.forward_since)[0] if r["tag"] == code), None)

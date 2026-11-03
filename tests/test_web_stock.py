@@ -554,3 +554,47 @@ def test_today_page_handles_no_signals_and_database_failure(client, monkeypatch)
 def test_track_record_moved_to_its_own_address(client):
     r = client.get("/track-record")
     assert r.status_code == 200 and 'href="/track-record"' in r.text
+
+
+# ---- cache for Today and pattern pages -------------------------------------------------------------------
+
+def test_today_view_is_cached_for_the_same_signal_date_and_fresh_rebuilds_it(client, monkeypatch):
+    from vg.web import today
+
+    calls = []
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: LATEST)
+    monkeypatch.setattr(today, "load", lambda sd, watch: (calls.append(sd), _today_raw())[1])
+    monkeypatch.setattr(webapp, "_track_summary", lambda: None)
+    webapp._TODAY_CACHE.clear()
+    first = client.get("/")
+    assert first.status_code == 200 and len(calls) == 1 and "Built at" in first.text and "kept for up to 10 minutes" not in first.text
+    second = client.get("/")
+    assert len(calls) == 1 and "kept for up to 10 minutes" in second.text              # served from the cache and says so
+    client.get("/?fresh=1")
+    assert len(calls) == 2
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: LATEST + timedelta(days=1))
+    client.get("/")
+    assert len(calls) == 3                                                           # a new signal date never reuses yesterday's view
+
+
+def test_pattern_data_is_cached_per_pattern(client, monkeypatch):
+    from vg.web import pattern as patternmod
+
+    calls = []
+    monkeypatch.setattr(patternmod, "load", lambda t: (calls.append(t), _pattern_raw())[1])
+    monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: LATEST)
+    monkeypatch.setattr(webapp, "_cached_view_rows", lambda since, fresh=False: ([], 0.0, True))
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (None, None))
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (None, None))
+    webapp._PATTERN_CACHE.clear()
+    client.get("/pattern/BROKER2-ASING-AKUM")
+    client.get("/pattern/BROKER2-ASING-AKUM")
+    assert calls == ["BROKER2-ASING-AKUM"]
+    client.get("/pattern/AKUM-ASING")
+    client.get("/pattern/BROKER2-ASING-AKUM?fresh=1")
+    assert calls == ["BROKER2-ASING-AKUM", "AKUM-ASING", "BROKER2-ASING-AKUM"]
+
+
+def test_every_page_carries_the_theme_button(client):
+    for path in ("/guide", "/health"):
+        assert 'id="theme-btn"' in client.get(path).text

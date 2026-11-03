@@ -35,6 +35,8 @@
       {% if v.track %}{% if v.track.passed %}{{ v.track.passed }} of {{ v.track.n }} tracked patterns have passed the forward test.{% else %}none of the {{ v.track.n }} tracked patterns has passed the forward test yet.{% endif %}{% endif %}
     </div>
 
+    <p class="wide-note" style="margin:-6px 0 14px">Built at {{ computed_at }}{% if cache_hit %} (kept for up to 10 minutes; add <code>?fresh=1</code> to the address to rebuild){% endif %}.</p>
+
     {% if v.watch %}
     <div class="panel">
       <h2>Your stocks</h2>

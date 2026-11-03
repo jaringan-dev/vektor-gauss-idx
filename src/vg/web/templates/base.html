@@ -4,8 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Vektor Gauss — Superadmin{% endblock %}</title>
+  <script>try { var t = localStorage.getItem("vg-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
   <style>
     :root {
+      color-scheme: light dark;
       --bg:#f7f7f8; --panel:#fff; --fg:#1a1a1a; --muted:#5b6472; --border:#e5e7eb;
       --ready-bg:#dcfce7; --ready-fg:#166534;
       --fail-bg:#fee2e2; --fail-fg:#991b1b;
@@ -13,8 +15,10 @@
       --warn-bg:#fef3c7; --warn-fg:#92400e;
       --pos:#15803d; --neg:#b91c1c; --side:#fff; --link:#1d4ed8;
     }
+    /* Theme: follows the system (Auto) unless the reader picked Light or Dark with the button; the choice is kept in localStorage.
+       The dark palette appears twice (system dark, and an explicit pick) — tests/test_web_a11y.py pins that the two copies are identical. */
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme="light"]) {
         --bg:#0e0f12; --panel:#17181c; --fg:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
         --ready-bg:#14341f; --ready-fg:#4ade80;
         --fail-bg:#3a1618; --fail-fg:#f87171;
@@ -22,6 +26,16 @@
         --warn-bg:#3b2f10; --warn-fg:#fbbf24;
         --pos:#4ade80; --neg:#f87171; --side:#12131a; --link:#8ab4f8;
       }
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg:#0e0f12; --panel:#17181c; --fg:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
+        --ready-bg:#14341f; --ready-fg:#4ade80;
+        --fail-bg:#3a1618; --fail-fg:#f87171;
+        --prob-bg:#1f2227; --prob-fg:#9ca3af;
+        --warn-bg:#3b2f10; --warn-fg:#fbbf24;
+        --pos:#4ade80; --neg:#f87171; --side:#12131a; --link:#8ab4f8;
     }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--fg);
@@ -116,8 +130,9 @@
     #gl-card p { margin:0 0 6px; }
     #gl-card .lbl { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.04em; display:block; }
     #gl-card a.more { color:var(--fg); font-size:12px; }
-    .topsearch { padding:10px 20px 0; }
-    .topsearch form { display:flex; gap:8px; max-width:520px; }
+    .topsearch { padding:10px 20px 0; display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+    .topsearch form { display:flex; gap:8px; max-width:520px; flex:1; }
+    #theme-btn { white-space:nowrap; }
     .topsearch input { flex:1; min-width:0; padding:8px 12px; border:1px solid var(--border); border-radius:8px;
                        background:var(--panel); color:var(--fg); font-size:14px; }
     .topsearch button { padding:8px 14px; border:1px solid var(--border); border-radius:8px; background:var(--panel);
@@ -227,6 +242,7 @@
           <input id="q-global" name="q" type="search" autocomplete="off" placeholder="Search a stock (e.g. BBCA) or a term (e.g. CR3)">
           <button type="submit">Search</button>
         </form>
+        <button type="button" id="theme-btn" class="menu-btn" aria-label="Colour theme: Auto. Press to change.">◐ Auto</button>
       </div>
       {% if strip %}
       <section class="strip" aria-label="Data freshness">
@@ -300,6 +316,23 @@
     })();
   </script>
   {% endif %}
+  <script>
+    /* Theme button: Auto -> Light -> Dark -> Auto. */
+    (function () {
+      var btn = document.getElementById("theme-btn"); if (!btn) return;
+      var root = document.documentElement, order = ["auto", "light", "dark"];
+      var labels = { auto: "◐ Auto", light: "☀ Light", dark: "☾ Dark" };
+      function current() { var t = root.getAttribute("data-theme"); return t === "light" || t === "dark" ? t : "auto"; }
+      function show() { var c = current(); btn.textContent = labels[c]; btn.setAttribute("aria-label", "Colour theme: " + c + ". Press to change."); }
+      btn.addEventListener("click", function () {
+        var next = order[(order.indexOf(current()) + 1) % order.length];
+        if (next === "auto") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", next);
+        try { if (next === "auto") localStorage.removeItem("vg-theme"); else localStorage.setItem("vg-theme", next); } catch (e) {}
+        show();
+      });
+      show();
+    })();
+  </script>
   <script>
     (function () {
       var btn = document.getElementById("menu-btn"), side = document.getElementById("sidebar");

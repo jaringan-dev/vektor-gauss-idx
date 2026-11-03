@@ -41,7 +41,7 @@ def test_interactive_chips_and_badges_meet_the_24px_target_size():
 
 def test_plain_links_use_a_theme_aware_colour_instead_of_the_browser_default():
     assert "a:not([class]) { color:var(--link)" in BASE
-    assert BASE.count("--link:") == 2                                   # defined for light and for dark
+    assert BASE.count("--link:") == 3                                   # light, system dark, and an explicitly picked dark
 
 
 def test_every_input_has_a_label_or_aria_label():
@@ -73,12 +73,32 @@ def _ratio(a, b):
     return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
 
+_PARSE = lambda block: dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-fA-F]{3,6})", block))  # noqa: E731
+_LIGHT = re.search(r":root \{(.*?)\}", BASE, re.S).group(1)
+_DARK_SYSTEM = re.search(r'@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{(.*?)\}', BASE, re.S).group(1)
+_DARK_PICKED = re.search(r':root\[data-theme="dark"\] \{(.*?)\}', BASE, re.S).group(1)
+
+
 def _tokens():
-    root = re.search(r":root \{(.*?)\}\s*@media \(prefers-color-scheme: dark\) \{\s*:root \{(.*?)\}", BASE, re.S)
-    parse = lambda block: dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-fA-F]{3,6})", block))  # noqa: E731
-    light = parse(root.group(1))
-    dark = {**light, **parse(root.group(2))}
-    return {"light": light, "dark": dark}
+    light = _PARSE(_LIGHT)
+    return {"light": light, "dark": {**light, **_PARSE(_DARK_SYSTEM)}}
+
+
+def test_the_two_copies_of_the_dark_palette_are_identical():
+    """System dark and an explicit 'Dark' pick must look the same, or the toggle would change colours unexpectedly."""
+    assert _PARSE(_DARK_SYSTEM) == _PARSE(_DARK_PICKED) and len(_PARSE(_DARK_PICKED)) >= 14
+
+
+def test_theme_choice_is_applied_before_first_paint_and_survives_blocked_storage():
+    head = BASE[:BASE.index("<style>")]
+    assert 'localStorage.getItem("vg-theme")' in head and 'setAttribute("data-theme"' in head and "catch (e)" in head
+    assert 'color-scheme: light dark' in BASE and ':root[data-theme="light"] { color-scheme: light; }' in BASE
+
+
+def test_theme_button_is_a_labelled_button_that_cycles_auto_light_dark():
+    assert 'id="theme-btn"' in BASE and 'type="button"' in BASE and 'aria-label="Colour theme: Auto. Press to change."' in BASE
+    assert 'order = ["auto", "light", "dark"]' in BASE and 'localStorage.setItem("vg-theme"' in BASE and 'localStorage.removeItem("vg-theme")' in BASE
+    assert 'btn.setAttribute("aria-label", "Colour theme: "' in BASE                      # the name always states the current choice
 
 
 PAIRS = [("fg", "bg"), ("fg", "panel"), ("muted", "bg"), ("muted", "panel"), ("link", "panel"), ("link", "bg"), ("pos", "panel"), ("neg", "panel"),
