@@ -121,7 +121,8 @@ def _pct_of(a, b):
 
 
 def build_view(raw: dict, track: dict | None = None, *, balance: float | None = None,
-               risk_pct: float = 0.01, fee: float = risk.DEFAULT_FEE) -> dict:
+               risk_pct: float = 0.01, fee: float = risk.DEFAULT_FEE, stop_mult: float = risk.STOP_ATR_MULT,
+               r_multiples: tuple[float, ...] = risk.R_MULTIPLES) -> dict:
     """Template context for one stock. `track` maps tag -> forward-test row ({status, n, edge_h5, edge_after_cost})."""
     track = track or {}
     t = raw["ticker"]
@@ -162,7 +163,7 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
                        if lo is not None and hi is not None and day_value else None),
             "bkr_net_old": fmt.idr(bkr_net),
         }
-        plan = risk.build_plan(close, atr)
+        plan = risk.build_plan(close, atr, k=stop_mult, r_multiples=r_multiples)
         if plan and balance:
             lots = risk.lot_size(balance, risk_pct, plan.ref, plan.stop, fee=fee)
 
@@ -193,7 +194,7 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
             "ref": fmt.price(plan.ref), "atr": f"{plan.atr:,.1f}", "stop": fmt.price(plan.stop),
             "risk_pct": fmt.pct_plain(plan.risk_pct, 1), "risk_per_share": fmt.price(plan.risk_per_share),
             "targets": [{"r": f"{x.r:g}R", "price": fmt.price(x.price), "gain": fmt.pct(x.gain_pct, 1)} for x in plan.targets],
-            "warnings": list(plan.warnings), "tick": risk.tick_size(plan.ref),
+            "warnings": list(plan.warnings), "tick": risk.tick_size(plan.ref), "k": f"{stop_mult:g}", "fee": f"{fee * 100:.1f}%",
             "lots": None if lots is None else {
                 "lots": lots.lots, "shares": f"{lots.shares:,}", "value": f"{lots.position_value:,.0f}",
                 "max_loss": f"{lots.max_loss:,.0f}", "capped": lots.capped_by_balance},

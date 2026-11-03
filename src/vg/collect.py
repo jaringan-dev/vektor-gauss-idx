@@ -1127,6 +1127,44 @@ def backfill_broker_full(
     return out
 
 
+def backfill_broker_deep(
+    start: date, end: date, *, budget: int, delay: float | None = None, have_table: str = "broker_flows",
+    plan_only: bool = False,
+) -> dict:
+    """Fill broker history NEWEST -> OLDEST inside a feed-call budget (K7). Resumable: names already stored are skipped, so a nightly
+    run just continues where the last one stopped. A day is only started if its whole planned call count fits in what is left of the
+    budget, and the run stops at the first day that fails outright (quota/ban). Returns a summary dict; `outcomes` are the failures."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT session_date FROM trading_calendar WHERE session_date BETWEEN %s AND %s ORDER BY session_date DESC",
+            (start, end),
+        )
+        days = [r[0] for r in cur.fetchall()]
+    pending = []
+    for d in days:
+        n = len(plan_broker_full(session_date=d, have_table=have_table)["todo"])
+        if n:
+            pending.append((d, n))
+    total = sum(n for _d, n in pending)
+    summary = {"days_total": len(days), "pending_days": len(pending), "pending_calls": total, "calls": 0,
+               "filled": [], "outcomes": [], "error": None}
+    if plan_only or not pending:
+        return summary
+    for d, n in pending:
+        if summary["calls"] + n > budget:
+            break
+        res = collect_broker_summary_full(delay=delay, session_date=d, have_table=have_table)
+        summary["outcomes"].extend(o for o in res if o.status == "error")
+        if res[-1].status == "error":
+            summary["error"] = res[-1].detail
+            break
+        summary["calls"] += n
+        summary["filled"].append(d)
+    left = [(d, n) for d, n in pending if d not in set(summary["filled"])]
+    summary["pending_days"], summary["pending_calls"] = len(left), sum(n for _d, n in left)
+    return summary
+
+
 # ---------------------------------------------------------------------------
 # Price history fallback (vektorgauss_history, Tier 3). Cloudflare-free per-ticker
 # OHLCV + foreign flow (~120 td/call). GAP-FILLS price_bars: a DO UPDATE guarded

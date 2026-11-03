@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, th, tag_chip, db_error, disclaimer %}
+{% block subtitle %}Is the edge real?{% endblock %}
+
+{% macro ci(c) -%}
+<td class="{{ c.c }}">{{ c.t }}<div class="wide-note" style="margin:0;{% if c.sig %}font-weight:600{% endif %}">{{ c.ci }}</div></td>
+{%- endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not payload %}
+    <div class="panel">
+      <h2>No analysis saved yet</h2>
+      <p class="note">This analysis takes a few minutes, so it is computed offline. Run <code>vg research --save</code> in the WSL terminal, then reload.</p>
+    </div>
+  {% else %}
+    <div class="answer"><span class="q">Do any of the patterns have an edge that survives scrutiny?</span>
+      The Track record page shows each pattern's average result. This page asks harder questions: are the results more than luck once the
+      {{ term('eff_blocks', 'dependence between signals') }} is respected, once small and thinly traded stocks are removed from the comparison
+      ({{ term('neutral_edge', 'size- and liquidity-matched edge') }}), once {{ term('net_edge', 'realistic costs') }} are charged, and once testing
+      {{ n_patterns }} patterns at once is corrected for ({{ term('fdr_q', 'q-value') }})?
+      {% if n_candidates %}<b>{{ n_candidates }} of {{ n_patterns }}</b> patterns survive all of it.{% else %}<b>None of the {{ n_patterns }} patterns survives all of it.</b>{% endif %}
+      {% for k, v in counts.items() %}{{ v }} × “{{ k }}”{{ '; ' if not loop.last else '.' }}{% endfor %}
+      This is a replay of history, not a forward test.</div>
+
+    <div class="panel">
+      <h2>Results by pattern</h2>
+      <nav class="nav" aria-label="Scope and sample">
+        <a href="/research?scope=all&amp;sample={{ sample }}"{% if scope == 'all' %} class="active" aria-current="true"{% endif %}>All stocks</a>
+        <a href="/research?scope=liquid&amp;sample={{ sample }}"{% if scope == 'liquid' %} class="active" aria-current="true"{% endif %}>Liquid stocks only</a>
+        <a href="/research?scope={{ scope }}&amp;sample=full"{% if sample == 'full' %} class="active" aria-current="true"{% endif %}>All history</a>
+        {% if has_forward %}<a href="/research?scope={{ scope }}&amp;sample=forward"{% if sample == 'forward' %} class="active" aria-current="true"{% endif %}>Forward window (since {{ forward_since }})</a>{% endif %}
+      </nav>
+      <p class="note" style="margin-top:8px">Calculated {{ computed_at }}. Edges are 5-day returns in excess of the comparison group, with a {{ term('ci95', '95% interval') }} in brackets
+         (bold = the whole interval is above zero). “After costs” subtracts the modelled cost shown in the Cost column.</p>
+      <p class="scrollhint">Swipe the table sideways to see every column →</p>
+      <table class="sticky">
+        <thead><tr>
+          <th scope="col" style="text-align:left">Pattern</th>{{ th('n', 'n') }}<th scope="col">days</th>{{ th('eff_blocks', 'indep.') }}
+          <th scope="col">Raw edge</th>{{ th('neutral_edge', 'Matched edge') }}{{ th('net_edge', 'After costs') }}<th scope="col">Cost</th>
+          {{ th('fdr_q', 'q') }}{{ th('folds_pos', 'Folds +') }}<th scope="col" style="text-align:left">Verdict</th>
+        </tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td style="text-align:left">{{ tag_chip(r.tag) }}</td><td>{{ '{:,}'.format(r.n) }}</td><td>{{ r.days }}</td><td>{{ r.eff }}</td>
+            {{ ci(r.raw) }}{{ ci(r.neut) }}{{ ci(r.net) }}<td>{{ r.cost }}</td><td>{{ r.q }}</td><td>{{ r.folds_pos }}</td>
+            <td class="wrap"{% if r.candidate %} style="font-weight:600"{% endif %}>{{ r.strength }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>What each column does</h2>
+      <ul>
+        <li><b>Raw edge:</b> pattern 5-day return minus the average of all stocks that day (the number on the Track record page).</li>
+        <li><b>Matched edge:</b> minus the average of stocks in the <i>same size and liquidity bucket</i> instead (25 buckets). If a pattern's raw edge shrinks here, it was mostly a small-stock effect.</li>
+        <li><b>After costs:</b> the matched edge minus a cost estimated per signal (commission {{ '%.1f' % (params.fee * 100) }}%, the tick-size spread, and market impact for an order of Rp{{ '{:,}'.format(params.qty_idr) }}).</li>
+        <li><b>Intervals</b> come from resampling blocks of {{ params.block }} days {{ '{:,}'.format(params.reps) }} times, which respects that signals on the same or neighbouring days are related.</li>
+        <li><b>q:</b> corrects for testing many patterns at once. <b>Folds +:</b> share of half-year periods with a positive after-cost edge (the last {{ params.embargo }} days of each period are dropped).</li>
+        <li><b>Verdict:</b> “Candidate” needs an after-cost interval above zero, q below 0.10, and a positive edge in at least 70% of the periods. Anything less is labelled for what it is.</li>
+      </ul>
+      <p class="wide-note">Not removed: beta and sector effects (sectors need a map we do not have yet), and the real-world frictions the cost model cannot see.</p>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>These numbers describe history. They are not a forecast and not a recommendation.</p>
+  {{ disclaimer() }}
+{% endblock %}

@@ -194,6 +194,19 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--min-n", type=int, default=30)
     rv.add_argument("--save", action="store_true", help="store both scopes in analysis_snapshot for the dashboard (/risk-test)")
 
+    bd = sub.add_parser("broker-deep", help="K7: fill broker history newest->oldest inside a feed-call budget (resumable; run nightly)")
+    bd.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 2))
+    bd.add_argument("--end", type=date.fromisoformat, default=date(2026, 6, 2))
+    bd.add_argument("--budget", type=int, default=15000, help="max feed calls this run (the API allows ~21k/day, EOD needs ~1k)")
+    bd.add_argument("--plan", action="store_true", help="show what is left, fetch nothing")
+    bd.add_argument("--compute", action="store_true", help="after fetching, compute signals for the filled days and refresh outcomes")
+
+    rc = sub.add_parser("research", help="is a pattern's edge real? dependence-aware CIs, FDR, size/liquidity-neutral edge, walk-forward, cost model")
+    rc.add_argument("--scope", choices=("all", "liquid"), default="all")
+    rc.add_argument("--sample", choices=("full", "forward"), default="full")
+    rc.add_argument("--reps", type=int, default=2000, help="bootstrap replicates")
+    rc.add_argument("--save", action="store_true", help="store the result in analysis_snapshot for the dashboard (/research)")
+
     sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
     sv.add_argument("--host", default="127.0.0.1",
                     help="bind host (default: local-only). Any other address REQUIRES VG_WEB_PASSWORD (>= 12 chars) in .env")
@@ -683,6 +696,34 @@ def main(argv: list[str] | None = None) -> int:
         if args.save:
             risk_eval.save_snapshot(risk_eval.snapshot_payload(groups, window, min_n=args.min_n))
             print("saved to analysis_snapshot (dashboard: /risk-test)")
+        return 0
+
+    if args.cmd == "broker-deep":
+        res = collect.backfill_broker_deep(args.start, args.end, budget=args.budget, plan_only=args.plan)
+        print(f"range {args.start}..{args.end}: {res['days_total']} trading days; left to fetch: {res['pending_days']} days, "
+              f"~{res['pending_calls']:,} calls (~{res['pending_calls'] / max(args.budget, 1):.1f} nights at {args.budget:,}/night)")
+        if args.plan:
+            return 0
+        print(f"this run: {res['calls']:,} calls over {len(res['filled'])} days"
+              + (f" ({res['filled'][-1]}..{res['filled'][0]})" if res["filled"] else ""))
+        for o in res["outcomes"][:20]:
+            print(f"  {o.session_date} {o.status}: {o.detail}")
+        if res["filled"] and args.compute:
+            for d in sorted(res["filled"]):
+                engine.compute_day(d)
+            print(f"computed {len(res['filled'])} days; refreshing outcomes")
+            engine.backfill_outcomes()
+        return 1 if res["error"] else 0
+
+    if args.cmd == "research":
+        from . import research
+        from .config import CONFIG
+
+        result = research.run(CONFIG.forward_since, reps=args.reps)
+        print(research.format_text(result, args.scope, args.sample))
+        if args.save:
+            research.save_snapshot(result)
+            print("saved to analysis_snapshot (dashboard: /research)")
         return 0
 
     if args.cmd == "serve":

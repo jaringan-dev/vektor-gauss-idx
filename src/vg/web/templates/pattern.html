@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import term, th, ticker, verdict, chart, db_error, disclaimer %}
+{% macro cic(c) -%}<td class="{{ c.c }}">{{ c.t }}<div class="wide-note" style="margin:0;{% if c.sig %}font-weight:600{% endif %}">{{ c.ci }}</div></td>{%- endmacro %}
 {% block title %}{{ v.name if v else code }} — Vektor Gauss{% endblock %}
 {% block subtitle %}{% if v %}{{ v.name }} <code style="font-weight:400;font-size:13px;color:var(--muted)">{{ v.tag }}</code>{% else %}Pattern{% endif %}{% endblock %}
 
@@ -56,6 +57,38 @@
       <p class="note">No matured results for this pattern yet.</p>
       {% endif %}
     </div>
+
+    {% if research_row %}
+    <div class="panel">
+      <h2>Is the edge real?</h2>
+      <p>{% if research_row.candidate %}<b>{{ research_row.strength }}.</b>{% else %}<b>{{ research_row.strength }}.</b>{% endif %}
+         Across {{ '{:,}'.format(research_row.n) }} signals on {{ research_row.days }} days (about {{ research_row.eff }} {{ term('eff_blocks', 'independent observations') }}),
+         the edge is shown three ways, each with a {{ term('ci95', '95% interval') }}:</p>
+      <table>
+        <thead><tr><th scope="col" style="text-align:left">Measure</th><th scope="col">Edge [interval]</th></tr></thead>
+        <tbody>
+          <tr><td style="text-align:left">Raw (vs all stocks)</td>{{ cic(research_row.raw) }}</tr>
+          <tr><td style="text-align:left">{{ term('neutral_edge', 'Size- and liquidity-matched') }}</td>{{ cic(research_row.neut) }}</tr>
+          <tr><td style="text-align:left">{{ term('net_edge', 'After modelled costs') }} (average cost {{ research_row.cost }})</td>{{ cic(research_row.net) }}</tr>
+        </tbody>
+      </table>
+      <p class="wide-note">{{ term('fdr_q', 'False-discovery q-value') }}: <b>{{ research_row.q }}</b> · {{ term('folds_pos', 'half-year periods with a positive edge after costs') }}: <b>{{ research_row.folds_pos }}</b>.</p>
+      {% if research_row.folds %}
+      <details><summary>Edge after costs by half-year, and by {{ term('regime', 'market regime') }}</summary>
+        <table>
+          <thead><tr><th scope="col" style="text-align:left">Period</th><th scope="col">n</th><th scope="col">Edge after costs</th></tr></thead>
+          <tbody>
+            {% for f in research_row.folds %}<tr><td style="text-align:left">{{ f.label }}</td><td>{{ '{:,}'.format(f.n) }}</td>
+              <td{% if f.edge %} class="{{ f.edge.c }}"{% endif %}>{{ f.edge.t if f.edge else 'too few signals' }}</td></tr>{% endfor %}
+            {% for k in ['up', 'flat', 'down'] %}{% set g = research_row.regimes[k] %}<tr><td style="text-align:left">Market {{ k }} (60-day trend)</td><td>{{ '{:,}'.format(g.n) }}</td>
+              <td{% if g.edge %} class="{{ g.edge.c }}"{% endif %}>{{ g.edge.t if g.edge else 'too few signals' }}</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+      <p class="wide-note">All patterns side by side, and what each measure means: <a href="/research">Is the edge real? →</a></p>
+    </div>
+    {% endif %}
 
     {% if v.monthly %}
     <div class="panel">

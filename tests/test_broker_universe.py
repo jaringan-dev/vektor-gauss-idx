@@ -425,3 +425,57 @@ def test_levels_only_flag_requires_full_and_is_wired_to_have_table():
     a = p.parse_args(["collect-broker-summary", "--full", "--backfill", "2026-06-03", "2026-10-30", "--levels-only"])
     assert a.levels_only is True and a.full is True
     assert p.parse_args(["collect-broker-summary", "--full"]).levels_only is False
+
+
+# ---- backfill_broker_deep (K7) ----------------------------------------------------------------
+
+def _deep_rig(monkeypatch, todo_by_day, fail_on=None):
+    days = sorted(todo_by_day)
+    monkeypatch.setattr(collect, "connect", _fake_connect(_Cur(rows=[(d,) for d in reversed(days)])))
+    fetched = []
+    monkeypatch.setattr(collect, "plan_broker_full",
+                        lambda *, session_date=None, have_table="broker_flows", **k: {"todo": ["T"] * todo_by_day[session_date]})
+
+    def fake_full(*, delay=None, session_date=None, have_table="broker_flows"):
+        fetched.append(session_date)
+        return [CollectOutcome(session_date, "error" if session_date == fail_on else "ok", 10, "x")]
+
+    monkeypatch.setattr(collect, "collect_broker_summary_full", fake_full)
+    return days, fetched
+
+
+def test_deep_backfill_goes_newest_first_and_never_exceeds_the_budget(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28), date(2026, 5, 27), date(2026, 5, 26)]
+    days, fetched = _deep_rig(monkeypatch, {d[0]: 200, d[1]: 200, d[2]: 200, d[3]: 200})
+    res = collect.backfill_broker_deep(d[3], d[0], budget=450)
+    assert fetched == [d[0], d[1]] and res["calls"] == 400 and res["filled"] == [d[0], d[1]]
+    assert res["pending_days"] == 2 and res["pending_calls"] == 400 and res["error"] is None
+
+
+def test_deep_backfill_skips_complete_days_and_resumes_where_it_stopped(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28), date(2026, 5, 27)]
+    _days, fetched = _deep_rig(monkeypatch, {d[0]: 0, d[1]: 120, d[2]: 130})
+    res = collect.backfill_broker_deep(d[2], d[0], budget=10_000)
+    assert fetched == [d[1], d[2]] and res["pending_days"] == 0 and res["calls"] == 250
+
+
+def test_deep_backfill_plan_only_fetches_nothing(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28)]
+    _days, fetched = _deep_rig(monkeypatch, {d[0]: 100, d[1]: 100})
+    res = collect.backfill_broker_deep(d[1], d[0], budget=10_000, plan_only=True)
+    assert fetched == [] and res["pending_calls"] == 200 and res["calls"] == 0
+
+
+def test_deep_backfill_stops_at_the_first_failing_day_and_reports_why(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28), date(2026, 5, 27)]
+    _days, fetched = _deep_rig(monkeypatch, {x: 100 for x in d}, fail_on=d[1])
+    res = collect.backfill_broker_deep(d[2], d[0], budget=10_000)
+    assert fetched == [d[0], d[1]] and res["error"] and res["filled"] == [d[0]]
+    assert res["pending_days"] == 2 and res["pending_calls"] == 200
+
+
+def test_deep_script_runs_the_budgeted_command_and_logs():
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parent.parent / "scripts" / "deep_backfill.sh").read_text(encoding="utf-8")
+    assert "vg broker-deep" in text and "--compute" in text and "VG_DEEP_BUDGET" in text and "deep_backfill.log" in text

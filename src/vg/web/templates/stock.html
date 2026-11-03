@@ -117,7 +117,7 @@
          It does not say whether to trade this stock, and price can gap through any stop level. Auto-rejection limits are not modelled.</p>
       <div class="grid kpis">
         <div class="kpi"><div class="k">{{ term('ref_price', 'Reference price') }}</div><div class="v">{{ v.risk.ref }}</div><div class="s">ATR(14) {{ v.risk.atr }} · tick {{ v.risk.tick }}</div></div>
-        <div class="kpi"><div class="k">{{ term('mech_stop', 'Stop level') }} (2 × ATR)</div><div class="v neg">{{ v.risk.stop }}</div><div class="s">{{ v.risk.risk_pct }} below · Rp{{ v.risk.risk_per_share }} per share</div></div>
+        <div class="kpi"><div class="k">{{ term('mech_stop', 'Stop level') }} ({{ v.risk.k }} × ATR)</div><div class="v neg">{{ v.risk.stop }}</div><div class="s">{{ v.risk.risk_pct }} below · Rp{{ v.risk.risk_per_share }} per share</div></div>
         {% for t in v.risk.targets %}
         <div class="kpi"><div class="k">{{ term('r_target', 'Target') }} {{ t.r }}</div><div class="v pos">{{ t.price }}</div><div class="s">{{ t.gain }} from the reference</div></div>
         {% endfor %}
@@ -134,13 +134,13 @@
       </form>
       {% if v.risk.lots %}
       <p style="margin-top:10px">With the capital and risk above: <b>{{ v.risk.lots.lots }} lots</b> ({{ v.risk.lots.shares }} shares, about Rp{{ v.risk.lots.value }}).
-         If the stop level is hit exactly, the loss is about <b>Rp{{ v.risk.lots.max_loss }}</b> including a {{ '%.1f' % 0.4 }}% round-trip fee.
+         If the stop level is hit exactly, the loss is about <b>Rp{{ v.risk.lots.max_loss }}</b> including a {{ v.risk.fee }} round-trip fee.
          {% if v.risk.lots.capped %}The size was capped by what your capital can buy.{% endif %}</p>
       {% endif %}
       {% if rule_test %}
       <div class="wide-note" style="margin-top:12px">
         <b>Has a rule like this paid off?</b> Replaying it on {{ '{:,}'.format(rule_test.n) }} past stock-days ({{ rule_test.window[0] }} to {{ rule_test.window[1] }}):
-        with a 2R target, <b>{{ rule_test.base.stop }}</b> of trades hit the stop, <b>{{ rule_test.base.target }}</b> reached the target, and the average trade ended at
+        {% if rule_test.differs %}<i>(The test used a {{ rule_test.tested_k }} × ATR stop; your setting differs.)</i> {% endif %}with a 2R target, <b>{{ rule_test.base.stop }}</b> of trades hit the stop, <b>{{ rule_test.base.target }}</b> reached the target, and the average trade ended at
         <b class="{{ rule_test.base.net.c }}">{{ rule_test.base.net.t }}</b> after the {{ rule_test.cost }} trading cost
         (just holding {{ rule_test.horizon }} days: <b class="{{ rule_test.hold.c }}">{{ rule_test.hold.t }}</b>).
         {% for m in rule_test.mine %}<br>On {{ tag_chip(m.tag) }} signals ({{ '{:,}'.format(m.n) }}): <b class="{{ m.res.net.c }}">{{ m.res.net.t }}</b> average.{% endfor %}

@@ -19,7 +19,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from .. import engine, risk, risk_eval
+from .. import engine, research, risk, risk_eval
 from ..config import CONFIG
 from ..db import connect
 from . import coverage as cov
@@ -40,6 +40,7 @@ _NAV = [
     {"title": "Patterns", "items": [
         {"key": "tracker", "label": "Track record", "href": "/"},
         {"key": "risk", "label": "Stop & target test", "href": "/risk-test"},
+        {"key": "research", "label": "Is the edge real?", "href": "/research"},
     ]},
     {"title": "Stocks", "items": [
         {"key": "screener", "label": "Today's stocks", "href": "/screener"},
@@ -361,7 +362,8 @@ def _rule_test_for(codes: list[str]) -> dict | None:
     mine = [{"tag": c, "name": glossary.plain_tag(c), "n": rows[c]["n"], "res": _rule_cells(rows[c]["r"]["2"]),
              "hold": fmt.cell(rows[c]["hold"])} for c in codes if c in rows]
     return {"window": payload["window"], "n": base["n"], "base": _rule_cells(base["r"]["2"]), "hold": fmt.cell(base["hold"]),
-            "cost": f"{payload['cost'] * 100:.1f}%", "horizon": payload["horizon"], "mine": mine}
+            "cost": f"{payload['cost'] * 100:.1f}%", "horizon": payload["horizon"], "mine": mine,
+            "tested_k": f"{payload['stop_atr']:g}", "differs": abs(payload["stop_atr"] - CONFIG.atr_sl_mult) > 1e-9}
 
 
 def _track_by_tag() -> dict:
@@ -401,6 +403,54 @@ def _risk_rows(payload: dict, scope: str) -> list[dict]:
         out.append({"tag": row["tag"], "is_baseline": row["tag"] == payload["baseline"], "n": row["n"],
                     "hold": fmt.cell(row["hold"]), "r": {k: _rule_cells(v) for k, v in row["r"].items()}})
     return out
+
+
+_RESEARCH_CACHE = TTLCache(ttl_seconds=300)
+
+
+def _research_snapshot():
+    """(payload, computed_at) of the saved K10-K13 analysis, or (None, None). Never raises."""
+    try:
+        snap, _wall, _hit = _RESEARCH_CACHE.get_or_compute(("research",), lambda: research.load_snapshot() or (None, None))
+    except Exception:  # noqa: BLE001
+        return None, None
+    return snap
+
+
+def _ci_cell(e: dict) -> dict:
+    if not e or e.get("point") is None:
+        return {"t": "n/a", "ci": "", "c": ""}
+    ci = "" if e.get("lo") is None else f"[{e['lo'] * 100:+.2f}, {e['hi'] * 100:+.2f}]"
+    return {"t": fmt.pct(e["point"]), "ci": ci, "c": fmt.signcls(e["point"]), "sig": e.get("lo") is not None and e["lo"] > 0}
+
+
+def _research_row(tag: str, r: dict) -> dict:
+    folds = [{"label": f["label"], "n": f["n"], "edge": fmt.cell(f["edge"]) if f["edge"] is not None else None} for f in r["folds"]]
+    regimes = {k: {"n": v["n"], "edge": fmt.cell(v["edge"]) if v["edge"] is not None else None} for k, v in r["regimes"].items()}
+    return {"tag": tag, "n": r["n"], "days": r["days"], "eff": r["eff_blocks"], "raw": _ci_cell(r["edge_raw"]),
+            "neut": _ci_cell(r["edge_neut"]), "net": _ci_cell(r["edge_net"]), "cost": fmt.pct_plain(r["mean_cost"], 2),
+            "q": "-" if r.get("q_net") is None else f"{r['q_net']:.2f}",
+            "folds_pos": "-" if r.get("folds_pos") is None else f"{r['folds_pos'] * 100:.0f}%", "folds": folds, "regimes": regimes,
+            "strength": r["strength"], "candidate": r["strength"].startswith("Candidate")}
+
+
+@app.get("/research", response_class=HTMLResponse)
+def research_page(scope: str = "all", sample: str = "full") -> HTMLResponse:
+    scope = "liquid" if scope == "liquid" else "all"
+    sample = "forward" if sample == "forward" else "full"
+    payload, computed = _research_snapshot()
+    ctx: dict = {"active_page": "research", "scope": scope, "sample": sample, "payload": payload, "error": None}
+    if payload:
+        res = payload["results"].get(scope, {}).get(sample, {})
+        rows = [_research_row(t, r) for t, r in sorted(res.items(), key=lambda kv: -kv[1]["n"])]
+        counts: dict[str, int] = {}
+        for r in rows:
+            counts[r["strength"]] = counts.get(r["strength"], 0) + 1
+        ctx.update(rows=rows, counts=counts, n_patterns=len(rows), n_candidates=sum(1 for r in rows if r["candidate"]),
+                   computed_at=computed.strftime("%d %b %Y %H:%M") if computed else None, params=payload["params"],
+                   window=payload["window"], forward_since=payload.get("forward_since"),
+                   has_forward=bool(payload["results"].get(scope, {}).get("forward")))
+    return _render("research.html", ctx)
 
 
 @app.get("/risk-test", response_class=HTMLResponse)
@@ -495,14 +545,24 @@ def pattern_detail(tag: str) -> HTMLResponse:
             forward = next((r for r in _cached_view_rows(CONFIG.forward_since)[0] if r["tag"] == code), None)
         full = next((r for r in _cached_view_rows(None)[0] if r["tag"] == code), None)
         ctx["v"] = patternmod.build_view(raw, forward, full, _rule_all_targets(code))
+        rp, _c = _research_snapshot()
+        ctx["research_row"] = None
+        if rp:
+            r = rp["results"].get("all", {}).get("full", {}).get(code)
+            ctx["research_row"] = _research_row(code, r) if r else None
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("pattern.html", ctx)
 
 
 @app.get("/stock/{ticker}", response_class=HTMLResponse)
-def stock_detail(ticker: str, capital: float | None = None, risk_pct: float = 1.0) -> HTMLResponse:
+def stock_detail(ticker: str, capital: float | None = None, risk_pct: float | None = None) -> HTMLResponse:
     t = ticker.strip().upper()
+    # Defaults come from .env, the same settings the Telegram digest uses (VG_ACCOUNT_BALANCE, VG_RISK_PCT, VG_FEE_PCT, ...).
+    if capital is None and CONFIG.account_balance > 0:
+        capital = CONFIG.account_balance / 1_000_000
+    if risk_pct is None:
+        risk_pct = CONFIG.risk_pct * 100
     ctx: dict = {"active_page": "screener", "ticker": t, "error": None, "not_found": False, "v": None,
                  "capital": capital, "risk_pct": risk_pct}
     if not stockmod.TICKER_RE.match(t):
@@ -516,7 +576,9 @@ def stock_detail(ticker: str, capital: float | None = None, risk_pct: float = 1.
         rp = min(max(risk_pct, 0.1), 5.0)
         ctx["risk_pct"] = rp
         balance = capital * 1_000_000 if capital and capital > 0 else None
-        ctx["v"] = stockmod.build_view(raw, _track_by_tag(), balance=balance, risk_pct=rp / 100)
+        targets = tuple(sorted({*risk.R_MULTIPLES, CONFIG.target_r}))       # 1R-3R plus the digest's own target
+        ctx["v"] = stockmod.build_view(raw, _track_by_tag(), balance=balance, risk_pct=rp / 100, fee=CONFIG.fee_pct,
+                                       stop_mult=CONFIG.atr_sl_mult, r_multiples=targets)
         ctx["rule_test"] = _rule_test_for([t["code"] for t in ctx["v"]["tags_today"]])
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"

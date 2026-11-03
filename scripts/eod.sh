@@ -76,6 +76,10 @@ fi
 if [ "$(date +%u)" -eq 7 ]; then
   echo "-- Sunday: backup (pg_dump + artifacts -> GitHub Releases) --"
   bash "$VG_HOME/scripts/backup.sh" || true
+  echo "-- Sunday: refresh the stop/target test shown at /risk-test (~3 min, best-effort) --"
+  vg risk-eval --save > /dev/null || true
+  echo "-- Sunday: refresh the edge analysis shown at /research (~3 min, best-effort) --"
+  vg research --save > /dev/null || true
 fi
 
 vg digest || true

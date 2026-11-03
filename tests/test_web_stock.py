@@ -78,7 +78,7 @@ def test_risk_plan_and_lot_size_come_from_atr_and_the_chosen_capital():
     r = v["risk"]
     assert r["stop"] == "4,600" and r["risk_pct"] == "5.0%" and r["tick"] == 10
     assert [t["price"] for t in r["targets"]] == ["5,075", "5,325", "5,550"]
-    assert r["lots"]["lots"] == 38 and r["lots"]["shares"] == "3,800"
+    assert r["lots"]["lots"] == 37 and r["lots"]["shares"] == "3,700"
     assert stockmod.build_view(_raw(atr=120), TRACK)["risk"]["lots"] is None      # no capital typed yet
 
 
@@ -115,7 +115,7 @@ def test_stock_page_renders_the_explanations_the_plan_calls_for(client, monkeypa
     r = client.get("/stock/bbca?capital=100&risk_pct=1")
     assert r.status_code == 200
     for needle in ("What happened to BBCA?", "Bank Central Asia", "classed as Accumulation", "Risk plan",
-                   "mechanical, not a forecast", "4,600", "38 lots", "certain bounds", "Pattern history",
+                   "mechanical, not a forecast", "4,600", "37 lots", "certain bounds", "Pattern history",
                    'href="/pattern/BROKER2-ASING-AKUM"', "Not investment advice"):
         assert needle in r.text, needle
     assert "buy now" not in r.text.lower()
@@ -363,3 +363,99 @@ def test_wide_analysis_tables_get_a_sticky_first_column_and_a_swipe_hint(client,
     t = client.get("/risk-test").text
     assert 'class="sticky"' in t and "Swipe the table sideways" in t
     assert "table.sticky th:first-child" in t
+
+
+def test_risk_plan_defaults_come_from_env_the_same_settings_the_digest_uses(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw(atr=120))
+    cfg = webapp.CONFIG
+    monkeypatch.setattr(cfg, "atr_sl_mult", 3.0, raising=False)
+    monkeypatch.setattr(cfg, "target_r", 2.5, raising=False)
+    monkeypatch.setattr(cfg, "fee_pct", 0.005, raising=False)
+    monkeypatch.setattr(cfg, "account_balance", 50_000_000.0, raising=False)
+    monkeypatch.setattr(cfg, "risk_pct", 0.02, raising=False)
+    t = client.get("/stock/BBCA").text
+    assert "(3 × ATR)" in t and ">2.5R<" not in t and "2.5R" in t and "0.5% round-trip fee" in t
+    assert 'name="capital"' in t and 'value="50.0"' in t and 'value="2.0"' in t
+    assert "lots" in t                                                      # a lot count appears without typing anything
+
+
+def test_snapshot_note_appears_when_the_tested_stop_differs_from_the_configured_one(client, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw())
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (_snapshot(), dt.datetime(2026, 11, 3, 9, 0)))
+    monkeypatch.setattr(webapp.CONFIG, "atr_sl_mult", 3.0, raising=False)
+    assert "The test used a 2 × ATR stop; your setting differs." in client.get("/stock/BBCA").text
+    monkeypatch.setattr(webapp.CONFIG, "atr_sl_mult", 2.0, raising=False)
+    assert "your setting differs" not in client.get("/stock/BBCA").text
+
+
+# ---- "Is the edge real?" (K10-K13) -----------------------------------------------------------------
+
+def _research_payload(with_forward=False):
+    import random
+
+    from vg import research as rs
+
+    rng = random.Random(4)
+    days = [date(2023, 1, 2) + timedelta(days=i) for i in range(900) if (date(2023, 1, 2) + timedelta(days=i)).weekday() < 5][:600]
+
+    def tag(mean, cost):
+        n = [6.0] * len(days)
+        raw = [6 * (mean + rng.gauss(0, 0.007)) for _ in days]
+        return {"n": n, "raw": raw, "neut": list(raw), "cost": [6 * cost] * len(days)}
+
+    res = rs.analyze(days, {"BROKER2-ASING-AKUM": tag(0.03, 0.005), "AKUM-ASING": tag(0.0, 0.005)}, {}, reps=200)
+    out = {"window": ["2023-01-02", "2025-04-30"], "forward_since": "2026-09-04",
+           "params": {"block": 5, "reps": 200, "embargo": 10, "fee": 0.003, "qty_idr": 100_000_000, "kappa": 0.5, "alpha": 0.05},
+           "results": {"all": {"full": res}, "liquid": {"full": res}}}
+    if with_forward:
+        out["results"]["all"]["forward"] = res
+    return out
+
+
+def test_research_page_reports_survivors_and_labels_everything_else(client, monkeypatch):
+    import datetime as dt
+
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (_research_payload(), dt.datetime(2026, 11, 3, 23, 0)))
+    r = client.get("/research")
+    assert r.status_code == 200
+    for needle in ("Do any of the patterns have an edge that survives scrutiny?", "1 of 2</b> patterns survive all of it",
+                   "Candidate: survives costs, factors and time", "No evidence of an edge", "Matched edge", "After costs",
+                   'href="/pattern/BROKER2-ASING-AKUM"', "not a forward test", "Not removed: beta and sector"):
+        assert needle in r.text, needle
+    assert 'href="/research?scope=liquid&amp;sample=full"' in r.text
+    assert "Forward window" not in r.text                                    # no forward results saved -> no dead link
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (_research_payload(True), dt.datetime(2026, 11, 3, 23, 0)))
+    assert "Forward window (since 2026-09-04)" in client.get("/research").text
+    assert client.get("/research?scope=liquid&sample=forward").status_code == 200
+    assert client.get("/research?scope=bogus&sample=bogus").status_code == 200
+
+
+def test_research_page_without_a_snapshot_says_how_to_create_it(client, monkeypatch):
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (None, None))
+    r = client.get("/research")
+    assert r.status_code == 200 and "vg research --save" in r.text
+
+
+def test_pattern_page_shows_the_research_evidence_when_available(client, monkeypatch):
+    import datetime as dt
+
+    from vg.web import pattern as patternmod
+
+    monkeypatch.setattr(patternmod, "load", lambda t: _pattern_raw())
+    monkeypatch.setattr(webapp, "_cached_view_rows", lambda since, fresh=False: ([_fwd_row()], 0.0, True))
+    monkeypatch.setattr(webapp, "_risk_snapshot", lambda: (None, None))
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (_research_payload(), dt.datetime(2026, 11, 3, 23, 0)))
+    t = client.get("/pattern/BROKER2-ASING-AKUM").text
+    for needle in ("Edge [interval]", "Candidate: survives costs, factors and time", "After modelled costs", "q-value", "by half-year", "Market up (60-day trend)"):
+        assert needle in t, needle
+    monkeypatch.setattr(webapp, "_research_snapshot", lambda: (None, None))
+    assert "Edge [interval]" not in client.get("/pattern/BROKER2-ASING-AKUM").text
+
+
+def test_research_glossary_terms_exist_for_every_term_the_page_uses():
+    from vg.web import glossary
+
+    for key in ("ci95", "eff_blocks", "neutral_edge", "net_edge", "fdr_q", "folds_pos", "regime"):
+        assert key in glossary.TERMS and glossary.TERMS[key].group == "research"

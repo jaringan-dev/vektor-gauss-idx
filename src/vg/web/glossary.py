@@ -41,6 +41,7 @@ GROUPS = (
     ("report", "Track record (forward test)"),
     ("data", "Data health"),
     ("risk", "Risk plan"),
+    ("research", "Is the edge real?"),
 )
 
 # Engine quadrant value (database, Indonesian) -> glossary key + English display word.
@@ -167,6 +168,26 @@ _T = [
     Term("avg_net", "Average result after costs", "The average return of all the trades in the test after subtracting the round-trip trading cost "
          "(about 1.7%). Below zero means the typical trade lost money.", "risk"),
     Term("win_rate", "Winning trades", "The share of trades that ended above the reference price after costs.", "risk"),
+    Term("ci95", "95% interval", "The range the true edge most likely lies in, given the data. If the whole range is above zero the edge is probably real; "
+         "if it includes zero the data cannot tell it apart from luck.", "research",
+         how="Resamples whole blocks of 5 trading days 2,000 times and takes the middle 95% of the results.",
+         caveat="Wide intervals mean little data, not a weak pattern."),
+    Term("eff_blocks", "Independent observations", "Signals on the same day, and 5-day returns on neighbouring days, move together, so 1,000 signals are not 1,000 pieces of evidence. "
+         "This is roughly how many independent observations they amount to.", "research",
+         how="Days that had at least one signal ÷ 5."),
+    Term("neutral_edge", "Size- and liquidity-matched edge", "The edge when each flagged stock is compared with stocks of the same size and the same liquidity on the same day, "
+         "instead of with the whole market. It removes the effect of simply flagging small, jumpy stocks.", "research",
+         caveat="Beta and sector are not removed (sectors need a map we do not have yet)."),
+    Term("net_edge", "Edge after modelled costs", "The matched edge minus a cost estimated for each signal: commission, the tick-size spread, and market impact that grows when the stock "
+         "is thin or volatile (assuming an order of Rp100 million).", "research",
+         caveat="The impact term is an assumption, not a measurement."),
+    Term("fdr_q", "False-discovery q-value", "Testing 26 patterns means a few will look good by pure luck. The q-value corrects for that: a pattern is only taken seriously if its q-value is "
+         "below 0.10.", "research", how="Benjamini-Hochberg adjustment of the one-sided p-values across all patterns tested."),
+    Term("folds_pos", "Folds with a positive edge", "The data is cut into half-year periods. This is the share of those periods in which the pattern's edge after costs was positive. "
+         "A real edge should not depend on one good period.", "research",
+         how="The last 10 trading days of each period are dropped so neighbouring periods do not share return windows."),
+    Term("regime", "Market regime", "Whether the market was rising, falling or flat over the previous 60 trading days (the Composite index moving more than 3% up or down). "
+         "A pattern that only works in one regime is a bet on that regime.", "research"),
     Term("ref_price", "Reference price", "The latest closing price, used as the calculation point. Not the price you will get when you trade.", "risk"),
 ]
 

@@ -28,3 +28,12 @@ def test_env_example_does_not_override_with_the_dead_repo():
 def test_no_script_still_targets_the_dead_repo():
     for p in (ROOT / "scripts").glob("*.sh"):
         assert DEAD_REPO not in _code(p), p.name
+
+
+def test_sunday_block_also_refreshes_the_stop_target_snapshot_without_ever_failing_eod():
+    text = (ROOT / "scripts" / "eod.sh").read_text(encoding="utf-8")
+    sunday = text[text.index('-eq 7 ]'):text.index("vg digest || true")]
+    assert "backup.sh" in sunday and "vg risk-eval --save" in sunday
+    assert "vg risk-eval --save > /dev/null || true" in sunday              # best-effort: a failure must not abort EOD
+    assert sunday.index("backup.sh") < sunday.index("risk-eval")            # the backup is never delayed by it
+    assert "vg research --save > /dev/null || true" in sunday and sunday.index("risk-eval") < sunday.index("vg research")

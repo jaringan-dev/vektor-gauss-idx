@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 LOT_SIZE = 100
 STOP_ATR_MULT = 2.0
 R_MULTIPLES = (1.0, 2.0, 3.0)
-DEFAULT_FEE = 0.004          # round-trip commission + levy, as in common lot-size calculators
+DEFAULT_FEE = 0.003          # round-trip fee fraction; the dashboard passes CONFIG.fee_pct (same value the digest uses)
 WIDE_STOP_PCT = 0.15         # a stop further than this from the reference price is flagged as very wide
 
 # IDX tick size by price band: (upper bound exclusive, tick)
@@ -97,7 +97,7 @@ def lot_size(balance: float, risk_fraction: float, ref: float, stop: float, *, f
     """
     if balance <= 0 or risk_fraction <= 0 or ref <= 0 or stop <= 0 or stop >= ref:
         return None
-    per_share_loss = (ref - stop) + ref * fee
+    per_share_loss = (ref - stop) + fee * (ref + stop)         # same fee model as calc.plan(): paid on the way in and out
     shares_by_risk = (balance * risk_fraction) / per_share_loss
     lots = int(shares_by_risk // LOT_SIZE)
     affordable = int(balance // (ref * LOT_SIZE))

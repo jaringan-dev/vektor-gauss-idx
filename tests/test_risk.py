@@ -44,7 +44,7 @@ def test_no_plan_when_inputs_are_missing_or_the_stop_would_be_at_or_below_zero(r
 def test_lot_size_caps_the_loss_at_the_chosen_share_of_capital():
     plan = risk.build_plan(4840, 120)
     lots = risk.lot_size(100_000_000, 0.01, plan.ref, plan.stop)
-    assert lots.lots == 38 and lots.shares == 3800
+    assert lots.lots == 37 and lots.shares == 3700          # per-share loss = 240 + 0.3% x (4840 + 4600)
     assert lots.max_loss <= 100_000_000 * 0.01                  # fees included
     assert not lots.capped_by_balance
 
