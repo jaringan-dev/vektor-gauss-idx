@@ -25,6 +25,7 @@ Nothing commercial (public report card, paid tiers) is built until job 1 has an 
 | Research | BROKER2 patterns; data audit; stop/target replay (1.16M stock-days); **K10–K13 analysis** (dependence-aware intervals, false-discovery control, size/liquidity-matched edge, walk-forward folds and regimes, per-signal cost model) at `/research` |
 | Dashboard | English UI, glossary, stock and pattern pages, charts, mobile, `/risk-test`, `/research` |
 | Access | Password gate, safe startup, `PHONE-ACCESS.md` (your Windows/phone steps are untested) |
+| Monitoring | `vg status`: Telegram report after every EOD and every backfill night (silent when fine, with a sound when not) plus a 08:00 morning report; same checks on the `/health` page |
 | Housekeeping | Dashboard risk plan now reads the same `.env` settings as the Telegram digest; Sunday EOD refreshes `/risk-test` and `/research`; the BBCA ±50% days were checked (real, see below) |
 
 **BBCA outlier days.** Foreign-broker net flow of ±40–56% of traded value on some BBCA days is real, not a data fault: BBCA is
@@ -84,3 +85,17 @@ Register-ScheduledTask -TaskName "VektorGauss-DeepBackfill" -Action $a -Trigger 
 ```
 
 Disable it (`Disable-ScheduledTask -TaskName VektorGauss-DeepBackfill`) when `vg broker-deep --plan` reports nothing left.
+
+## Register the 08:00 morning status task (one time, PowerShell)
+
+It runs independently of the EOD script, so it also tells you when an EOD did not run.
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d Ubuntu-24.04 -- bash /home/vg/vektor-gauss/scripts/status.sh morning"
+$t = New-ScheduledTaskTrigger -Daily -At 8:00AM
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+Register-ScheduledTask -TaskName "VektorGauss-Status" -Action $a -Trigger $t -Settings $s
+```
+
+**If the whole PC is off, nothing can be sent.** For that, create a free check at healthchecks.io (period 1 day, grace 3 hours), put its ping URL in
+`.env` as `VG_STATUS_HEALTHCHECK_URL=...`, and connect the check to your Telegram or email there. A missing morning ping then reaches you another way.
