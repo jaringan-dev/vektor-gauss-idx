@@ -39,11 +39,9 @@ def _cutoff(vals: list[float]) -> float:
     return min(vals) if len(vals) >= DEPTH else 0.0
 
 
-def cohort_net_bounds(net_rows, levels, cohort) -> Bounds | None:
-    """net_rows: iterable of (broker_code, buy_val, sell_val) — the top net buyers, both sides exact.
-    levels   : iterable of (side 'B'|'S', broker_code, val) — the gross ladders.
-    cohort   : set of broker codes whose net we want (e.g. FOREIGN_BROKERS).
-    Returns None when there is no ladder at all (nothing to bound with)."""
+def _collect(net_rows, levels):
+    """Merge the two windows into per-broker exact buy / sell values plus the two ladder cut-offs.
+    Returns (buys, sells, cut_buy, cut_sell), or None when there is no ladder at all."""
     buys: dict[str, float] = {}
     sells: dict[str, float] = {}
     b_vals: list[float] = []
@@ -66,7 +64,18 @@ def cohort_net_bounds(net_rows, levels, cohort) -> Bounds | None:
             buys.setdefault(code, float(bv))
         if sv is not None:
             sells.setdefault(code, float(sv))
-    cut_b, cut_s = _cutoff(b_vals), _cutoff(s_vals)
+    return buys, sells, _cutoff(b_vals), _cutoff(s_vals)
+
+
+def cohort_net_bounds(net_rows, levels, cohort) -> Bounds | None:
+    """net_rows: iterable of (broker_code, buy_val, sell_val) — the top net buyers, both sides exact.
+    levels   : iterable of (side 'B'|'S', broker_code, val) — the gross ladders.
+    cohort   : set of broker codes whose net we want (e.g. FOREIGN_BROKERS).
+    Returns None when there is no ladder at all (nothing to bound with)."""
+    got = _collect(net_rows, levels)
+    if got is None:
+        return None
+    buys, sells, cut_b, cut_s = got
 
     lo = hi = 0.0
     exact = partial = 0
@@ -81,3 +90,28 @@ def cohort_net_bounds(net_rows, levels, cohort) -> Bounds | None:
         elif b is not None or s is not None or cut_b or cut_s:
             partial += 1
     return Bounds(lo, hi, exact, partial, cut_b, cut_s)
+
+
+def group_net_bounds(net_rows, levels, foreign, retail) -> dict[str, tuple[float, float]] | None:
+    """Certain net ranges (lo, hi) for three groups that together cover every broker: `foreign` houses, `retail`
+    houses, and `other` (everyone else). Every rupiah bought is sold by someone, so the three nets add to zero and
+    `other` is the complement of the other two: lo = -(hi_foreign + hi_retail), hi = -(lo_foreign + lo_retail).
+    (Checked on the live feed: on the 461 ticker-days where the ladders show every broker, buys == sells exactly.)
+    So `other` is as wide as the two bounds added together. Returns None when there is no ladder."""
+    f = cohort_net_bounds(net_rows, levels, foreign)
+    r = cohort_net_bounds(net_rows, levels, retail)
+    if f is None or r is None:
+        return None
+    return {"foreign": (f.lo, f.hi), "retail": (r.lo, r.hi), "other": (-(f.hi + r.hi), -(f.lo + r.lo))}
+
+
+def roundtrip_floor(net_rows, levels) -> float | None:
+    """A LOWER bound on the value that was both bought and sold by the same broker on the day: for each broker whose
+    buy and sell are both known exactly, min(buy, sell). A broker with only one side visible adds at least zero, so
+    the true figure can only be higher. A high share suggests heavy two-way (market-maker-like or intraday) trading,
+    but it is not proof of either. None when there is no ladder."""
+    got = _collect(net_rows, levels)
+    if got is None:
+        return None
+    buys, sells, _cb, _cs = got
+    return sum(min(buys[c], sells[c]) for c in buys.keys() & sells.keys())

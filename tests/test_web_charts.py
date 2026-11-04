@@ -103,3 +103,47 @@ def test_narrow_variant_fits_a_phone_and_keeps_ids_unique():
     _parse(narrow)
     xs = [float(x) for x in __import__("re").findall(r'x2="([\d.]+)"', narrow)]
     assert max(xs) <= charts.W_MOBILE                                 # nothing is drawn beyond the narrow canvas
+
+
+# ---- group_panels (net flow by broker group) ---------------------------------------------------------------------
+
+def _panels(n, lo=0.01, hi=0.03):
+    return [("Foreign houses", [lo] * n, [hi] * n), ("Domestic retail brokers", [-hi] * n, [-lo] * n), ("All other brokers", [-0.02] * n, [0.02] * n)]
+
+
+def test_group_panels_needs_at_least_three_days_with_data():
+    assert charts.group_panels(_days(2), _panels(2)) is None
+    ds = _days(10)
+    empty = [("A", [None] * 10, [None] * 10)]
+    assert charts.group_panels(ds, empty) is None
+
+
+def test_group_panels_draws_every_panel_with_labels_titles_and_a_round_trip_floor():
+    ds = _days(30)
+    svg = charts.group_panels(ds, _panels(30), ("Round-trip floor", [0.2] * 30))
+    root = _parse(svg)                                                          # well-formed XML
+    assert root.tag.endswith("svg") and root.get("role") == "img"
+    for label in ("Foreign houses", "Domestic retail brokers", "All other brokers", "Round-trip floor"):
+        assert label in svg
+    assert "between +1.0% and +3.0% of traded value" in svg and "at least 20.0% of traded value" in svg
+    assert 'aria-labelledby="groups-t groups-d"' in svg
+    assert "guaranteed to contain" in svg                                      # the description tells a screen-reader user what a bar means
+
+
+def test_group_panels_leaves_gaps_for_missing_days_and_escapes_text():
+    ds = _days(8)
+    lo = [0.01, None, 0.01, 0.01, 0.01, None, 0.01, 0.01]
+    hi = [0.02, None, 0.02, 0.02, 0.02, None, 0.02, 0.02]
+    svg = charts.group_panels(ds, [("A <b>&", lo, hi)])
+    assert svg.count("<rect") == 6 and "A &lt;b&gt;&amp;" in svg
+    _parse(svg)
+
+
+def test_group_panels_clip_outliers_and_say_so_on_their_own_line():
+    ds = _days(20)
+    lo = [0.01] * 20
+    hi = [0.02] * 20
+    lo[3], hi[3] = 0.1, 0.9                                                    # one huge crossing day
+    svg = charts.group_panels(ds, [("A", lo, hi)])
+    assert "beyond the scale" in svg and "+90.0%" in svg                       # real range kept in the tooltip
+    _parse(svg)

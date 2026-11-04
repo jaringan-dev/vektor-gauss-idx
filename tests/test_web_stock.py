@@ -254,7 +254,7 @@ def test_view_builds_the_three_charts_and_draws_the_risk_levels_on_the_price_cha
 
 def test_view_without_chart_data_has_no_charts_instead_of_empty_frames():
     v = stockmod.build_view(_raw(), TRACK)
-    assert set(v["charts"]) == {"price", "price_m", "flow", "flow_m", "band", "band_m"} and not any(v["charts"].values())
+    assert set(v["charts"]) == {"price", "price_m", "flow", "flow_m", "band", "band_m", "groups", "groups_m"} and not any(v["charts"].values())
 
 
 def test_stock_page_embeds_the_charts_with_their_explanations(client, monkeypatch):
@@ -598,3 +598,54 @@ def test_pattern_data_is_cached_per_pattern(client, monkeypatch):
 def test_every_page_carries_the_theme_button(client):
     for path in ("/guide", "/health"):
         assert 'id="theme-btn"' in client.get(path).text
+
+
+# ---- net flow by broker group ------------------------------------------------------------------------------------
+
+def _with_brokers(raw, copy_last=False, n=12):
+    """Per-broker rows for the chart days: foreign AK, retail YP, other ZZ. Every day's table is different (scaled by
+    the day number) unless `copy_last`, which makes the last day an exact copy of the day before it."""
+    raw = _with_charts(raw, n=n)
+    flows, levels = [], []
+    for i, r in enumerate(raw["chart_flow"]):
+        d = r[0]
+        k = i if (copy_last and i == len(raw["chart_flow"]) - 1) else i + 1
+        D = Decimal
+        flows.append((d, "AK", D(100 * k), D(40 * k)))
+        levels += [(d, "B", "AK", D(100 * k)), (d, "S", "AK", D(40 * k)), (d, "B", "YP", D(30 * k)),
+                   (d, "S", "YP", D(90 * k)), (d, "B", "ZZ", D(20 * k)), (d, "S", "ZZ", D(20 * k))]
+    raw["chart_brokers"] = {"flows": flows, "levels": levels}
+    return raw
+
+
+def test_group_series_splits_into_three_groups_that_add_to_zero_as_a_share_of_value():
+    g = stockmod.group_series(_with_brokers(_raw()))
+    assert g and len(g["days"]) == 12 and g["hidden"] == 0
+    i = 0                                                                      # day 1: value = 250,000,000,000 in _with_charts
+    value = 250_000_000_000
+    assert g["foreign"][0][i] == pytest.approx(60 / value) and g["retail"][0][i] == pytest.approx(-60 / value)
+    assert g["other"][0][i] == pytest.approx(0.0)
+    assert g["churn"][i] == pytest.approx((40 + 30 + 20) / value)
+
+
+def test_group_series_leaves_out_a_day_that_is_an_exact_copy_of_the_previous_one():
+    g = stockmod.group_series(_with_brokers(_raw(), copy_last=True))
+    assert g["hidden"] == 1 and g["foreign"][0][-1] is None and g["churn"][-1] is None
+    assert g["foreign"][0][-2] is not None
+
+
+def test_group_series_is_none_without_broker_rows_or_ladders():
+    assert stockmod.group_series(_with_charts(_raw())) is None
+    raw = _with_brokers(_raw())
+    raw["chart_brokers"]["levels"] = []
+    assert stockmod.group_series(raw) is None
+
+
+def test_view_and_page_show_the_group_chart_with_its_caveats(client, monkeypatch):
+    v = stockmod.build_view(_with_brokers(_raw()), TRACK)
+    assert v["charts"]["groups"].startswith("<svg") and v["charts"]["groups_m"].startswith("<svg") and v["group_hidden"] == 0
+    monkeypatch.setattr(stockmod, "load", lambda t: _with_brokers(_raw(), copy_last=True))
+    r = client.get("/stock/BBCA")
+    for needle in ("Who is buying and selling?", "Net flow by group</a>", "round-trip</a>", "an estimate", "not proof of a market maker", "share one scale",
+                   "1 day left out", 'aria-labelledby="groups-t groups-d"', 'aria-labelledby="groups-m-t groups-m-d"'):
+        assert needle in r.text, needle

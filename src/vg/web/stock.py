@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from datetime import date, timedelta
 
-from .. import risk
+from .. import broker_bounds, risk
+from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
 from . import charts, fmt
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import stock_summary
@@ -54,6 +55,15 @@ def load(ticker: str) -> dict | None:
             "FROM signal_components sc JOIN price_bars pb ON pb.session_date = sc.session_date AND pb.ticker = sc.ticker "
             "WHERE sc.ticker = %s ORDER BY sc.session_date DESC LIMIT %s", (ticker, CHART_SESSIONS))
         chart_flow = cur.fetchall()[::-1]
+        chart_brokers = None
+        if chart_flow:                                   # the per-broker rows behind the "net flow by group" chart
+            first = chart_flow[0][0]
+            cur.execute("SELECT session_date, broker_code, buy_val, sell_val FROM broker_flows "
+                        "WHERE ticker = %s AND session_date >= %s", (ticker, first))
+            bf = cur.fetchall()
+            cur.execute("SELECT session_date, side, broker_code, val FROM broker_levels "
+                        "WHERE ticker = %s AND session_date >= %s", (ticker, first))
+            chart_brokers = {"flows": bf, "levels": cur.fetchall()}
         cur.execute(
             "SELECT session_date, tag, ret_h5, ret_vs_ihsg_h5 FROM signal_log WHERE ticker = %s AND session_date >= %s "
             "ORDER BY session_date DESC, tag", (ticker, latest - timedelta(days=HISTORY_DAYS)))
@@ -74,7 +84,7 @@ def load(ticker: str) -> dict | None:
             "SELECT ex_date, type, exercise_ratio, proceed_ratio FROM corp_actions WHERE ticker = %s "
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
-    return {"chart_bars": chart_bars, "chart_flow": chart_flow,
+    return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
             "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest}
 
@@ -87,7 +97,46 @@ def _ownership_row(o) -> dict:
     return {"month": o[0].strftime("%b %Y"), "indiv": cells[0], "inst": cells[1], "foreign": cells[2]}
 
 
-def _build_charts(raw: dict, plan) -> dict:
+def group_series(raw: dict) -> dict | None:
+    """Per-day certain net ranges for foreign houses / domestic retail houses / everyone else, and the round-trip floor,
+    all as a share of the day's traded value. Pure. A day whose broker rows are an exact copy of the previous day's
+    (the feed once repeated yesterday's table) is left out and counted in `hidden`, so a repeat never looks like new data.
+    Returns None when there is nothing to draw."""
+    cb, flow = raw.get("chart_brokers"), raw.get("chart_flow") or []
+    if not cb or not flow:
+        return None
+    flows: dict[date, list] = {}
+    levels: dict[date, list] = {}
+    for d, code, buy, sell in cb["flows"]:
+        flows.setdefault(d, []).append((code, _f(buy), _f(sell)))
+    for d, side, code, val in cb["levels"]:
+        levels.setdefault(d, []).append((side, code, _f(val)))
+    days = [r[0] for r in flow]
+    value = {r[0]: _f(r[4]) for r in flow}
+    out: dict = {"days": days, "foreign": ([], []), "retail": ([], []), "other": ([], []), "churn": [], "hidden": 0}
+    prev_sig = None
+    for d in days:
+        rows, lv = flows.get(d), levels.get(d)
+        res = floor = None
+        if rows and lv and value.get(d):
+            sig = (sorted(rows, key=lambda r: r[0]), sorted(lv, key=lambda r: (r[0], r[1])))
+            if sig == prev_sig:
+                out["hidden"] += 1
+            else:
+                res = broker_bounds.group_net_bounds(rows, lv, FOREIGN_BROKERS, RETAIL_BROKERS)
+                floor = broker_bounds.roundtrip_floor(rows, lv)
+            prev_sig = sig
+        for name in ("foreign", "retail", "other"):
+            lo, hi = out[name]
+            lo.append(res[name][0] / value[d] if res else None)
+            hi.append(res[name][1] / value[d] if res else None)
+        out["churn"].append(floor / value[d] if floor is not None else None)
+    if not any(v is not None for v in out["foreign"][0]):
+        return None
+    return out
+
+
+def _build_charts(raw: dict, plan, g: dict | None = None) -> dict:
     """SVG strings (or None when there is not enough data). Split/bonus-adjusted prices; risk levels drawn only if a plan exists."""
     bars = []
     for d, o, h, l, c, v, f in raw.get("chart_bars", []):
@@ -106,7 +155,15 @@ def _build_charts(raw: dict, plan) -> dict:
     hi = [(_f(r[3]) / _f(r[4])) if (r[3] is not None and r[4]) else None for r in flow]
     flows = [_f(r[1]) for r in flow]
     m = charts.W_MOBILE                                   # a narrower variant keeps the text legible on phones (CSS swaps them)
+    def group_chart(width: int, uid: str):
+        if not g:
+            return None
+        nets = [("Foreign houses", *g["foreign"]), ("Domestic retail brokers", *g["retail"]), ("All other brokers", *g["other"])]
+        return charts.group_panels(g["days"], nets, ("Round-trip floor (same broker buys and sells)", g["churn"]), width=width, uid=uid)
+
     return {
+        "groups": group_chart(charts.W, "groups"),
+        "groups_m": group_chart(m, "groups-m"),
         "price": charts.candles(bars, levels=levels, tag_counts=counts),
         "price_m": charts.candles(bars, levels=levels, tag_counts=counts, width=m, uid="price-m"),
         "flow": charts.flow_bars(days, flows),
@@ -200,9 +257,10 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
                 "max_loss": f"{lots.max_loss:,.0f}", "capped": lots.capped_by_balance},
         }
 
-    charts_view = _build_charts(raw, plan)
+    groups = group_series(raw)
+    charts_view = _build_charts(raw, plan, groups)
     return {
-        "charts": charts_view,
+        "charts": charts_view, "group_hidden": groups["hidden"] if groups else 0,
         "ticker": t, "name": name, "sector": sector, "latest": raw["latest"].isoformat(),
         "close": fmt.price(close), "chg": fmt.cell(chg, 1), "comp": comp_view, "tags_today": tags_today_view,
         "summary": stock_summary(summary_in), "recent": recent, "history": history, "buyers": buyers,

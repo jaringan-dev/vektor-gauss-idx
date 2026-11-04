@@ -9,7 +9,7 @@ from datetime import date
 import pytest
 
 from vg import artifacts
-from vg.broker_bounds import DEPTH, cohort_net_bounds
+from vg.broker_bounds import DEPTH, cohort_net_bounds, group_net_bounds, roundtrip_floor
 from vg.sources.vektorgauss import PARSER_VERSION, VgBrokerSummarySource
 
 COHORT = {"F1", "F2", "F3"}
@@ -112,3 +112,47 @@ def test_legacy_store_still_overwrites_by_name(tmp_path, monkeypatch):
     a, _, _ = artifacts.store("src", date(2026, 9, 3), b"one")
     b, _, _ = artifacts.store("src", date(2026, 9, 3), b"two")
     assert a == b and a.read_bytes() == b"two"            # unchanged behaviour for sources not yet migrated
+
+
+# ---- group_net_bounds / roundtrip_floor (net flow by group chart) ------------------------------------------------
+
+FOREIGN, RETAIL = {"AK"}, {"YP"}
+
+
+def _all_visible():
+    """Three brokers, ladders far from full => everyone visible. Buys 150 = sells 150, as in a real market."""
+    levels = [("B", "AK", 100.0), ("S", "AK", 40.0), ("B", "YP", 30.0), ("S", "YP", 90.0), ("B", "ZZ", 20.0), ("S", "ZZ", 20.0)]
+    return [], levels
+
+
+def test_three_groups_cover_every_broker_and_add_up_to_zero():
+    net_rows, levels = _all_visible()
+    g = group_net_bounds(net_rows, levels, FOREIGN, RETAIL)
+    assert g["foreign"] == (60.0, 60.0) and g["retail"] == (-60.0, -60.0) and g["other"] == (0.0, 0.0)
+    assert sum(g[k][0] for k in g) == 0 and sum(g[k][1] for k in g) == 0
+
+
+def test_other_is_the_complement_and_as_wide_as_the_other_two_added():
+    buys = _ladder("B", [1000 - i for i in range(DEPTH)], "Z")                 # full ladders: part of the picture is hidden
+    sells = _ladder("S", [900 - i for i in range(DEPTH)], "Y")
+    g = group_net_bounds([], buys + sells, FOREIGN, RETAIL)
+    f, r, o = g["foreign"], g["retail"], g["other"]
+    assert o[0] == pytest.approx(-(f[1] + r[1])) and o[1] == pytest.approx(-(f[0] + r[0]))
+    assert (o[1] - o[0]) == pytest.approx((f[1] - f[0]) + (r[1] - r[0]))
+    assert f[0] <= f[1] and r[0] <= r[1] and o[0] <= o[1]
+
+
+def test_group_bounds_none_without_a_ladder():
+    assert group_net_bounds([("AK", 100, 10)], [], FOREIGN, RETAIL) is None
+
+
+def test_roundtrip_floor_is_the_smaller_side_of_each_fully_visible_broker():
+    net_rows, levels = _all_visible()
+    assert roundtrip_floor(net_rows, levels) == 40.0 + 30.0 + 20.0
+
+
+def test_roundtrip_floor_ignores_brokers_with_one_side_hidden_and_needs_a_ladder():
+    levels = [("B", "AK", 100.0), ("S", "YP", 90.0)]                           # nobody has both sides visible
+    assert roundtrip_floor([], levels) == 0.0
+    assert roundtrip_floor([("AK", 100, 10)], []) is None
+    assert roundtrip_floor([("AK", 100.0, 10.0)], levels) == 10.0              # a net-buyer row fills AK's sell side exactly

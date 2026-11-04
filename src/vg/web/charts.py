@@ -213,6 +213,76 @@ def bounds_band(days: list[date], lo_pct: list[float | None], hi_pct: list[float
     return _svg(uid, height, "Foreign brokers: certain range of net flow", desc, "".join(body), width)
 
 
+def group_panels(days: list[date], net_panels: list[tuple[str, list[float | None], list[float | None]]],
+                 share: tuple[str, list[float | None]] | None = None, *, width: int = W, uid: str = "groups") -> str | None:
+    """Stacked small-multiples sharing one time axis. Each net panel is (label, lo_pct, hi_pct): the certain range of that
+    group's net flow per day as a share of traded value (same scale in every net panel, so they compare). The optional
+    last panel is (label, floor_pct): bars from zero, a lower bound on a share. Days without data leave a gap."""
+    have = [i for i in range(len(days)) if any(p[1][i] is not None and p[2][i] is not None for p in net_panels)]
+    if len(have) < 3:
+        return None
+    xs, step = _x_positions(len(days), width)
+    extremes = sorted(max(abs(p[1][i]), abs(p[2][i])) for p in net_panels for i in have if p[1][i] is not None and p[2][i] is not None)
+    # Same autoscale rule as bounds_band: the typical day sets the scale; rare huge days are clipped and marked.
+    amp = max(extremes[min(len(extremes) - 1, int(len(extremes) * 0.9))] * 1.15, 0.01)
+    amp = min(amp, extremes[-1]) if extremes[-1] > 0.01 else amp
+    ph, gap = 74, 18                                             # panel height, space between panels (holds the label)
+    cw = max(2.0, min(10.0, step * 0.62))
+    body: list[str] = []
+    clipped = sum(1 for p in net_panels for i in have
+                  if p[1][i] is not None and p[2][i] is not None and not (-amp <= p[1][i] <= amp and -amp <= p[2][i] <= amp))
+    top0 = PAD_T + 10 + (14 if clipped else 0)                 # a clipped-bars note gets its own line above the first label
+    for k, (label, lo, hi) in enumerate(net_panels):
+        pt = top0 + k * (ph + gap)
+        pb = pt + ph
+        y = _scale(-amp, amp, pt, pb)
+        body.append(f'<text x="{PAD_L}" y="{pt - 5:.1f}" fill="var(--fg)" font-weight="600">{escape(label)}</text>'
+                    f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{y(0):.1f}" y2="{y(0):.1f}" stroke="var(--muted)"/>'
+                    f'<text x="{width - PAD_R + 4}" y="{y(amp) + 8:.1f}" fill="var(--muted)">+{amp * 100:.0f}%</text>'
+                    f'<text x="{width - PAD_R + 4}" y="{y(-amp):.1f}" fill="var(--muted)">-{amp * 100:.0f}%</text>'
+                    f'<text x="{width - PAD_R + 4}" y="{y(0) + 4:.1f}" fill="var(--muted)">0</text>')
+        for i in have:
+            a, b = lo[i], hi[i]
+            if a is None or b is None:
+                continue
+            ca, cb = max(-amp, min(amp, a)), max(-amp, min(amp, b))
+            y0, y1 = y(cb), y(ca)
+            col = "var(--pos)" if a > 0 else ("var(--neg)" if b < 0 else "var(--muted)")
+            body.append(f'<rect x="{xs[i] - cw / 2:.1f}" y="{y0:.1f}" width="{cw:.1f}" height="{max(2.0, y1 - y0):.1f}" fill="{col}" opacity=".75" rx="1">'
+                        f'<title>{days[i].isoformat()} · {escape(label)}: between {a * 100:+.1f}% and {b * 100:+.1f}% of traded value</title></rect>')
+            if cb != b or ca != a:                              # beyond the scale: arrow at the clipped end
+                up = cb != b
+                ty = y0 - 1 if up else y1 + 1
+                body.append(f'<path d="M{xs[i] - 3:.1f},{ty:.1f} l3,{-5 if up else 5} l3,{5 if up else -5} z" fill="{col}"/>')
+    bottom = top0 + len(net_panels) * (ph + gap) - gap
+    if share is not None:
+        label, vals = share
+        pt = top0 + len(net_panels) * (ph + gap)
+        pb = pt + ph * 0.7
+        vmax = max((v for v in vals if v is not None), default=0.0)
+        smax = max(vmax * 1.15, 0.01)
+        y = _scale(0.0, smax, pt, pb)
+        body.append(f'<text x="{PAD_L}" y="{pt - 5:.1f}" fill="var(--fg)" font-weight="600">{escape(label)}</text>'
+                    f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{pb:.1f}" y2="{pb:.1f}" stroke="var(--muted)"/>'
+                    f'<text x="{width - PAD_R + 4}" y="{pt + 8:.1f}" fill="var(--muted)">{smax * 100:.0f}%</text>'
+                    f'<text x="{width - PAD_R + 4}" y="{pb + 4:.1f}" fill="var(--muted)">0</text>')
+        for i, v in enumerate(vals):
+            if v is None:
+                continue
+            body.append(f'<rect x="{xs[i] - cw / 2:.1f}" y="{y(v):.1f}" width="{cw:.1f}" height="{max(1.0, pb - y(v)):.1f}" fill="var(--fg)" opacity=".4" rx="1">'
+                        f'<title>{days[i].isoformat()} · at least {v * 100:.1f}% of traded value was both bought and sold by the same brokers</title></rect>')
+        bottom = pb
+    if clipped:
+        body.append(f'<text x="{PAD_L}" y="{PAD_T + 4}" fill="var(--muted)">{clipped} bar{"s" if clipped != 1 else ""} beyond the scale (arrow); hover for the real range</text>')
+    body.append(_axis_x(days, xs, top0, bottom, width))
+    height = int(bottom + PAD_B)
+    names = ", ".join(p[0] for p in net_panels) + (f", {share[0]}" if share else "")
+    desc = (f"Net flow of broker groups per day, {len(have)} sessions with data from {days[have[0]].isoformat()} to {days[have[-1]].isoformat()}. "
+            f"Panels: {names}. Net-flow bars show a range guaranteed to contain the real value, as a share of traded value; "
+            f"a bar entirely above zero means net buying is certain, entirely below means net selling is certain, across zero means undetermined.")
+    return _svg(uid, height, "Net flow by broker group per day", desc, "".join(body), width)
+
+
 def count_bars(days: list[date], counts: list[int], *, height: int = 140, label: str = "stocks flagged",
                width: int = W, uid: str = "count") -> str | None:
     """How many stocks a pattern flagged on each day (zero days are drawn as empty, not skipped)."""

@@ -60,6 +60,19 @@
       {{ chart(v.charts.band, v.charts.band_m) }}
     </div>
     {% endif %}
+    {% if v.charts.groups %}
+    <div class="panel">
+      <h2>Who is buying and selling? {{ term('group_flow', 'Net flow by group') }} per day</h2>
+      <p class="note">The same {{ term('certain_bounds', 'certain range') }} as above, split into three groups that always add up to zero (every rupiah bought is sold by
+         someone): <b>foreign houses</b> (the foreign institutional brokers), <b>domestic retail brokers</b> (the mass-retail apps and brokers) and <b>all other brokers</b>
+         (everyone else, which mixes local institutions, bank-backed houses and smaller brokers). The groups come from the broker's code, not from who its client is,
+         so "retail" and "institution" are an estimate. The three top panels share one scale, so a flat panel means a small share of the day's value, not missing data.
+         The bottom panel shows at least how much of the day's value the <em>same</em> brokers both bought and sold ({{ term('roundtrip', 'round-trip') }}). That includes
+         a broker's own clients trading against each other, so a high value is not proof of a market maker.</p>
+      {% if v.group_hidden %}<p class="note">{{ v.group_hidden }} day{{ 's' if v.group_hidden != 1 else '' }} left out: the broker table was an exact copy of the previous day's, so it is not new data.</p>{% endif %}
+      {{ chart(v.charts.groups, v.charts.groups_m) }}
+    </div>
+    {% endif %}
 
     {% if v.comp and v.comp.bounds %}
     <div class="panel">

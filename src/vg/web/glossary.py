@@ -104,6 +104,16 @@ _T = [
     Term("certain_bounds", "Certain bounds", "The sell side we cannot see in full is represented by a range that is guaranteed to contain the "
          "truth, rather than a single guess. Example: 'between −6.3% and −0.1% of traded value' means the real value is somewhere in that range.",
          "concepts", how="Per broker: the visible side is exact; the hidden side is bounded between 0 and the smallest visible value."),
+    Term("group_flow", "Net flow by group", "Brokers split into three groups (foreign houses, domestic retail brokers, all others) and each group's net "
+         "buying or selling shown per day as a range that is guaranteed to contain the truth. The three groups always add up to zero.", "concepts",
+         how="Foreign and retail groups use the certain bounds of their listed brokers; 'all others' is minus the sum of the other two.",
+         caveat="Groups come from the broker's code, not from who its client is: one broker serves many kinds of clients, so 'retail' and "
+                "'institution' are estimates. 'All others' mixes local institutions, bank-backed houses and small brokers."),
+    Term("roundtrip", "Round-trip trading", "Value that the same broker both bought and sold on the day. Shown as a share of the day's traded value, "
+         "as a floor: at least this much.", "concepts",
+         how="For each broker whose buy and sell are both visible: the smaller of the two, summed over brokers.",
+         caveat="It counts a broker's own clients trading against each other as well as market-making or intraday trading, and the data cannot "
+                "tell which, so a high value is not proof of a market maker."),
     Term("gross", "Gross buy / gross sell", "A broker's total bought (or sold) value for the day, without netting the two.", "concepts"),
     Term("ihsg", "IHSG (Jakarta Composite Index)", "The overall index of the Indonesian stock market.", "concepts"),
     # ---- track record ---------------------------------------------------------------------------------------------
