@@ -187,6 +187,12 @@ class VgBrokerSummarySource(BrokerSummarySource):
                 ))
         return out
 
+    @staticmethod
+    def _served_date(raw: bytes) -> date | None:
+        """The day the response says it covers (`broker_end_date`), or None when it carries no date."""
+        end = json.loads(raw).get("broker_end_date")
+        return _date.fromisoformat(end) if end else None
+
     def _download(self, ticker: str, on_date: date | None = None) -> bytes:
         if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
             raise RuntimeError(
@@ -226,10 +232,18 @@ class VgBrokerSummarySource(BrokerSummarySource):
         try:
             rows = self._parse(raw)
             levels = self._parse_levels(raw)
+            served = self._served_date(raw)
         except Exception as exc:
             return BrokerSummaryFetchResult(
                 "error", session_date, ticker, self.name, self.tier, raw_bytes=raw,
                 detail=f"parse: {type(exc).__name__}: {exc}",
+            )
+        if served is not None and served != session_date:
+            # The feed answers "the latest day" with whatever it has published so far. At 19:19 on 3 Nov 2026 that was still
+            # 2 Nov, and the whole table was stored under 3 Nov (every row an exact copy). Its own date says which day it is.
+            return BrokerSummaryFetchResult(
+                "no_data", session_date, ticker, self.name, self.tier, raw_bytes=raw,
+                detail=f"stale: the feed served {served}, not {session_date}",
             )
         status = "ok" if rows else "no_data"
         return BrokerSummaryFetchResult(

@@ -81,6 +81,26 @@ def test_fetch_use_date_pins_the_requested_day():
     assert seen == [date(2026, 7, 15)]
 
 
+def _dated(end: str) -> bytes:
+    return _SAMPLE.replace(b'{"stock_code":"BBCA",', b'{"stock_code":"BBCA","broker_end_date":"' + end.encode() + b'",', 1)
+
+
+def test_fetch_refuses_a_table_the_feed_dated_for_another_day():
+    """2026-11-03 19:19: the 'latest day' call still served 2 Nov and it was stored under 3 Nov (every row a copy)."""
+    src = VgBrokerSummarySource()
+    src._download = lambda ticker, **kw: _dated("2026-11-02")
+    res = src.fetch(date(2026, 11, 3), "BBCA")
+    assert res.status == "no_data" and not res.rows and "stale" in res.detail and "2026-11-02" in res.detail
+
+
+def test_fetch_accepts_a_table_dated_for_the_requested_day_and_one_without_a_date():
+    src = VgBrokerSummarySource()
+    src._download = lambda ticker, **kw: _dated("2026-11-03")
+    assert src.fetch(date(2026, 11, 3), "BBCA").status == "ok"
+    src._download = lambda ticker, **kw: _SAMPLE                     # no date in the response: nothing to compare, accept
+    assert src.fetch(date(2026, 11, 3), "BBCA").status == "ok"
+
+
 def test_download_sends_start_equals_end_only_for_a_dated_pull(monkeypatch):
     captured = {}
 
