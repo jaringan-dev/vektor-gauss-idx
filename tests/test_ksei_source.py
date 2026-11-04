@@ -40,6 +40,15 @@ def test_candidate_dates_last_weekday_then_back():
     assert _candidate_dates(date(2026, 5, 1))[0] == date(2026, 5, 29)
 
 
+def test_candidate_dates_never_ask_for_a_day_that_has_not_happened():
+    # 4 Nov: November's month-end candidates (20-30 Nov) are all in the future -> nothing to ask for
+    assert _candidate_dates(date(2026, 11, 4), today=date(2026, 11, 4)) == []
+    # the last days of the month: only the days up to today remain
+    late = _candidate_dates(date(2026, 8, 15), today=date(2026, 8, 28))
+    assert late and max(late) == date(2026, 8, 28)
+    assert all(d <= date(2026, 8, 28) for d in late)
+
+
 def test_parse_filters_to_equity(zip_bytes):
     snap_date, rows = KseiOwnershipSource._parse(zip_bytes)
     assert snap_date == date(2026, 8, 31)

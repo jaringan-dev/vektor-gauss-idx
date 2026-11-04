@@ -236,13 +236,16 @@ class KseiCaScheduleSource(CorpActionSource):
         )
 
 
-def _candidate_dates(month: date) -> list[date]:
-    """Last weekday of `month`'s month, then walking back up to _MAX_LOOKBACK_DAYS."""
+def _candidate_dates(month: date, today: date | None = None) -> list[date]:
+    """Last weekday of `month`'s month, then walking back up to _MAX_LOOKBACK_DAYS.
+    Dates after `today` are dropped: a file for a day that has not happened cannot exist, and asking
+    KSEI for one has drawn a 5xx (4 Nov, probing November), which was logged as a collector error."""
     last_day = calendar.monthrange(month.year, month.month)[1]
     d = date(month.year, month.month, last_day)
     while d.weekday() >= 5:  # Sat/Sun
         d -= timedelta(days=1)
-    return [d - timedelta(days=i) for i in range(_MAX_LOOKBACK_DAYS + 1)]
+    cutoff = today or date.today()
+    return [c for c in (d - timedelta(days=i) for i in range(_MAX_LOOKBACK_DAYS + 1)) if c <= cutoff]
 
 
 class KseiOwnershipSource(OwnershipSource):
