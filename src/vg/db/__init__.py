@@ -1,4 +1,4 @@
-"""Postgres helpers (psycopg 3)."""
+"""Postgres helpers (psycopg 3). `vg.db.validated` adds schema-validated upserts (needs pydantic)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import psycopg
 
-from .config import CONFIG
+from ..config import CONFIG
 
 
 @contextmanager

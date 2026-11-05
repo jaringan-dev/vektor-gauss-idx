@@ -1,11 +1,25 @@
-"""Environment-driven configuration. Reads .env if present (via python-dotenv)."""
+"""Environment-driven configuration, validated with pydantic-settings (Pydantic v2).
+
+Every setting is read from a `VG_<NAME>` environment variable (e.g. `database_url` <- `VG_DATABASE_URL`). A `.env`
+file is loaded into the process environment first (python-dotenv, never overriding a variable that is already set),
+so the shell, cron/Task Scheduler and `.env` keep exactly the precedence they had before this module was typed.
+
+Why python-dotenv instead of pydantic's own `env_file=`: several modules also read `os.environ` directly
+(`VG_FEED_WAIT_MINUTES`, `VG_WEB_HOST`, ...), and tests mask a setting with `monkeypatch.delenv`. A pydantic-only
+`env_file` would neither populate `os.environ` for those readers nor be maskable by a test.
+
+Failure mode: a malformed value raises `ConfigError` at import time with one line per bad variable
+("VG_HTTP_TIMEOUT: must be greater than 0 (got '-5')") instead of a raw pydantic traceback. Secrets are never echoed.
+"""
 
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from typing import Annotated, Any
+
+from pydantic import Field, ValidationError, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 try:  # optional
     from dotenv import load_dotenv
@@ -25,8 +39,19 @@ DEFAULT_UA = (
 # showed it has no edge, so the default is now the two candidates that do.
 DEFAULT_RADAR_TAGS = ("FLOAT-ASING-PADAT", "TIKET-BESAR-AKUM", "BROKER-ASING-AKUM", "BANDAR-CANDIDATE")
 
+# Settings whose values must never appear in an error message.
+_SECRETS = frozenset({"feed_api_key", "telegram_bot_token", "web_password"})
+
+# pydantic-settings would otherwise try to JSON-decode a tuple from the environment ("BBRI,ANTM" is not JSON).
+_Csv = Annotated[tuple[str, ...], NoDecode]
+
+
+class ConfigError(ValueError):
+    """One or more `VG_*` settings are invalid. The message lists each offending variable."""
+
 
 def _parse_date(s: str | None) -> date | None:
+    """Lenient ISO date: blank or malformed -> None (the forward-test clock is then simply 'not set')."""
     if not s or not s.strip():
         return None
     try:
@@ -35,79 +60,154 @@ def _parse_date(s: str | None) -> date | None:
         return None
 
 
-@dataclass
-class Config:
-    database_url: str
-    artifact_dir: Path
-    http_user_agent: str
-    http_timeout: float
-    request_delay_seconds: float
-    feed_delay_seconds: float          # pause between calls to the VG feed (no Cloudflare there)
-    idx_base_url: str
-    feed_base_url: str
-    feed_api_key: str
-    telegram_bot_token: str
-    telegram_chat_id: str
-    watchlist: tuple[str, ...]
-    holdings: tuple[str, ...]
-    harvest_tickers: tuple[str, ...]
-    radar_tags: tuple[str, ...]
-    forward_since: date | None
-    digest_trade_calls: bool
-    account_balance: float
-    risk_pct: float
-    fee_pct: float
-    atr_sl_mult: float
-    target_r: float
-    # Dashboard access (web/auth.py). Empty password = loopback-only use; required to listen on any other address.
+def _csv_upper(v: Any) -> tuple[str, ...]:
+    """'bbri, antm' / ['bbri', 'antm'] -> ('BBRI', 'ANTM'); None / blank -> ()."""
+    if v is None:
+        return ()
+    parts = v.split(",") if isinstance(v, str) else list(v)
+    return tuple(str(t).strip().upper() for t in parts if str(t).strip())
+
+
+def _http_url(v: str, *, field: str, allow_blank: bool) -> str:
+    v = v.strip().rstrip("/")
+    if not v:
+        if allow_blank:
+            return ""
+        raise ValueError(f"{field} must not be blank")
+    if not v.lower().startswith(("http://", "https://")):
+        raise ValueError("must start with http:// or https://")
+    return v
+
+
+class Settings(BaseSettings):
+    """All runtime settings. Instantiate via `Settings.load()` (what `CONFIG` is)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="VG_",
+        case_sensitive=False,
+        extra="ignore",          # other VG_* variables exist (VG_WEB_HOST, VG_BACKUP_*, ...) and are read elsewhere
+        env_ignore_empty=True,   # `VG_FORWARD_SINCE=` (blank line in .env.example) means "unset", not an error
+        validate_default=True,   # defaults run through the validators too (risk_pct/fee_pct are converted below)
+    )
+
+    # --- storage ------------------------------------------------------------------------
+    database_url: str = "postgresql://vg:vg@localhost:5432/vektorgauss"
+    artifact_dir: Path = Path("./data/artifacts")
+
+    # --- HTTP ---------------------------------------------------------------------------
+    http_user_agent: str = DEFAULT_UA
+    http_timeout: float = Field(30.0, gt=0, le=600)
+    request_delay_seconds: float = Field(4.0, ge=0)   # IDX sits behind Cloudflare and needs the slow delay
+    # The VG feed has no Cloudflare. 1.0s was exercised for ~19k calls (2026-10-16/31) without a single throttle.
+    feed_delay_seconds: float = Field(1.0, ge=0)
+    idx_base_url: str = "https://www.idx.co.id"
+    # VG data feed (Phase 1.5, Tier 3): broker summary + Cloudflare-free price history.
+    # Endpoint + key live in .env only, never in source.
+    feed_base_url: str = ""
+    feed_api_key: str = Field("", repr=False)
+    # Dead-man's-switch ping URL (scripts/eod.sh reads the same variable from the shell).
+    healthcheck_url: str = ""
+
+    # --- Telegram -----------------------------------------------------------------------
+    telegram_bot_token: str = Field("", repr=False)
+    telegram_chat_id: str = ""
+
+    # --- universe -----------------------------------------------------------------------
+    watchlist: _Csv = ()
+    holdings: _Csv = ()
+    # Extra tickers to harvest VG-feed data for beyond watchlist+holdings (broker summary/inventory,
+    # done-by-price). Widens the "panen" without code.
+    harvest_tickers: _Csv = ()
+    radar_tags: _Csv = DEFAULT_RADAR_TAGS
+    forward_since: date | None = None
+    digest_trade_calls: bool = True
+
+    # --- trade-call maths. VG_RISK_PCT / VG_FEE_PCT are written as PERCENT in .env; the attributes hold FRACTIONS ---
+    account_balance: float = Field(0.0, ge=0)
+    risk_pct: float = Field(1.0, gt=0, le=100)
+    fee_pct: float = Field(0.3, ge=0, lt=100)
+    atr_sl_mult: float = Field(2.0, gt=0)
+    target_r: float = Field(2.5, gt=0)
+
+    # --- dashboard access (web/auth.py). Empty password = loopback-only; required to listen elsewhere. ---
     web_user: str = "vg"
-    web_password: str = ""
+    web_password: str = Field("", repr=False)
 
-    @staticmethod
-    def load() -> "Config":
-        wl = os.environ.get("VG_WATCHLIST", "")
-        hv = os.environ.get("VG_HARVEST_TICKERS", "")
-        hd = os.environ.get("VG_HOLDINGS", "")
-        rt = os.environ.get("VG_RADAR_TAGS", "").strip()
-        return Config(
-            database_url=os.environ.get(
-                "VG_DATABASE_URL",
-                "postgresql://vg:vg@localhost:5432/vektorgauss",
-            ),
-            artifact_dir=Path(os.environ.get("VG_ARTIFACT_DIR", "./data/artifacts")),
-            http_user_agent=os.environ.get("VG_HTTP_USER_AGENT", DEFAULT_UA),
-            http_timeout=float(os.environ.get("VG_HTTP_TIMEOUT", "30")),
-            request_delay_seconds=float(os.environ.get("VG_REQUEST_DELAY_SECONDS", "4")),
-            # IDX sits behind Cloudflare and needs the slow delay above; the VG feed does not.
-            # 1.0s was exercised for ~19k calls (2026-10-16/31) without a single throttle.
-            feed_delay_seconds=float(os.environ.get("VG_FEED_DELAY_SECONDS", "1.0")),
-            idx_base_url=os.environ.get("VG_IDX_BASE_URL", "https://www.idx.co.id").rstrip("/"),
-            # VG data feed (Phase 1.5, Tier 3): broker summary + Cloudflare-free price
-            # history. Endpoint + key live in .env only, never in source.
-            feed_base_url=os.environ.get("VG_FEED_BASE_URL", "").rstrip("/"),
-            feed_api_key=os.environ.get("VG_FEED_API_KEY", ""),
-            telegram_bot_token=os.environ.get("VG_TELEGRAM_BOT_TOKEN", ""),
-            telegram_chat_id=os.environ.get("VG_TELEGRAM_CHAT_ID", ""),
-            watchlist=tuple(t.strip().upper() for t in wl.split(",") if t.strip()),
-            holdings=tuple(t.strip().upper() for t in hd.split(",") if t.strip()),
-            # Extra tickers to harvest VG-feed data for beyond watchlist+holdings
-            # (broker summary/inventory, done-by-price). Widen the "panen" without code.
-            harvest_tickers=tuple(t.strip().upper() for t in hv.split(",") if t.strip()),
-            radar_tags=(
-                tuple(t.strip().upper() for t in rt.split(",") if t.strip())
-                if rt else DEFAULT_RADAR_TAGS
-            ),
-            forward_since=_parse_date(os.environ.get("VG_FORWARD_SINCE")),
-            digest_trade_calls=os.environ.get("VG_DIGEST_TRADE_CALLS", "true").lower()
-            in ("1", "true", "yes"),
-            account_balance=float(os.environ.get("VG_ACCOUNT_BALANCE", "0") or "0"),
-            risk_pct=float(os.environ.get("VG_RISK_PCT", "1.0")) / 100.0,
-            fee_pct=float(os.environ.get("VG_FEE_PCT", "0.3")) / 100.0,
-            atr_sl_mult=float(os.environ.get("VG_ATR_SL_MULT", "2.0")),
-            target_r=float(os.environ.get("VG_TARGET_R", "2.5")),
-            web_user=os.environ.get("VG_WEB_USER", "vg").strip() or "vg",
-            web_password=os.environ.get("VG_WEB_PASSWORD", ""),
-        )
+    # ---------------------------------------------------------------- validators
+
+    @field_validator("database_url")
+    @classmethod
+    def _check_database_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        if "://" in v:
+            scheme = v.split("://", 1)[0].lower()
+            if scheme not in ("postgresql", "postgres"):
+                raise ValueError("must be a postgresql:// URL (or a libpq 'key=value' string)")
+        elif "=" not in v:
+            raise ValueError("must be a postgresql:// URL (or a libpq 'key=value' string)")
+        return v
+
+    @field_validator("idx_base_url")
+    @classmethod
+    def _check_idx_base_url(cls, v: str) -> str:
+        return _http_url(v, field="idx_base_url", allow_blank=False)
+
+    @field_validator("feed_base_url", "healthcheck_url")
+    @classmethod
+    def _check_optional_url(cls, v: str) -> str:
+        return _http_url(v, field="url", allow_blank=True)
+
+    @field_validator("watchlist", "holdings", "harvest_tickers", mode="before")
+    @classmethod
+    def _split_tickers(cls, v: Any) -> tuple[str, ...]:
+        return _csv_upper(v)
+
+    @field_validator("radar_tags", mode="before")
+    @classmethod
+    def _split_radar(cls, v: Any) -> tuple[str, ...]:
+        # A blank value means "use the default", never "no RADAR".
+        return _csv_upper(v) or DEFAULT_RADAR_TAGS
+
+    @field_validator("forward_since", mode="before")
+    @classmethod
+    def _lenient_date(cls, v: Any) -> date | None:
+        # Kept lenient on purpose (an existing, tested contract): a malformed date means "forward test not set".
+        return _parse_date(v) if isinstance(v, str) else v
+
+    @field_validator("web_user", mode="before")
+    @classmethod
+    def _web_user_default(cls, v: Any) -> str:
+        return (v.strip() if isinstance(v, str) else v) or "vg"
+
+    @field_validator("risk_pct", "fee_pct")
+    @classmethod
+    def _percent_to_fraction(cls, v: float) -> float:
+        return v / 100.0
+
+    # ---------------------------------------------------------------- loading
+
+    @classmethod
+    def load(cls) -> Settings:
+        """Read the environment now. Raises `ConfigError` (one line per bad variable) instead of a raw traceback."""
+        try:
+            return cls()
+        except ValidationError as exc:
+            raise ConfigError(_explain(exc)) from None
 
 
-CONFIG = Config.load()
+def _explain(exc: ValidationError) -> str:
+    lines = []
+    for err in exc.errors():
+        name = str(err["loc"][0]) if err["loc"] else "?"
+        got = "" if name in _SECRETS else f" (got {err['input']!r})"
+        msg = str(err["msg"]).removeprefix("Value error, ")
+        lines.append(f"VG_{name.upper()}: {msg}{got}")
+    return "invalid configuration:\n  " + "\n  ".join(lines)
+
+
+# Back-compat: `Config` / `Config.load()` is what the rest of the code base and the tests import.
+Config = Settings
+
+CONFIG = Settings.load()

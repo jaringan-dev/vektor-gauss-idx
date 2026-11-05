@@ -13,6 +13,10 @@ dependencies = [
     "curl-cffi>=0.7",
     # Phase B: parse the archived KSEI ownership-disclosure PDF forms.
     "pdfplumber>=0.11",
+    # Typed, validated configuration (vg.config) and row validation before upsert (vg.schemas).
+    # NoDecode (comma-separated tickers from the environment) needs pydantic-settings >= 2.7.
+    "pydantic>=2.7",
+    "pydantic-settings>=2.7",
 ]
 
 [project.optional-dependencies]

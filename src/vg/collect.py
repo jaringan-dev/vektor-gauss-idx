@@ -16,9 +16,10 @@ from pathlib import Path
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import artifacts
+from . import artifacts, schemas
 from .config import CONFIG
 from .db import connect, upsert_many
+from .db.validated import UpsertReport, validate_batch, validated_upsert
 from .sources.base import (
     KSEI_CATEGORIES,
     CaFetchResult,
@@ -90,7 +91,19 @@ def _price_row(sd: date, bar: PriceBar, source: str, tier: int) -> tuple:
     )
 
 
-def _persist(cur: psycopg.Cursor, res: PriceFetchResult) -> int:
+def _note(notes: list[str] | None, report: UpsertReport) -> int:
+    """Rows written; when the schema layer rejected some, say so in `notes` (-> run_log.error / outcome detail)
+    instead of only in a log nobody reads. `notes=None` for callers that do not report."""
+    if notes is not None and report.rejected:
+        notes.append(f"schema: {report.summary()}")
+    return report.upserted
+
+
+def _join(detail: str | None, notes: list[str]) -> str:
+    return "; ".join(x for x in (detail, *notes) if x)
+
+
+def _persist(cur: psycopg.Cursor, res: PriceFetchResult, notes: list[str] | None = None) -> int:
     sd = res.session_date
 
     upsert_many(
@@ -110,11 +123,11 @@ def _persist(cur: psycopg.Cursor, res: PriceFetchResult) -> int:
         [(b.name, sd, sd, b.ticker) for b in res.bars],
     )
 
-    n = upsert_many(
-        cur, "price_bars", _PRICE_COLS,
-        [_price_row(sd, b, res.source, res.source_tier) for b in res.bars],
-        conflict=("session_date", "ticker"), update=_PRICE_UPDATE,
-    )
+    n = _note(notes, validated_upsert(
+        cur, schemas.PriceBar, res.bars,
+        build=lambda b: schemas.PriceBar.from_source(
+            b, session_date=sd, source=res.source, source_tier=res.source_tier),
+    ))
     cur.execute(
         "UPDATE price_bars SET fetched_at = now() WHERE session_date = %s AND source = %s",
         (sd, res.source),
@@ -155,9 +168,10 @@ def _collect(res: PriceFetchResult) -> CollectOutcome:
         with connect() as conn, conn.cursor() as cur:
             if art:
                 artifacts.record(cur, res.source, res.session_date, *art)
-            rows = _persist(cur, res) if res.status == "ok" else 0
-            _log(cur, res.session_date, res.status, rows, res.detail or None)
-        return CollectOutcome(res.session_date, res.status, rows, res.detail)
+            notes: list[str] = []
+            rows = _persist(cur, res, notes) if res.status == "ok" else 0
+            _log(cur, res.session_date, res.status, rows, _join(res.detail, notes) or None)
+        return CollectOutcome(res.session_date, res.status, rows, _join(res.detail, notes))
     except Exception as exc:  # persist failed and rolled back
         _log_error(res.session_date, exc)
         return CollectOutcome(res.session_date, "error", 0, f"{type(exc).__name__}: {exc}")
@@ -842,19 +856,14 @@ _LEVEL_UPDATE = tuple(c for c in _LEVEL_COLS if c not in ("session_date", "ticke
 
 def _persist_broker(
     cur: psycopg.Cursor, res: BrokerSummaryFetchResult, raw_sha: str | None = None,
+    notes: list[str] | None = None,
 ) -> int:
-    rows = [
-        (res.session_date, res.ticker, r.broker_code, r.side_flag, r.buy_val,
-         r.sell_val, r.buy_vol, r.sell_vol, r.buy_avg, r.sell_avg, r.buy_freq,
-         r.sell_freq, r.net_val, r.net_vol, r.board, res.source, res.source_tier,
-         raw_sha, _BROKER_PARSER_VERSION)
-        for r in res.rows
-    ]
-    n = upsert_many(
-        cur, "broker_flows", _BROKER_COLS, rows,
-        conflict=("session_date", "ticker", "broker_code", "board"),
-        update=_BROKER_UPDATE,
-    )
+    n = _note(notes, validated_upsert(
+        cur, schemas.BrokerFlowRow, res.rows,
+        build=lambda r: schemas.BrokerFlowRow.from_source(
+            r, session_date=res.session_date, ticker=res.ticker, source=res.source,
+            source_tier=res.source_tier, raw_sha=raw_sha, parser_version=_BROKER_PARSER_VERSION),
+    ))
     if res.levels:
         upsert_many(
             cur, "broker_levels", _LEVEL_COLS,
@@ -875,11 +884,15 @@ def _collect_broker(res: BrokerSummaryFetchResult) -> CollectOutcome:
         with connect() as conn, conn.cursor() as cur:
             if art:
                 artifacts.record(cur, res.source, res.session_date, *art)
-            rows = _persist_broker(cur, res, art[1] if art else None) if res.status == "ok" else 0
+            notes: list[str] = []
+            rows = (
+                _persist_broker(cur, res, art[1] if art else None, notes)
+                if res.status == "ok" else 0
+            )
             _log(cur, res.session_date, res.status, rows,
-                 (res.detail or f"{res.ticker}"), "collect_broker")
+                 _join(res.detail or f"{res.ticker}", notes), "collect_broker")
         detail = res.ticker if res.status == "ok" or not res.detail else f"{res.ticker}: {res.detail}"
-        return CollectOutcome(res.session_date, res.status, rows, detail)
+        return CollectOutcome(res.session_date, res.status, rows, _join(detail, notes))
     except Exception as exc:
         _log_error(res.session_date, exc, "collect_broker")
         return CollectOutcome(res.session_date, "error", 0, f"{res.ticker}: {exc}")
@@ -1209,10 +1222,17 @@ def backfill_broker_deep(
 # ---------------------------------------------------------------------------
 
 def _persist_price_history(
-    cur: psycopg.Cursor, ticker: str, bars: list[PriceBar], source: str, tier: int
+    cur: psycopg.Cursor, ticker: str, bars: list[PriceBar], source: str, tier: int,
+    notes: list[str] | None = None,
 ) -> int:
-    rows = [_price_row(b.bar_date, b, source, tier) for b in bars if b.bar_date]
+    # Validate here but keep this module's own INSERT: `upsert_many` cannot express the tier guard below.
+    good, report = validate_batch(
+        schemas.PriceBar, [b for b in bars if b.bar_date],
+        build=lambda b: schemas.PriceBar.from_source(b, source=source, source_tier=tier),
+    )
+    rows = [g.as_row() for g in good]
     if not rows:
+        _note(notes, report)
         return 0
     cols = ", ".join(_PRICE_COLS)
     ph = "(" + ", ".join(["%s"] * len(_PRICE_COLS)) + ")"
@@ -1223,7 +1243,10 @@ def _persist_price_history(
         f"WHERE price_bars.source_tier >= EXCLUDED.source_tier",  # never downgrade Tier-0
         rows,
     )
-    dates = sorted({b.bar_date for b in bars if b.bar_date})
+    report.upserted = len(rows)
+    _note(notes, report)
+    # A trading day is confirmed only from rows that passed validation, never from a rejected one.
+    dates = sorted({g.session_date for g in good})
     if dates:
         cur.execute(
             "INSERT INTO tickers (ticker, first_seen, last_seen) VALUES (%s, %s, %s) "
@@ -1255,13 +1278,15 @@ def collect_price_history_ticker(ticker: str) -> CollectOutcome:
         with connect() as conn, conn.cursor() as cur:
             if art:
                 artifacts.record(cur, res.source, latest, *art)
+            notes: list[str] = []
             rows = (
-                _persist_price_history(cur, ticker, res.bars, res.source, res.source_tier)
+                _persist_price_history(cur, ticker, res.bars, res.source, res.source_tier, notes)
                 if res.status == "ok" else 0
             )
-            _log(cur, latest, res.status, rows, res.detail or ticker, "collect_price_history")
+            _log(cur, latest, res.status, rows, _join(res.detail or ticker, notes),
+                 "collect_price_history")
         detail = ticker if res.status == "ok" else f"{ticker}: {res.detail}"
-        return CollectOutcome(latest, res.status, rows, detail)
+        return CollectOutcome(latest, res.status, rows, _join(detail, notes))
     except Exception as exc:
         _log_error(latest, exc, "collect_price_history")
         return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
@@ -1331,16 +1356,14 @@ _INV_UPDATE = tuple(
 )
 
 
-def _persist_broker_inventory(cur: psycopg.Cursor, res: BrokerInventoryResult) -> int:
-    rows = [
-        (r.bar_date, res.ticker, r.broker_code, r.broker_name, r.net_val, r.net_vol,
-         r.cum_net_val, r.buy_avg, r.sell_avg, res.source, res.source_tier)
-        for r in res.rows
-    ]
-    return upsert_many(
-        cur, "broker_inventory", _INV_COLS, rows,
-        conflict=("session_date", "ticker", "broker_code"), update=_INV_UPDATE,
-    )
+def _persist_broker_inventory(
+    cur: psycopg.Cursor, res: BrokerInventoryResult, notes: list[str] | None = None
+) -> int:
+    return _note(notes, validated_upsert(
+        cur, schemas.BrokerInventoryRow, res.rows,
+        build=lambda r: schemas.BrokerInventoryRow.from_source(
+            r, ticker=res.ticker, source=res.source, source_tier=res.source_tier),
+    ))
 
 
 def collect_broker_inventory_ticker(ticker: str) -> CollectOutcome:
@@ -1358,10 +1381,12 @@ def collect_broker_inventory_ticker(ticker: str) -> CollectOutcome:
         with connect() as conn, conn.cursor() as cur:
             if art:
                 artifacts.record(cur, res.source, latest, *art)
-            rows = _persist_broker_inventory(cur, res) if res.status == "ok" else 0
-            _log(cur, latest, res.status, rows, res.detail or ticker, "collect_broker_inventory")
+            notes: list[str] = []
+            rows = _persist_broker_inventory(cur, res, notes) if res.status == "ok" else 0
+            _log(cur, latest, res.status, rows, _join(res.detail or ticker, notes),
+                 "collect_broker_inventory")
         detail = ticker if res.status == "ok" else f"{ticker}: {res.detail}"
-        return CollectOutcome(latest, res.status, rows, detail)
+        return CollectOutcome(latest, res.status, rows, _join(detail, notes))
     except Exception as exc:
         _log_error(latest, exc, "collect_broker_inventory")
         return CollectOutcome(latest, "error", 0, f"{ticker}: {exc}")
@@ -1408,18 +1433,15 @@ _DONE_UPDATE = tuple(
 )
 
 
-def _persist_done_by_price(cur: psycopg.Cursor, res: DoneByPriceResult) -> int:
+def _persist_done_by_price(
+    cur: psycopg.Cursor, res: DoneByPriceResult, notes: list[str] | None = None
+) -> int:
     sd = res.session_date
-    rows = [
-        (sd, res.ticker, r.board, r.price_num, r.qty, r.value, r.trades,
-         r.buy_aggressor_qty, r.sell_aggressor_qty, r.foreign_buy_qty, r.foreign_sell_qty,
-         res.source, res.source_tier)
-        for r in res.rows
-    ]
-    return upsert_many(
-        cur, "done_by_price", _DONE_COLS, rows,
-        conflict=("session_date", "ticker", "board", "price_num"), update=_DONE_UPDATE,
-    )
+    return _note(notes, validated_upsert(
+        cur, schemas.DoneByPriceRow, res.rows,
+        build=lambda r: schemas.DoneByPriceRow.from_source(
+            r, session_date=sd, ticker=res.ticker, source=res.source, source_tier=res.source_tier),
+    ))
 
 
 def collect_done_details_ticker(
@@ -1450,12 +1472,13 @@ def collect_done_details_ticker(
     res.session_date = sd
     try:
         with connect() as conn, conn.cursor() as cur:
-            rows = _persist_done_by_price(cur, res) if res.status == "ok" else 0
-            _log(cur, sd, res.status, rows, res.detail or ticker, "collect_done_details")
+            notes: list[str] = []
+            rows = _persist_done_by_price(cur, res, notes) if res.status == "ok" else 0
+            _log(cur, sd, res.status, rows, _join(res.detail or ticker, notes), "collect_done_details")
         detail = f"{ticker} ({res.pages_fetched}/{res.total_pages} pg)"
         if res.detail:
             detail += f" — {res.detail}"
-        return CollectOutcome(sd, res.status, rows, detail)
+        return CollectOutcome(sd, res.status, rows, _join(detail, notes))
     except Exception as exc:
         _log_error(sd, exc, "collect_done_details")
         return CollectOutcome(sd, "error", 0, f"{ticker}: {exc}")
