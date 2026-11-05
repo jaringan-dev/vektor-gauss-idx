@@ -226,6 +226,13 @@ _T = [
          how="The last 10 trading days of each period are dropped so neighbouring periods do not share return windows."),
     Term("regime", "Market regime", "Whether the market was rising, falling or flat over the previous 60 trading days (the Composite index moving more than 3% up or down). "
          "A pattern that only works in one regime is a bet on that regime.", "research"),
+    Term("rotation", "Relative rotation (RS-Ratio and RS-Momentum)",
+         "Where a sector or stock stands against its benchmark. RS-Ratio says whether it is stronger (above 100) or weaker (below 100) than its own recent norm "
+         "against the benchmark; RS-Momentum says whether that strength is rising (above 100) or fading (below 100).", "concepts",
+         how="Relative strength = adjusted close / benchmark close. RS-Ratio = 100 x it / its moving average over the first window; RS-Momentum = 100 x RS-Ratio / "
+             "its moving average over the second window. The tail shows the last few bars; quadrants are the side of 100 on each axis.",
+         caveat="An approximation of the well-known relative rotation graph, not its proprietary formula, and a description of the past: it is not a forecast and "
+                "has not been forward-tested. Stocks with thin trading are left out because their prices jump."),
     Term("ref_price", "Reference price", "The latest closing price, used as the calculation point. Not the price you will get when you trade.", "risk"),
 ]
 

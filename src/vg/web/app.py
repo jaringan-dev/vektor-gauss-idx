@@ -24,7 +24,7 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
-from . import freshness, fmt, glossary, home as homemod, listing
+from . import freshness, fmt, glossary, home as homemod, listing, rotation as rotmod
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -51,6 +51,7 @@ _NAV = [
     {"title": "Stocks", "items": [
         {"key": "screener", "label": "Today's stocks", "href": "/screener"},
         {"key": "ranking", "label": "Top rankings", "href": "/ranking"},
+        {"key": "rotation", "label": "Sector rotation", "href": "/rotation"},
     ]},
     {"title": "Data", "items": [
         {"key": "health", "label": "System health", "href": "/health"},
@@ -71,7 +72,7 @@ _TOP_NAV = [
     {"key": "system", "label": "System Monitor", "href": "/system"},
 ]
 # active_page (the sidebar key) -> top-bar section. A route can override it with ctx["section"] (the stock page does).
-_SECTION = {"home": "screener", "today": "screener", "screener": "screener", "ranking": "screener",
+_SECTION = {"home": "screener", "today": "screener", "screener": "screener", "ranking": "screener", "rotation": "screener",
             "tracker": "eval", "risk": "eval", "research": "eval", "health": "system", "coverage": "system"}
 
 
@@ -331,6 +332,24 @@ def _screener_view() -> tuple:
                 }
             )
     return sd, rows
+
+
+_ROTATION_CACHE = TTLCache(ttl_seconds=600)
+
+
+@app.get("/rotation", response_class=HTMLResponse)
+def rotation(sector: str = "", freq: str = "daily", tail: str = "8", fresh: bool = False) -> HTMLResponse:
+    """Relative rotation chart: every sector against the market, or one sector's most liquid stocks against its index."""
+    p = rotmod.clean({"sector": sector, "freq": freq, "tail": tail})
+    ctx: dict = {"active_page": "rotation", "error": None, "v": None, "p": p, "chips": rotmod.chips(p),
+                 "quad_words": rotmod.QUADRANT_WORDS, "computed_at": None, "cache_hit": False}
+    try:
+        raw, wall, ctx["cache_hit"] = _ROTATION_CACHE.get_or_compute(("rotation", p["sector"]), lambda: rotmod.load(p["sector"]), fresh=fresh)
+        ctx["v"] = rotmod.build_view(raw, p)
+        ctx["computed_at"] = datetime.fromtimestamp(wall).strftime("%H:%M")  # noqa: DTZ006 — local wall-clock label
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("rotation.html", ctx)
 
 
 @app.get("/screener", response_class=HTMLResponse)

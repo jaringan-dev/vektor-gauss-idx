@@ -480,3 +480,78 @@ def ownership_stack(months: list[dict], *, width: int = W, uid: str = "own", tip
             f"local individual {g['local_ind'] / tot * 100:.1f}%, local institution {g['local_inst'] / tot * 100:.1f}%. "
             "Every slice has the exact figure in its hover text, and the table below the chart lists the latest month.")
     return _svg(uid, strip_bottom + PAD_B, "KSEI balance position by holder type", desc, "".join(body), width)
+
+
+# ---- relative rotation: RS-Ratio (x) against RS-Momentum (y), with tails ---------------------------------------------------
+ROT_COLOR = {"Outperform": "var(--pos)", "Weakening": "var(--warn-fg)", "Underperform": "var(--neg)", "Improving": "var(--link)"}
+_ROT_CORNERS = (("Improving", 0, 0), ("Outperform", 1, 0), ("Underperform", 0, 1), ("Weakening", 1, 1))   # (word, right?, bottom?)
+
+
+def _rot_half(devs: list[float]) -> float:
+    """Half-range of an axis around 100: the 85th percentile of the deviations plus a margin, never below 1 point, so a few wild
+    items cannot flatten the crowd near the centre (they are drawn at the edge, dashed, and their real values stay in the table)."""
+    devs = sorted(devs)
+    return max(devs[min(len(devs) - 1, int(len(devs) * 0.85))] * 1.15, 1.0) if devs else 1.0
+
+
+def rotation_chart(items: list[dict], tail: int, *, width: int = W, height: int = 400, uid: str = "rot", tips: bool = True) -> str | None:
+    """items: [{label, short?, quad, pts: [(ratio, momentum), ...] oldest first}]. The last point of each tail is its head.
+    Quadrant words sit in the corners and each head carries its name, so direction is never colour alone."""
+    if not items:
+        return None
+    left, right, top, bottom = 36, 10, 14, 30
+    pw, ph = width - left - right, height - top - bottom
+    hx = _rot_half([abs(x - 100) for it in items for x, _y in it["pts"]])
+    hy = _rot_half([abs(y - 100) for it in items for _x, y in it["pts"]])
+    px = lambda x: left + (max(-hx, min(hx, x - 100)) + hx) / (2 * hx) * pw
+    py = lambda y: top + (1 - (max(-hy, min(hy, y - 100)) + hy) / (2 * hy)) * ph
+    cx, cy = px(100), py(100)
+    body = []
+    for word, rt, bt in _ROT_CORNERS:                                         # faint quadrant tint + the corner word
+        x0, y0 = (cx if rt else left), (cy if bt else top)
+        w, h = (left + pw - cx) if rt else (cx - left), (top + ph - cy) if bt else (cy - top)
+        body.append(f'<rect x="{x0:.1f}" y="{y0:.1f}" width="{w:.1f}" height="{h:.1f}" fill="{ROT_COLOR[word]}" opacity=".07"/>'
+                    f'<text x="{(left + pw - 6) if rt else (left + 6):.1f}" y="{(top + ph - 6) if bt else (top + 13):.1f}" '
+                    f'text-anchor="{"end" if rt else "start"}" fill="{ROT_COLOR[word]}" font-weight="600">{word}</text>')
+    body.append(f'<rect x="{left}" y="{top}" width="{pw}" height="{ph}" fill="none" stroke="var(--border)"/>'
+                f'<line x1="{cx:.1f}" x2="{cx:.1f}" y1="{top}" y2="{top + ph}" stroke="var(--muted)"/>'
+                f'<line x1="{left}" x2="{left + pw}" y1="{cy:.1f}" y2="{cy:.1f}" stroke="var(--muted)"/>')
+    for v, anchor in ((100 - hx, "start"), (100, "middle"), (100 + hx, "end")):
+        body.append(f'<text x="{px(v) if anchor == "middle" else (left if anchor == "start" else left + pw):.1f}" y="{top + ph + 12}" '
+                    f'text-anchor="{anchor}" fill="var(--muted)">{v:.1f}</text>')
+    for v, y_ in ((100 + hy, top + 9), (100, cy + 3), (100 - hy, top + ph)):
+        body.append(f'<text x="{left - 4}" y="{y_:.1f}" text-anchor="end" fill="var(--muted)">{v:.1f}</text>')
+    body.append(f'<text x="{left + pw / 2:.1f}" y="{height - 6}" text-anchor="middle" fill="var(--muted)">RS-Ratio: strength against the benchmark →</text>'
+                f'<text transform="rotate(-90 9 {top + ph / 2:.1f})" x="9" y="{top + ph / 2:.1f}" text-anchor="middle" fill="var(--muted)">RS-Momentum →</text>')
+    heads, clipped = [], 0
+    for it in items:                                                          # tails first, so heads and names sit on top
+        xy = [(px(x), py(y)) for x, y in it["pts"]]
+        body.append(f'<polyline points="{" ".join(f"{a:.1f},{b:.1f}" for a, b in xy)}" fill="none" stroke="var(--muted)" stroke-width="1.2" opacity=".7"/>')
+        for a, b in xy[:-1]:
+            body.append(f'<circle cx="{a:.1f}" cy="{b:.1f}" r="1.8" fill="var(--muted)" opacity=".7"/>')
+        hxv, hyv = it["pts"][-1]
+        off = abs(hxv - 100) > hx or abs(hyv - 100) > hy
+        clipped += off
+        tip = (f'<title>{escape(it["label"])}: RS-Ratio {hxv:.1f}, RS-Momentum {hyv:.1f} · {it["quad"]}{" (beyond the scale)" if off else ""}</title>'
+               if tips else "")
+        extra = ' stroke="var(--fg)" stroke-dasharray="2 2"' if off else ' stroke="var(--panel)"'
+        body.append(f'<circle cx="{xy[-1][0]:.1f}" cy="{xy[-1][1]:.1f}" r="4.6" fill="{ROT_COLOR[it["quad"]]}"{extra} stroke-width="1.5">{tip}</circle>')
+        heads.append((xy[-1][0], xy[-1][1], it.get("short") or it["label"]))
+    placed: list[tuple[float, float, float]] = []                             # (x, y, width) of labels already drawn
+    for x, y, name in sorted(heads, key=lambda h: h[1]):
+        w = 6.2 * len(name)
+        lx = x + 7 if x + 7 + w < left + pw else x - 7 - w                    # flip to the left of the dot near the right edge
+        ly = y - 6
+        for dy in (0, 11, -11, 22, -22, 33, -33):
+            if not any(abs(lx - px_) < max(w, pw_) and abs(ly + dy - py_) < 10 for px_, py_, pw_ in placed):
+                ly += dy
+                break
+        placed.append((lx, ly, w))
+        body.append(f'<text x="{lx:.1f}" y="{max(top + 10, min(top + ph - 3, ly)):.1f}" font-size="10" fill="var(--fg)" stroke="var(--panel)" '
+                    f'stroke-width="3" paint-order="stroke">{escape(name)}</text>')
+    if clipped:
+        body.append(f'<text x="{left + pw / 2:.1f}" y="{top + 12}" text-anchor="middle" fill="var(--muted)">{clipped} beyond the scale (dashed ring); see the table</text>')
+    counts = {q: sum(1 for it in items if it["quad"] == q) for q in ROT_COLOR}
+    desc = (f"Relative rotation of {len(items)} items, each drawn with its last {tail} points. "
+            + ", ".join(f"{n} in {q}" for q, n in counts.items() if n) + ". The table below the chart lists every value.")
+    return _svg(uid, height, "Relative rotation chart", desc, "".join(body), width)
