@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     request_delay_seconds: float = Field(4.0, ge=0)   # IDX sits behind Cloudflare and needs the slow delay
     # The VG feed has no Cloudflare. 1.0s was exercised for ~19k calls (2026-10-16/31) without a single throttle.
     feed_delay_seconds: float = Field(1.0, ge=0)
+    # Wall-clock cap for the EOD done-details harvest (it runs before the second compute, so it delays the digest).
+    # No new ticker is started once it is spent. 0 = no cap.
+    done_budget_minutes: float = Field(15.0, ge=0)
     idx_base_url: str = "https://www.idx.co.id"
     # VG data feed (Phase 1.5, Tier 3): broker summary + Cloudflare-free price history.
     # Endpoint + key live in .env only, never in source.
@@ -118,6 +121,10 @@ class Settings(BaseSettings):
     # Extra tickers to harvest VG-feed data for beyond watchlist+holdings (broker summary/inventory,
     # done-by-price). Widens the "panen" without code.
     harvest_tickers: _Csv = ()
+    # Constituents of the LQ45 index, supplied by the operator (IDX republishes the list every February and
+    # August; the repo stores only the index VALUE, never its members, so nothing is hard-coded here). Empty =
+    # the done-details harvest covers the watchlist only. Order: watchlist first, then these.
+    lq45_tickers: _Csv = ()
     radar_tags: _Csv = DEFAULT_RADAR_TAGS
     forward_since: date | None = None
     digest_trade_calls: bool = True
@@ -159,7 +166,7 @@ class Settings(BaseSettings):
     def _check_optional_url(cls, v: str) -> str:
         return _http_url(v, field="url", allow_blank=True)
 
-    @field_validator("watchlist", "holdings", "harvest_tickers", mode="before")
+    @field_validator("watchlist", "holdings", "harvest_tickers", "lq45_tickers", mode="before")
     @classmethod
     def _split_tickers(cls, v: Any) -> tuple[str, ...]:
         return _csv_upper(v)

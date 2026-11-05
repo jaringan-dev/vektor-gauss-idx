@@ -296,6 +296,10 @@ _TAGS = [
             "One broker holds a large share of net buying with institution-sized tickets. A guess, not a fact.",
             "One broker at least 40% of net buying, average ticket at least Rp50 million, and its cumulative position not falling.", "broker",
             "Only an inference from data patterns."),
+    TagInfo("AKUM-NETRAL-WASH", "Concentrated buying, but the same houses also sell",
+            "The buy side looks concentrated, yet at least two of the three biggest buyers are also among the three biggest sellers, so it is not read as one hand accumulating.",
+            "The top 3 buyers hold at least 10 points more of the day's traded value than the top 3 sellers (Bandar Power Index), and 2 or more brokers appear in both top-3 lists.", "broker",
+            "Descriptive only. Crossing or market-making by the same houses looks like this too. Both thresholds are untested guesses."),
 ]
 
 TAGS: dict[str, TagInfo] = {t.tag: t for t in _TAGS}

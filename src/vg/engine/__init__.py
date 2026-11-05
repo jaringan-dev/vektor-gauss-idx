@@ -27,6 +27,7 @@ import psycopg
 from ..broker_bounds import cohort_net_bounds
 from ..db import connect, upsert_many
 from ..sources.vektorgauss import FOREIGN_BROKERS, is_retail
+from .scoring import TickerScore, score_ticker
 
 # -- tunables (all guesses — the forward test decides) -----------------------
 PRICE_FLAT_BAND = 0.02          # |5d return| < 2% counts as "sideways"
@@ -60,6 +61,11 @@ BROKER_XCHECK_BAND = 0.01     # each measure >= 1% of value to enter the konfirm
 PARTICIPANT_BAND = 0.05       # cohort net-buy >= 5% of day's value => that cohort is active
 BANDAR_CR1_HIGH = 0.40        # one broker >= 40% of all net buying => concentration
 BANDAR_TICKET_MIN = 50_000_000  # dominant buyer avg ticket >= Rp50jt/trade (institutional footprint)
+# Wash-overlap filter on the Bandar Power Index (probation; both numbers are guesses to be forward-tested). When two
+# or more of the top-3 buyers are ALSO top-3 sellers, a high concentration is the same houses on both sides
+# (crossing / market making), not one hand accumulating.
+WASH_OVERLAP_MIN = 2
+BPI_HIGH = 0.10    # bpi3 >= 10 points of the day's value ~ the top fifth of the 5 Nov 2026 live distribution (80th pct +0.099)
 
 
 @dataclass(slots=True)
@@ -142,6 +148,18 @@ class Components:
     bkr_top_buyer: str | None = None          # dominant net-buyer broker (transient)
     bkr_top_buyer_ticket: float | None = None # its avg ticket (transient)
     bkr_top_buyer_inv_rising: bool | None = None  # its inventory rising (transient)
+    # Broker scoring (engine/scoring.py) - PROBATION, weight 0: stored and tagged, never feeding another signal.
+    bpi3: float | None = None                 # Bandar Power Index top-3 = cr3_buy - cr3_sell, in [-1, 1]
+    bpi5: float | None = None
+    bpi_overlap3: int | None = None           # brokers in both the top-3 buyers and the top-3 sellers
+    aggr_haka_share: float | None = None      # HAKA / (HAKA + HAKI), regular board (needs done_by_price)
+    aggr_ratio: float | None = None           # HAKA / HAKI
+    aggr_coverage: float | None = None        # share of volume that carries an aggressor flag
+    retail_net_lo: float | None = None        # certain bounds, IDR, retail-broker cohort net
+    retail_net_hi: float | None = None
+    finst_net_lo: float | None = None         # ... foreign institutions (foreign houses that are not retail)
+    finst_net_hi: float | None = None
+    retail_div_state: str | None = None
     # Phase B (disclosure_pdf.py parse of the archived KSEI forms) — direction
     # for *today's* filings only, from the header's reliably-parsed shares
     # before/after (not the fragile per-row transaction-type breakdown).
@@ -457,6 +475,19 @@ def _broker_metrics(cur: psycopg.Cursor, ticker: str, cal: list[date]) -> _Broke
     return snap
 
 
+def _apply_scoring(c: Components, s: TickerScore) -> None:
+    """Copy the broker-scoring measures onto the components. A measure that could not be computed stays None."""
+    if s.bandar is not None:
+        c.bpi3, c.bpi5, c.bpi_overlap3 = s.bandar.bpi3, s.bandar.bpi5, s.bandar.overlap3
+    if s.aggressor is not None:
+        c.aggr_haka_share, c.aggr_ratio, c.aggr_coverage = (
+            s.aggressor.haka_share, s.aggressor.ratio, s.aggressor.coverage)
+    if s.divergence is not None:
+        c.retail_net_lo, c.retail_net_hi = s.divergence.retail
+        c.finst_net_lo, c.finst_net_hi = s.divergence.foreign_institutions
+        c.retail_div_state = s.divergence.state
+
+
 # ---------------------------------------------------------------------------
 # component maths
 # ---------------------------------------------------------------------------
@@ -605,6 +636,13 @@ def _classify(c: Components) -> list[str]:
     if c.substantial_dist:
         tags.append("SUBSTANTIAL-DIST")
 
+    # Bandar Power Index, wash filter: the buy side looks concentrated, but two or more of the top-3 buyers are also
+    # top-3 sellers - the same houses on both sides - so it is NOT read as pure accumulation. Descriptive, probation.
+    # Needs no price history, so it sits above the early return.
+    if (c.bpi3 is not None and c.bpi_overlap3 is not None
+            and c.bpi_overlap3 >= WASH_OVERLAP_MIN and c.bpi3 >= BPI_HIGH):
+        tags.append("AKUM-NETRAL-WASH")
+
     if c.price_chg_5d is None or c.nff_w1 is None:
         return tags  # not enough price history for the rest
 
@@ -737,6 +775,8 @@ _COMP_COLS = (
     "bkr_foreign_net_d0", "bkr_foreign_net_5d", "bkr_cr3",
     "bkr_foreign_inst_net", "bkr_dom_retail_net", "bkr_cr1", "bkr_top_buyer",
     "bkr_foreign_net_lo", "bkr_foreign_net_hi",
+    "bpi3", "bpi5", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage",
+    "retail_net_lo", "retail_net_hi", "finst_net_lo", "finst_net_hi", "retail_div_state",
     "quadrant", "data_flags",
 )
 _COMP_UPDATE = tuple(c for c in _COMP_COLS if c not in ("session_date", "ticker"))
@@ -753,6 +793,8 @@ def _comp_row(sd: date, c: Components) -> tuple:
         c.bkr_foreign_net_d0, c.bkr_foreign_net_5d, c.bkr_cr3,
         c.bkr_foreign_inst_net, c.bkr_dom_retail_net, c.bkr_cr1, c.bkr_top_buyer,
         c.bkr_foreign_net_lo, c.bkr_foreign_net_hi,
+        c.bpi3, c.bpi5, c.bpi_overlap3, c.aggr_haka_share, c.aggr_ratio, c.aggr_coverage,
+        c.retail_net_lo, c.retail_net_hi, c.finst_net_lo, c.finst_net_hi, c.retail_div_state,
         c.quadrant, sorted(set(c.data_flags)),
     )
 
@@ -800,6 +842,8 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.bkr_top_buyer = bsnap.top_buyer
             c.bkr_top_buyer_ticket = bsnap.top_buyer_ticket
             c.bkr_top_buyer_inv_rising = bsnap.top_buyer_inv_rising
+            if bsnap.has_d0:   # scoring reads the same broker rows; skip tickers the feed did not cover today
+                _apply_scoring(c, score_ticker(cur, t, session_date))
             dflags = dirn.get(t, {})
             c.insider_akum = dflags.get("insider_akum")
             c.insider_dist = dflags.get("insider_dist")

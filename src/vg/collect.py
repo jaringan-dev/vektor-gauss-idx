@@ -1482,3 +1482,39 @@ def collect_done_details_ticker(
     except Exception as exc:
         _log_error(sd, exc, "collect_done_details")
         return CollectOutcome(sd, "error", 0, f"{ticker}: {exc}")
+
+
+def done_targets() -> list[str]:
+    """Tickers whose done-details are harvested at EOD: the WATCHLIST first (plus what you hold), then the LQ45 list
+    the operator supplied in `VG_LQ45_TICKERS`. Deliberately never the whole market: one liquid stock-day is ~130
+    pages, so 900 names would be ~117k calls against a ~21k/day quota. Order matters - the budget cuts from the end."""
+    return list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings, *CONFIG.lq45_tickers)))
+
+
+def collect_done_details_universe(
+    tickers: list[str] | None = None,
+    session_date: date | None = None,
+    *,
+    budget_seconds: float | None = None,
+    max_pages: int = 200,
+    force: bool = False,
+    clock=time.monotonic,
+) -> list[CollectOutcome]:
+    """Done-details for `done_targets()` (or `tickers`), highest priority first. Stops STARTING new tickers once
+    `budget_seconds` (default `VG_DONE_BUDGET_MINUTES`, 0 = no cap) is spent, so a slow feed can never hold the EOD
+    (and its digest) hostage; the rest come back as status "skipped". A ticker already stored for the day costs
+    zero calls (freshness guard in `collect_done_details_ticker`)."""
+    targets = list(tickers) if tickers is not None else done_targets()
+    budget = CONFIG.done_budget_minutes * 60 if budget_seconds is None else budget_seconds
+    started = clock()
+    out: list[CollectOutcome] = []
+    for i, t in enumerate(targets):
+        if budget and clock() - started >= budget:
+            when = session_date or date.today()  # noqa: DTZ011 - same local-date convention as the rest of this module
+            out.extend(
+                CollectOutcome(when, "skipped", 0, f"{rest}: {budget / 60:.0f}-min budget spent")
+                for rest in targets[i:]
+            )
+            break
+        out.append(collect_done_details_ticker(t, session_date, max_pages=max_pages, force=force))
+    return out

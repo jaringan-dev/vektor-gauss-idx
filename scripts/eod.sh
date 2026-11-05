@@ -28,6 +28,9 @@ BACK=$(date -d "$TODAY -${WINDOW} days" +%F)
 
 echo "===================== EOD $(date -Is) ====================="
 echo "-- window $BACK .. $TODAY --"
+# Apply db/schema.sql first. It is idempotent (CREATE/ALTER ... IF NOT EXISTS) and is how a deploy that adds a column
+# (e.g. the signal_components broker-scoring columns) reaches the database; without it `compute` would fail on INSERT.
+vg init-db || echo "!! init-db failed - compute may fail on a missing column"
 vg collect-price       --backfill "$BACK" "$TODAY"
 vg collect-index       --backfill "$BACK" "$TODAY"
 # Cloudflare-free fallback: gap-fill watchlist+holdings OHLCV+foreign flow from the
@@ -54,6 +57,10 @@ fi
 # to be `--radar` (a 60-name cap) which let daily coverage silently sag to ~60 (checklist G3).
 # Best-effort — a Tier-3 outage must never abort EOD.
 vg collect-broker-summary --full || true
+# Done-details (HAKA/HAKI) for the WATCHLIST (+ VG_LQ45_TICKERS if set) only - never the whole market (~130 calls per
+# stock-day). Time-boxed by VG_DONE_BUDGET_MINUTES (default 15) so it cannot hold up pass 2 and the digest.
+# Feeds the Aggressor Ratio in pass 2. Best-effort Tier 3; a ticker already stored for the day costs 0 calls.
+vg collect-done-details --watchlist-only || true
 [ "$GATE_OK" -eq 1 ] && { vg compute --backfill "$BACK" "$TODAY" || true; }   # pass 2 — broker signals land
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
 # feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.

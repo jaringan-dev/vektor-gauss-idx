@@ -492,6 +492,20 @@ CREATE INDEX IF NOT EXISTS idx_broker_levels_ticker ON broker_levels (ticker, se
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_lo NUMERIC;
 ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bkr_foreign_net_hi NUMERIC;
 
+-- Broker scoring (src/vg/engine/scoring.py), PROBATION / weight 0. All nullable, additive: existing columns and the
+-- primary key are untouched. NULL = the inputs for that measure did not exist that day (no ladder, no done rows, ...).
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bpi3             NUMERIC;   -- Bandar Power Index, top-3: cr3_buy - cr3_sell, in [-1, 1]
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bpi5             NUMERIC;   -- ... top-5
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS bpi_overlap3     SMALLINT;  -- brokers in BOTH the top-3 buyers and top-3 sellers (0-3)
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS aggr_haka_share  NUMERIC;   -- HAKA / (HAKA + HAKI), regular board, in [0, 1]
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS aggr_ratio       NUMERIC;   -- HAKA / HAKI (NULL when HAKI = 0)
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS aggr_coverage    NUMERIC;   -- (HAKA + HAKI) / qty: share of volume that carries an aggressor flag
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS retail_net_lo    NUMERIC;   -- certain bounds on the retail-broker cohort's net (IDR)
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS retail_net_hi    NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS finst_net_lo     NUMERIC;   -- ... and on foreign institutions (foreign houses that are not retail)
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS finst_net_hi     NUMERIC;
+ALTER TABLE signal_components ADD COLUMN IF NOT EXISTS retail_div_state TEXT;      -- retail_buying_institutions_selling | ... | indeterminate
+
 -- K3: price adjustment from corporate actions (src/vg/adjust.py). price_bars stays RAW.
 CREATE TABLE IF NOT EXISTS adj_factor (
     ticker     TEXT NOT NULL,

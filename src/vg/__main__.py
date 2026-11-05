@@ -107,7 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
         "collect-done-details",
         help="VG feed done-details -> done_by_price aggregate (Tier 3, on-demand, expensive)",
     )
-    cdd.add_argument("--ticker", metavar="CODE", required=True, help="one ticker")
+    grp = cdd.add_mutually_exclusive_group(required=True)
+    grp.add_argument("--ticker", metavar="CODE", help="one ticker")
+    grp.add_argument(
+        "--watchlist-only", action="store_true",
+        help="WATCHLIST + holdings, then VG_LQ45_TICKERS (what the EOD uses); capped by VG_DONE_BUDGET_MINUTES. "
+             "There is intentionally no whole-market mode.")
     cdd.add_argument("--date", metavar="YYYY-MM-DD", help="one day (default: latest trading day)")
     cdd.add_argument("--max-pages", type=int, default=200, help="page cap (100 ticks/page)")
     cdd.add_argument("--force", action="store_true", help="re-fetch even if already stored")
@@ -371,10 +376,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "collect-done-details":
-        _print(collect.collect_done_details_ticker(
-            args.ticker, _d(args.date) if args.date else None,
-            max_pages=args.max_pages, force=args.force,
-        ))
+        day = _d(args.date) if args.date else None
+        if args.watchlist_only:
+            targets = collect.done_targets()
+            if not targets:
+                print("no targets: set VG_WATCHLIST (and optionally VG_LQ45_TICKERS) in .env")
+                return 0
+            outs = collect.collect_done_details_universe(
+                targets, day, max_pages=args.max_pages, force=args.force)
+            for o in outs:
+                _print(o)
+            ok = sum(1 for o in outs if o.status == "ok")
+            skipped = sum(1 for o in outs if o.status == "skipped")
+            print(f"done: {ok}/{len(outs)} tickers with data" + (f", {skipped} skipped (budget)" if skipped else ""))
+        else:
+            _print(collect.collect_done_details_ticker(
+                args.ticker, day, max_pages=args.max_pages, force=args.force,
+            ))
         return 0
 
     if args.cmd == "collect-halts":

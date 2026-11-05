@@ -19,7 +19,7 @@ Pendamping: [PRINSIP-DATA.md](PRINSIP-DATA.md) *(mengikat — baca dulu)* · [AN
 |---|---|---|
 | Tempat | VPS ~$5/bln | **PC rumah Windows → WSL2 Ubuntu.** Alasan: IDX di belakang Cloudflare dan hanya melepas IP residensial; ASN cloud ditolak (1020). Pindah ke VPS ISP Indonesia = [RENCANA-MIGRASI-VPS.md](RENCANA-MIGRASI-VPS.md) |
 | Penjadwal | cron | **Windows Task Scheduler**: `VektorGauss-EOD` 19:15 WIB, `VektorGauss-DeepBackfill` 00:10, `VektorGauss-Status` 08:00. Runner GitHub Actions self-hosted dicoba dan gagal (VM WSL tidak hidup di antara sesi `wsl.exe`) |
-| Pengumpulan EOD (`scripts/eod.sh`) | satu fetch IDX | harga + indeks + price-history + disclosure + trading halt + deteksi corp action → `quality-gate` → `compute` (pass 1, menghasilkan kandidat radar) → **broker dari feed** (menunggu sampai 60 menit, `VG_FEED_WAIT_MINUTES`, sampai feed menerbitkan tabel broker hari itu) → `compute` (pass 2, sinyal broker masuk) → inventory → `backfill-outcomes` → `paper-update` → digest + status Telegram. KSEI bulanan dan corp action hanya pada slot awal bulan |
+| Pengumpulan EOD (`scripts/eod.sh`, diawali `vg init-db` agar migrasi kolom ikut terpasang saat deploy) | satu fetch IDX | harga + indeks + price-history + disclosure + trading halt + deteksi corp action → `quality-gate` → `compute` (pass 1, menghasilkan kandidat radar) → **broker dari feed** (menunggu sampai 60 menit, `VG_FEED_WAIT_MINUTES`, sampai feed menerbitkan tabel broker hari itu) → **done-details khusus watchlist** (`--watchlist-only`, dibatasi `VG_DONE_BUDGET_MINUTES`) → `compute` (pass 2, sinyal broker + skoring masuk) → inventory → `backfill-outcomes` → `paper-update` → digest + status Telegram. KSEI bulanan dan corp action hanya pada slot awal bulan |
 | UI | "Telegram = satu-satunya UI" | digest Telegram **dan** dashboard lokal FastAPI (`vg serve`: pelacak forward-test, screener, ranking, coverage, health, risk-test) |
 | Forward-test | mulai hari pertama | berjalan; jam forward `VG_FORWARD_SINCE=2026-09-04`; `signal_log` memuat 26 tag (backfill in-sample sejak 2020-01-02 + sinyal maju) |
 | Hasil riset 3,5 tahun | — | foreign flow IDX + kepemilikan bulanan KSEI saja **bukan** edge yang bisa diperdagangkan; kandidat yang sedang diuji ada di [HANDOFF.md](HANDOFF.md). Tidak ada tag di lapis berbobot |
@@ -45,7 +45,7 @@ Konsekuensi yang harus diingat saat membaca angka broker:
 
 `src/vg/config.py` kini `pydantic-settings` (nilai `.env` produksi diverifikasi identik dengan kode lama); `src/vg/schemas.py` memvalidasi tiap baris `price_bars`/`broker_flows`/`broker_inventory`/`done_by_price` sebelum `INSERT … ON CONFLICT`. Baris buruk ditolak satu per satu dan dilaporkan di `run_log.error`; bila >10% batch ditolak, tidak ada yang ditulis. Seluruh 2,49 juta baris produksi lolos tanpa penolakan. Temuan: IDX memakai `first_trade = -99999999` sebagai penanda "belum ada transaksi pertama" — data sah, disimpan apa adanya.
 
-### Mesin skoring broker (`src/vg/engine/scoring.py`) — probation, belum terhubung ke `compute`
+### Mesin skoring broker (`src/vg/engine/scoring.py`) — probation, bobot 0, terhubung ke `compute`
 
 Tiga ukuran yang bisa dijelaskan dengan satu rumus; tanpa bobot hasil belajar, tanpa skor 0–100, tanpa kata beli/jual. Detail rumus ada di §5 ("Komponen broker").
 
@@ -203,7 +203,11 @@ Hasil uji pada data hidup (5 Nov 2026, 173 ticker ber-tangga, hanya-baca): BPI3 
 - **`overlap3 ≥ 1` pada 151 dari 173 ticker (87%)** — broker yang sama sering ada di tiga besar beli *dan* jual (crossing / market-making / pialang yang melayani kedua sisi). Konsentrasi tinggi *tidak* otomatis berarti satu pihak mengakumulasi; baca selalu bersama `overlap3`.
 - **Aggressor Ratio belum menghasilkan angka** untuk hampir semua ticker karena `done_by_price` baru berisi satu ticker-hari. Ia baru berguna setelah dipanen untuk watchlist (biaya: ~130 halaman per saham-hari).
 
-Status: **probation, bobot 0**, belum menulis ke `signal_components`/`signal_log`, belum masuk digest, dan belum di-forward-test. Ambang apa pun yang kelak dipasang di atasnya = tebakan yang harus diuji, sama seperti §5 lainnya. Kategori pelaku di tabel NeoBDM di atas tetap heuristik (daftar broker ritel hanya 6 kode, sengaja konservatif).
+Status: **probation, bobot 0**, terhubung ke `compute` sejak revisi ini: ketiganya ditulis ke `signal_components` (kolom nullable tambahan: `bpi3`, `bpi5`, `bpi_overlap3`, `aggr_haka_share`, `aggr_ratio`, `aggr_coverage`, `retail_net_lo/hi`, `finst_net_lo/hi`, `retail_div_state`) dan hanya diisi untuk ticker yang dicakup feed hari itu. Tidak ada sinyal lain yang membaca kolom-kolom ini, jadi tag lama tidak bergeser (diuji: jumlah semua tag 5 Nov 2026 sama persis sebelum/sesudah). Belum di-forward-test, belum masuk digest. Ambang apa pun di atasnya = tebakan yang harus diuji, sama seperti §5 lainnya. Kategori pelaku di tabel NeoBDM di atas tetap heuristik (daftar broker ritel hanya 6 kode, sengaja konservatif).
+
+**Tag `AKUM-NETRAL-WASH` (probation, deskriptif).** Menyala bila `bpi3 ≥ 0,10` **dan** `overlap3 ≥ 2` (konstanta `BPI_HIGH`, `WASH_OVERLAP_MIN` di `engine/__init__.py`; keduanya tebakan awal — 0,10 ≈ 20% teratas sebaran 5 Nov 2026). Artinya: sisi beli tampak terkonsentrasi, tetapi dua atau lebih dari tiga pembeli terbesar juga ada di tiga penjual terbesar — rumah yang sama di kedua sisi — sehingga **tidak dibaca sebagai akumulasi murni**. Tag ini hanya mendeskripsikan; ia tidak menekan atau mengubah tag lain (mis. `BANDAR-CANDIDATE` tetap menyala sendiri). Uji kering pada data 5 Nov 2026: 9 dari 173 ticker ber-tangga.
+
+**Panen `done_by_price`.** `vg collect-done-details --watchlist-only` mengambil done-details hanya untuk `VG_WATCHLIST` + `VG_HOLDINGS`, lalu `VG_LQ45_TICKERS` bila diisi (repo tidak membawa daftar anggota LQ45 — IDX menerbitkannya tiap Februari dan Agustus, jadi operator menempelkannya sendiri). Tidak ada mode seluruh-pasar. Dibatasi `VG_DONE_BUDGET_MINUTES` (default 15): ticker yang belum dimulai saat anggaran habis dilewati dan dilaporkan `skipped`.
 
 ### Yang TIDAK dilakukan v0
 Skor 0–100 · mapping broker lengkap · Sultan/Zombi · maker/taker/CVD · pattern scanner · AI narasi · target harga / stop loss. **[revisi 3]** CR3/konsentrasi broker kini ada sebagai probation (lihat di atas); sisanya tetap tidak dilakukan, dan tidak ada model AI di mesin (aturan eksplisit, angka jujur).
@@ -353,7 +357,8 @@ Keputusan desain yang memudahkan pivot: **adapter per sumber**, kolom `source`/`
 | 12 | **[revisi 3]** Feed Tier 3: broker summary, inventory, price-history (tier-guarded), done-details | ✅ `vg collect-broker-summary`, `collect-broker-inventory`, `collect-price-history`, `collect-done-details`; `broker-deep` backfill malam hari |
 | 13 | **[revisi 3]** `broker_levels` + batas pasti net kelompok (`broker_bounds.py`) | ✅ |
 | 14 | **[revisi 3]** Validasi skema Pydantic + `pydantic-settings` di semua jalur tulis | ✅ commit `0d3a07e`; ⬜ belum di-deploy (butuh `pip install -e .` di venv produksi — sudah terpasang di venv WSL ini) |
-| 15 | **[revisi 3]** Mesin skoring broker (`engine/scoring.py`): Bandar Power Index, Aggressor Ratio, Retail Net-Flow Divergence | ✅ modul + 28 tes; ⬜ belum dihubungkan ke `compute`/digest; ⬜ belum di-forward-test; ⬜ Aggressor Ratio menunggu data `done_by_price` |
+| 15 | **[revisi 3]** Mesin skoring broker (`engine/scoring.py`): Bandar Power Index, Aggressor Ratio, Retail Net-Flow Divergence | ✅ modul + tes (commit `ab44c2f`) |
+| 16 | **[revisi 3]** Skoring → `compute` → `signal_components` (bobot 0) + tag `AKUM-NETRAL-WASH`; panen done-details khusus watchlist di EOD | ✅ kode + tes; ⬜ belum di-commit/deploy; ⬜ belum di-forward-test; ⬜ Aggressor Ratio masih kosong sampai panen done-details pertama berjalan |
 
 ---
 
