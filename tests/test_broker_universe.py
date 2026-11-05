@@ -58,8 +58,16 @@ def rig(monkeypatch):
         st = rig.status.get(ticker, "ok")
         return CollectOutcome(session_date, st, 20 if st == "ok" else 0, f"{ticker}")
 
+    rig.stale, rig.probed = [], []                            # answers of the "is the feed still on yesterday?" probe
+
+    def fake_probe(session_date, ticker):
+        rig.probed.append(ticker)
+        return rig.stale.pop(0) if rig.stale else False
+
     monkeypatch.setattr(collect, "plan_broker_full", fake_plan)
     monkeypatch.setattr(collect, "collect_broker_summary_ticker", fake_fetch)
+    monkeypatch.setattr(collect, "_feed_day_stale", fake_probe)
+    monkeypatch.delenv("VG_FEED_WAIT_MINUTES", raising=False)
     monkeypatch.setattr(collect.time, "sleep", lambda s: rig.sleeps.append(s))
     monkeypatch.setattr(collect.CONFIG, "feed_delay_seconds", 0.25)
     monkeypatch.setattr(collect.CONFIG, "request_delay_seconds", 5.0)
@@ -152,6 +160,68 @@ def test_asking_for_the_newest_day_explicitly_still_uses_the_undated_call(rig):
     rig.todo = ["BBCA"]
     collect.collect_broker_summary_full(session_date=LATEST)
     assert rig.kwargs == [{"use_date": False}]
+
+
+def test_waits_for_the_feed_to_publish_the_day_then_fetches(rig):
+    rig.todo = ["BBCA", "BBRI"]
+    rig.stale = [True, True, False]                           # two asks still on yesterday, the third has today
+    outs = collect.collect_broker_summary_full()
+    assert rig.probed == ["BBCA", "BBCA", "BBCA"]             # always the same, first-planned name
+    assert rig.sleeps[:2] == [300, 300]                       # five minutes between asks
+    assert rig.fetched == ["BBCA", "BBRI"]
+    assert outs[-1].status == "ok" and "waited 10 min" in outs[-1].detail
+
+
+def test_gives_up_after_the_limit_and_stores_nothing(rig, monkeypatch):
+    rig.todo = ["BBCA", "BBRI"]
+    rig.stale = [True] * 50
+    monkeypatch.setenv("VG_FEED_WAIT_MINUTES", "15")
+    outs = collect.collect_broker_summary_full()
+    assert rig.fetched == []                                  # did not grind through 171 names that are all stale
+    assert len(rig.probed) == 4                               # at 0, 5, 10 and 15 minutes
+    assert len(outs) == 1 and outs[0].status == "no_data" and "still serving an earlier day after 15 min" in outs[0].detail
+
+
+def test_wait_zero_means_one_look_and_no_waiting(rig, monkeypatch):
+    rig.todo = ["BBCA"]
+    rig.stale = [True]
+    monkeypatch.setenv("VG_FEED_WAIT_MINUTES", "0")
+    outs = collect.collect_broker_summary_full()
+    assert rig.sleeps == [] and rig.fetched == [] and outs[0].status == "no_data"
+
+
+def test_a_garbled_wait_setting_falls_back_to_an_hour(monkeypatch):
+    monkeypatch.setenv("VG_FEED_WAIT_MINUTES", "soon")
+    assert collect._feed_wait_max_s() == 3600
+
+
+def test_a_past_day_never_waits_for_the_feed(rig):
+    rig.todo, rig.latest, rig.newest = ["BBCA"], OLDER, LATEST
+    rig.stale = [True]                                        # would block forever if it were consulted
+    outs = collect.collect_broker_summary_full(session_date=OLDER)
+    assert rig.probed == [] and rig.fetched == ["BBCA"] and outs[-1].status == "ok"
+
+
+def test_nothing_to_fetch_does_not_probe_the_feed(rig):
+    rig.todo, rig.have = [], {"BBCA"}
+    collect.collect_broker_summary_full()
+    assert rig.probed == []
+
+
+def test_the_probe_reads_the_stale_marker_of_the_source(monkeypatch):
+    from vg.sources.base import BrokerSummaryFetchResult
+    from vg.sources.vektorgauss import STALE_PREFIX
+
+    def fetch_returning(status, detail):
+        return lambda self, d, t, **k: BrokerSummaryFetchResult(status, d, t, "feed", 3, detail=detail)
+
+    src = collect.VgBrokerSummarySource
+    monkeypatch.setattr(src, "fetch", fetch_returning("no_data", f"{STALE_PREFIX}the feed served 2026-10-29"))
+    assert collect._feed_day_stale(LATEST, "BBCA") is True
+    monkeypatch.setattr(src, "fetch", fetch_returning("no_data", "no rows"))       # a name that did not trade
+    assert collect._feed_day_stale(LATEST, "BBCA") is False
+    monkeypatch.setattr(src, "fetch", fetch_returning("error", "ConnectError"))    # an outage is not "not published yet"
+    assert collect._feed_day_stale(LATEST, "BBCA") is False
 
 
 # ---- backfill_broker_full ---------------------------------------------------------------

@@ -6,6 +6,7 @@ caught and written to run_log with status 'error', then the loop continues.
 
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -35,6 +36,7 @@ from .sources.disclosure import IdxDisclosureSource
 from .sources.disclosure_pdf import ParsedDisclosure, parse_disclosure_pdf
 from .sources.vektorgauss import PARSER_VERSION as _BROKER_PARSER_VERSION
 from .sources.vektorgauss import (
+    STALE_PREFIX,
     VgBrokerInventorySource,
     VgBrokerSummarySource,
     VgDoneDetailsSource,
@@ -1077,6 +1079,23 @@ def plan_broker_full(
     }
 
 
+_FEED_WAIT_STEP_S = 300       # seconds between asks while the feed has not published the day yet
+
+
+def _feed_wait_max_s() -> float:
+    """How long the EOD broker pass waits for the day's table: VG_FEED_WAIT_MINUTES (default 60; 0 = do not wait)."""
+    try:
+        return max(0.0, float(os.environ.get("VG_FEED_WAIT_MINUTES", "60"))) * 60
+    except ValueError:
+        return 3600.0
+
+
+def _feed_day_stale(session_date: date, ticker: str) -> bool:
+    """ONE feed call, nothing stored: is the feed still serving an earlier day's table than `session_date`?"""
+    res = VgBrokerSummarySource().fetch(session_date, ticker)
+    return res.status == "no_data" and (res.detail or "").startswith(STALE_PREFIX)
+
+
 def collect_broker_summary_full(
     *, delay: float | None = None, session_date: date | None = None, have_table: str = "broker_flows",
 ) -> list[CollectOutcome]:
@@ -1095,11 +1114,27 @@ def collect_broker_summary_full(
     # Only a day OLDER than the newest needs the dated request; the newest day keeps the original
     # no-date call that production has always used.
     dated = latest != plan["newest"]
+    waited = 0.0
+    if not dated and plan["todo"]:
+        # The feed publishes the day's broker table around 19:30 WIB (later on a busy day); EOD starts before that. Ask once
+        # for the first name and, while the feed is still on the previous day, wait instead of storing nothing (or, before
+        # the stale guard, a copy of yesterday — 3 Nov 2026).
+        limit = _feed_wait_max_s()
+        while _feed_day_stale(latest, plan["todo"][0]):
+            if waited >= limit:
+                return [CollectOutcome(
+                    latest, "no_data", 0,
+                    f"the feed was still serving an earlier day after {waited / 60:.0f} min — nothing stored; "
+                    f"run `vg collect-broker-summary --full` again once it has published")]
+            time.sleep(_FEED_WAIT_STEP_S)
+            waited += _FEED_WAIT_STEP_S
     run = _feed_loop(plan["todo"], lambda t: collect_broker_summary_ticker(latest, t, use_date=dated), pause)
     detail = (
         f"{len(plan['universe'])} names ({plan['n_liquid']} liquid): fetched {run.ok}, no_data {run.no_data}, "
         f"errors {run.errors}, skipped {len(plan['have'])} already-have"
     )
+    if waited:
+        detail += f", waited {waited / 60:.0f} min for the feed to publish the day"
     if run.aborted:
         detail = f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
     return [*run.failures, CollectOutcome(latest, "error" if run.aborted else "ok", run.rows, detail)]

@@ -132,6 +132,9 @@ def _origin(broker_code: str) -> str:
     return "F" if broker_code in FOREIGN_BROKERS else "D"
 
 
+STALE_PREFIX = "stale: "     # start of the `detail` of a no_data result whose table was dated for another day
+
+
 class VgBrokerSummarySource(BrokerSummarySource):
     """Latest-day broker summary for one ticker from VG_FEED_BASE_URL."""
 
@@ -261,7 +264,7 @@ class VgBrokerSummarySource(BrokerSummarySource):
             # 2 Nov, and the whole table was stored under 3 Nov (every row an exact copy). Its own date says which day it is.
             return BrokerSummaryFetchResult(
                 "no_data", session_date, ticker, self.name, self.tier, raw_bytes=raw,
-                detail=f"stale: the feed served {served}, not {session_date}",
+                detail=f"{STALE_PREFIX}the feed served {served}, not {session_date}",
             )
         status = "ok" if rows else "no_data"
         return BrokerSummaryFetchResult(
