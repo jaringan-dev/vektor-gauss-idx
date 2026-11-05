@@ -24,9 +24,9 @@ from decimal import Decimal
 
 import psycopg
 
-from .broker_bounds import cohort_net_bounds
-from .db import connect, upsert_many
-from .sources.vektorgauss import FOREIGN_BROKERS, is_retail
+from ..broker_bounds import cohort_net_bounds
+from ..db import connect, upsert_many
+from ..sources.vektorgauss import FOREIGN_BROKERS, is_retail
 
 # -- tunables (all guesses — the forward test decides) -----------------------
 PRICE_FLAT_BAND = 0.02          # |5d return| < 2% counts as "sideways"

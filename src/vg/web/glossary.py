@@ -6,7 +6,7 @@ templates only reference keys (`{{ term('cr3', 'CR3') }}`), so a new term cannot
 fails when a template uses a key that is missing here or when the engine emits a tag that has no entry in `TAGS`.
 
 Writing rules: ordinary words first, the original term second; one honest caveat where it matters; never a buy/sell
-instruction. Thresholds quoted in `TAGS[...].rule` mirror the constants in `engine.py`.
+instruction. Thresholds quoted in `TAGS[...].rule` mirror the constants in `engine/__init__.py`.
 """
 
 from __future__ import annotations

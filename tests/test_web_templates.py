@@ -252,7 +252,7 @@ def test_ranking_has_no_stale_coverage_claims():
     assert "Each panel says how many stocks it was ranked from" in out
 
 
-@pytest.mark.parametrize("path", sorted(TEMPLATES.glob("*.html")) + [ROOT / "src" / "vg" / "engine.py"])
+@pytest.mark.parametrize("path", sorted(TEMPLATES.glob("*.html")) + [ROOT / "src" / "vg" / "engine" / "__init__.py"])
 def test_no_hardcoded_stale_coverage_text_in_sources(path):
     text = path.read_text(encoding="utf-8")
     for stale in ("dozens of stocks", "thousands of stocks", "~64 only", "~64, 1D"):

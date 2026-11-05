@@ -1,12 +1,53 @@
-# Rencana Fase 1 — Alat Internal + Telegram Alert (revisi 2)
+# Rencana Fase 1 — Alat Internal + Telegram Alert (revisi 3, 5 Nov 2026)
 
-Keputusan: alat pribadi untuk trading Anda sendiri, alert Telegram, **di VPS**. Fase 2 (mungkin) = langganan/dijual.
-Jawaban Anda: sumber data harus **gratis & reliable** + **resmi, hindari sumber yang bisa dimanipulasi**; host **VPS**; **perhalus rencana dulu** sebelum scaffold.
+Keputusan: alat pribadi untuk trading Anda sendiri, alert Telegram. Fase 2 (mungkin) = langganan/dijual.
+Jawaban Anda: sumber data harus **gratis & reliable** + **resmi, hindari sumber yang bisa dimanipulasi**; **perhalus rencana dulu** sebelum scaffold.
 
-Pendamping: [PRINSIP-DATA.md](PRINSIP-DATA.md) *(mengikat — baca dulu)* · [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) · [INVENTARIS-SUMBER-DATA.md](INVENTARIS-SUMBER-DATA.md) · [LANSKAP-KOMPETITOR.md](LANSKAP-KOMPETITOR.md) · [IDXALPHA-TEARDOWN.md](IDXALPHA-TEARDOWN.md) · [SECTORS-API.md](SECTORS-API.md).
-**Masih tanpa kode.**
+Pendamping: [PRINSIP-DATA.md](PRINSIP-DATA.md) *(mengikat — baca dulu)* · [ANALISIS-VALIDASI.md](ANALISIS-VALIDASI.md) · [INVENTARIS-SUMBER-DATA.md](INVENTARIS-SUMBER-DATA.md) · [LANSKAP-KOMPETITOR.md](LANSKAP-KOMPETITOR.md) · [IDXALPHA-TEARDOWN.md](IDXALPHA-TEARDOWN.md) · [SECTORS-API.md](SECTORS-API.md) · [HANDOFF.md](HANDOFF.md) · [RENCANA-MIGRASI-VPS.md](RENCANA-MIGRASI-VPS.md).
 
-> **Prinsip data ([PRINSIP-DATA.md](PRINSIP-DATA.md)):** Fase 1 = 100% Tier 0 (IDX Stock Summary + KSEI resmi). Tanpa broker summary → nol permukaan manipulasi kode-broker. Foreign flow dihitung IDX sendiri. Kalau nanti tambah broker summary: redistributor berlisensi (Tier 1) > agregator komersial (Tier 2, wajib rekonsiliasi) > **jangan** scrape platform retail (Tier 3). Metodologi selamanya condong ke sinyal yang bandar tidak bisa palsukan.
+> **Revisi 3 (5 Nov 2026).** Revisi 2 ditulis sebelum ada kode: "100% Tier 0, tanpa broker summary, di VPS, masih tanpa kode". Sekarang Fase 1 **sudah berjalan di produksi** dan salah satu asumsi intinya berubah: sebuah feed Tier 3 gratis (`vektorgauss.py`) terpasang untuk data per-broker. Bagian **§0** menuliskan keadaan sebenarnya; bagian lain yang asumsinya sudah tidak berlaku diberi tanda **[revisi 3]** dan teks lamanya sengaja dibiarkan supaya jejak keputusannya terbaca.
+
+> **Prinsip data ([PRINSIP-DATA.md](PRINSIP-DATA.md)):** inti Fase 1 tetap Tier 0 (IDX Stock Summary + KSEI resmi), dan foreign flow dihitung IDX sendiri. **[revisi 3]** Data per-broker datang dari feed Tier 3 — di tingkat yang menurut PRINSIP-DATA "tidak untuk produksi" — jadi ia hanya boleh hidup di **lapis masa-percobaan (bobot 0)**, tidak pernah menimpa data Tier 0, dan semua turunannya wajib lolos forward-test sebelum menggerakkan keputusan. Metodologi tetap condong ke sinyal yang bandar tidak bisa palsukan.
+
+---
+
+## 0. Keadaan nyata per 5 Nov 2026 (revisi 3)
+
+### Apa yang berjalan, dan di mana
+
+| Hal | Revisi 2 (rencana) | Kenyataan |
+|---|---|---|
+| Tempat | VPS ~$5/bln | **PC rumah Windows → WSL2 Ubuntu.** Alasan: IDX di belakang Cloudflare dan hanya melepas IP residensial; ASN cloud ditolak (1020). Pindah ke VPS ISP Indonesia = [RENCANA-MIGRASI-VPS.md](RENCANA-MIGRASI-VPS.md) |
+| Penjadwal | cron | **Windows Task Scheduler**: `VektorGauss-EOD` 19:15 WIB, `VektorGauss-DeepBackfill` 00:10, `VektorGauss-Status` 08:00. Runner GitHub Actions self-hosted dicoba dan gagal (VM WSL tidak hidup di antara sesi `wsl.exe`) |
+| Pengumpulan EOD (`scripts/eod.sh`) | satu fetch IDX | harga + indeks + price-history + disclosure + trading halt + deteksi corp action → `quality-gate` → `compute` (pass 1, menghasilkan kandidat radar) → **broker dari feed** (menunggu sampai 60 menit, `VG_FEED_WAIT_MINUTES`, sampai feed menerbitkan tabel broker hari itu) → `compute` (pass 2, sinyal broker masuk) → inventory → `backfill-outcomes` → `paper-update` → digest + status Telegram. KSEI bulanan dan corp action hanya pada slot awal bulan |
+| UI | "Telegram = satu-satunya UI" | digest Telegram **dan** dashboard lokal FastAPI (`vg serve`: pelacak forward-test, screener, ranking, coverage, health, risk-test) |
+| Forward-test | mulai hari pertama | berjalan; jam forward `VG_FORWARD_SINCE=2026-09-04`; `signal_log` memuat 26 tag (backfill in-sample sejak 2020-01-02 + sinyal maju) |
+| Hasil riset 3,5 tahun | — | foreign flow IDX + kepemilikan bulanan KSEI saja **bukan** edge yang bisa diperdagangkan; kandidat yang sedang diuji ada di [HANDOFF.md](HANDOFF.md). Tidak ada tag di lapis berbobot |
+
+### Feed Tier 3 (`src/vg/sources/vektorgauss.py`)
+
+Vendor adalah pengembang tunggal ("IDX EDGE PRO", freemium); di kode, DB, dan output ia sengaja hanya disebut `vektorgauss*` — endpoint dan kunci hanya ada di `.env` (`VG_FEED_BASE_URL`, `VG_FEED_API_KEY`). Statusnya **Tier 3**: sumber tidak diungkap, bus-factor tinggi. Kalau ia mati, harga/sektor/kepemilikan tetap utuh karena Tier 0; broker/inventory/done adalah milik feed saja, cadangannya Sectors.app (~$59/bln) atau IDX Equity & Derivative Log Data (~Rp3 juta/bln) — keputusan terbuka. Setiap respons mentah diarsipkan di `raw_artifacts` (+SHA256), jadi data yang sudah terkumpul selamat walau feed hilang.
+
+| Tabel | Isi | Cakupan (DB produksi, 5 Nov 2026) |
+|---|---|---|
+| `price_bars` | OHLCV + foreign flow. 1.394.759 baris Tier 0 (IDX); feed hanya **menambal** 2.886 baris yang kosong, dijaga `source_tier` agar tak pernah menimpa Tier 0 | 2020-01-02 → 2026-11-05, 989 ticker, 1.397.645 baris |
+| `broker_flows` | per broker: beli/jual/frekuensi/net. **Hanya 20 pembeli bersih teratas** per ticker-hari (penjual bersih tidak ada) | 2025-12-08 → 2026-11-05, 217 hari, 952 ticker, 1.091.879 baris |
+| `broker_levels` | tangga **25 pembeli bruto + 25 penjual bruto** per ticker-hari; ditambah setelah revisi 2 | rentang sama, 869 ticker, 2.397.729 baris |
+| `broker_inventory` | net harian + inventori berjalan (`cum_net_val`) per broker | 2026-06-03 → 2026-11-05, **5 ticker**, 4.981 baris |
+| `done_by_price` | tick done-detail diagregasi ke level harga + agresor HAKA/HAKI + split asing | **1 hari (24 Sep 2026), BBCA saja, 6 baris** — mahal (~130 halaman/saham/hari), hanya on-demand |
+
+Konsekuensi yang harus diingat saat membaca angka broker:
+- `broker_flows` saja **tidak bisa menunjukkan penjualan bersih** (hanya pembeli bersih yang masuk). Net per kelompok broker memakai **batas pasti** (`src/vg/broker_bounds.py`): `broker_flows` + `broker_levels` memberi interval `[lo, hi]` yang pasti, dan tag baru menyala hanya bila seluruh interval melewati ambang.
+- Satuan sudah dicek pada data hidup: 25 pembeli terbesar bila dijumlah = 95–99% `price_bars.value` dan tak pernah melebihinya, jadi "porsi dari nilai hari itu" terdefinisi.
+- Klasifikasi broker (`FOREIGN_BROKERS`, `RETAIL_BROKERS`) adalah **peta statis buatan sendiri**, bukan fakta dari feed. Semua yang dibangun di atasnya adalah inferensi.
+
+### Lapisan validasi data (commit `0d3a07e`, belum di-deploy per tanggal ini)
+
+`src/vg/config.py` kini `pydantic-settings` (nilai `.env` produksi diverifikasi identik dengan kode lama); `src/vg/schemas.py` memvalidasi tiap baris `price_bars`/`broker_flows`/`broker_inventory`/`done_by_price` sebelum `INSERT … ON CONFLICT`. Baris buruk ditolak satu per satu dan dilaporkan di `run_log.error`; bila >10% batch ditolak, tidak ada yang ditulis. Seluruh 2,49 juta baris produksi lolos tanpa penolakan. Temuan: IDX memakai `first_trade = -99999999` sebagai penanda "belum ada transaksi pertama" — data sah, disimpan apa adanya.
+
+### Mesin skoring broker (`src/vg/engine/scoring.py`) — probation, belum terhubung ke `compute`
+
+Tiga ukuran yang bisa dijelaskan dengan satu rumus; tanpa bobot hasil belajar, tanpa skor 0–100, tanpa kata beli/jual. Detail rumus ada di §5 ("Komponen broker").
 
 ---
 
@@ -25,6 +66,8 @@ Pendamping: [PRINSIP-DATA.md](PRINSIP-DATA.md) *(mengikat — baca dulu)* · [AN
 
 **Kesimpulan:** kalau syaratnya **gratis DAN reliable**, Fase 1 **tidak pakai broker summary**. Ia dibangun di atas **IDX Stock Summary + KSEI** saja.
 
+> **[revisi 3]** Kesimpulan itu masih benar untuk *reliable*: tidak ada sumber broker gratis yang reliabel. Yang berubah: pada 27 Sep 2026 ditemukan feed Tier 3 gratis yang memberi broker summary, dan ia dipasang **sebagai lapis percobaan, bukan sumber produksi** (§0). Ia gratis, tetapi tidak resmi dan bergantung pada satu pengembang — jadi baris tabel "Scrape RTI / app sekuritas" di atas berlaku juga untuknya: tidak reliable, hanya boleh menghasilkan sinyal bobot 0.
+
 ### Apakah ini cukup?
 
 Cukup untuk MVP, dan mungkin tidak sekehilangan yang dikira:
@@ -42,7 +85,7 @@ Cukup untuk MVP, dan mungkin tidak sekehilangan yang dikira:
 
 ## 2. Prinsip Fase 1 (revisi)
 
-1. **Gratis & resmi.** Hanya IDX Stock Summary + KSEI. Nol biaya data.
+1. **Gratis & resmi.** Hanya IDX Stock Summary + KSEI. Nol biaya data. **[revisi 3]** Inti tetap begitu; data per-broker dari feed Tier 3 (gratis, tidak resmi) ditambahkan di lapis percobaan saja — lihat §0.
 2. **VPS kecil, murah, andal.** ~$5/bln. Cron EOD.
 3. **Metodologi 2-lapis (tiru IDXAlpha):**
    - **Lapis berbobot** — sinyal yang sudah Anda forward-test dan terbukti tidak nol.
@@ -146,8 +189,24 @@ Ambang (`≥6/10`, `NonRegular ratio > X`, dst.) = tebakan awal. **Bukan untuk d
 - (Fase 1.5, kalau ada broker summary) rekonsiliasi `Σ broker value ≈ IDX Value`, deteksi pola wash, netting broker terafiliasi.
 - Tambah kolom `data_flags` di `signal_components`; baris `RECON_FAIL` → tidak menghasilkan tag hari itu.
 
+### Komponen broker (Tier 3, probation) — **[revisi 3]**
+
+Modul: `src/vg/engine/scoring.py`. Murni membaca (`SELECT`) `price_bars`, `broker_flows`, `broker_levels`, `done_by_price`; tidak mengubah skema. Setiap fungsi mengembalikan `None` bila data tidak cukup untuk jawaban jujur, dan `score_ticker` mencatat alasannya di `TickerScore.missing`.
+
+| Ukuran | Rumus | Catatan |
+|---|---|---|
+| **Bandar Power Index** (Top 3 / Top 5) | `cr{N}_buy` = nilai beli N pembeli bruto terbesar ÷ `price_bars.value`; `cr{N}_sell` serupa untuk penjual; **`bpi{N} = cr{N}_buy − cr{N}_sell`** ∈ [−1, 1] | >0: sisi beli lebih terkonsentrasi daripada sisi jual. Disertai `overlap3` (berapa broker ada di top-3 beli *dan* top-3 jual) dan, dari `broker_flows` saja, `net_buyer_concentration` (cr1/cr3/cr5 di antara 20 pembeli bersih — pandangan lama `bkr_cr3`, diperluas ke 5) |
+| **Aggressor Ratio** (HAKA vs HAKI) | `haka_share = HAKA ÷ (HAKA + HAKI)` ∈ [0, 1]; `ratio = HAKA ÷ HAKI`; `coverage = (HAKA+HAKI) ÷ qty`, berdasarkan volume | Default hanya papan **RG**: di NG/TN feed menandai hampir semua sebagai BUY (negosiasi tidak punya spread untuk dilintasi) |
+| **Retail Net-Flow Divergence** | net kelompok **ritel** (`RETAIL_BROKERS`) vs **institusi asing** (`FOREIGN_BROKERS − RETAIL_BROKERS`) sebagai interval pasti `[lo, hi]` dari `broker_flows`+`broker_levels`; `other` = pelengkap (jumlah ketiganya nol); `gap = (asing-inst − ritel) ÷ nilai hari itu` | Status (mis. `retail_buying_institutions_selling`) hanya diberikan bila **seluruh** interval kedua kelompok ada di satu sisi nol (± `band`); selain itu `indeterminate` |
+
+Hasil uji pada data hidup (5 Nov 2026, 173 ticker ber-tangga, hanya-baca): BPI3 tersebar sekitar nol (min −0,40, maks +0,42), terhitung untuk semua ticker; status divergensi pasti untuk 141 dari 173, `indeterminate` untuk 32. Dua peringatan yang ikut dari data:
+- **`overlap3 ≥ 1` pada 151 dari 173 ticker (87%)** — broker yang sama sering ada di tiga besar beli *dan* jual (crossing / market-making / pialang yang melayani kedua sisi). Konsentrasi tinggi *tidak* otomatis berarti satu pihak mengakumulasi; baca selalu bersama `overlap3`.
+- **Aggressor Ratio belum menghasilkan angka** untuk hampir semua ticker karena `done_by_price` baru berisi satu ticker-hari. Ia baru berguna setelah dipanen untuk watchlist (biaya: ~130 halaman per saham-hari).
+
+Status: **probation, bobot 0**, belum menulis ke `signal_components`/`signal_log`, belum masuk digest, dan belum di-forward-test. Ambang apa pun yang kelak dipasang di atasnya = tebakan yang harus diuji, sama seperti §5 lainnya. Kategori pelaku di tabel NeoBDM di atas tetap heuristik (daftar broker ritel hanya 6 kode, sengaja konservatif).
+
 ### Yang TIDAK dilakukan v0
-Skor 0–100 · CR3 / konsentrasi broker (tak ada data) · mapping broker · Sultan/Zombi · maker/taker/CVD · pattern scanner · AI narasi · target harga / stop loss.
+Skor 0–100 · mapping broker lengkap · Sultan/Zombi · maker/taker/CVD · pattern scanner · AI narasi · target harga / stop loss. **[revisi 3]** CR3/konsentrasi broker kini ada sebagai probation (lihat di atas); sisanya tetap tidak dilakukan, dan tidak ada model AI di mesin (aturan eksplisit, angka jujur).
 
 ---
 
@@ -220,9 +279,18 @@ broker_affiliation_groups(group_id, broker_code, group_name, version, valid_from
 signal_log(session_date, ticker, tag, close, layer,           -- layer='probation'|'weighted'
            ret_h1, ret_h3, ret_h5, ret_h10, ret_vs_ihsg_h5,   -- diisi belakangan
            PK(session_date,ticker,tag))
--- broker_flows: DEFINISIKAN tabelnya, biarkan kosong. Adapter BrokerSummarySource = stub.
-broker_flows(session_date, ticker, broker_code, side_flag, buy_val, sell_val,
-             buy_vol, sell_vol, buy_avg, sell_avg, source, PK(...))
+-- [revisi 3] rencana awal: broker_flows dibiarkan kosong, adapter = stub. Kenyataan: terisi dari feed Tier 3
+-- (kolom aktual ada di db/schema.sql; di bawah ringkasannya). Skema tidak berubah oleh revisi ini.
+broker_flows(session_date, ticker, broker_code, side_flag, buy_val, sell_val, buy_vol, sell_vol,
+             buy_avg, sell_avg, buy_freq, sell_freq, net_val, net_vol, board, source, source_tier,
+             raw_sha, parser_version, PK(session_date,ticker,broker_code,board))   -- 20 pembeli bersih teratas
+broker_levels(session_date, ticker, side 'B'|'S', rank, broker_code, broker_name, val, vol, freq, avg_price,
+              source, source_tier, PK(session_date,ticker,side,rank))             -- tangga 25 bruto per sisi
+broker_inventory(session_date, ticker, broker_code, net_val, net_vol, cum_net_val, buy_avg, sell_avg,
+                 source, source_tier, PK(session_date,ticker,broker_code))
+done_by_price(session_date, ticker, board, price_num, qty, value, trades, buy_aggressor_qty,
+              sell_aggressor_qty, foreign_buy_qty, foreign_sell_qty, source, source_tier,
+              PK(session_date,ticker,board,price_num))
 raw_artifacts(id, fetched_at, source, path, sha256)
 run_log(run_id, batch_date, phase, status, error, started_at, finished_at)
 ```
@@ -232,6 +300,8 @@ DB: **Postgres** (Docker di VPS). Bukan SQLite — Fase 2 pakai Postgres, hindar
 ---
 
 ## 9. Arsitektur
+
+> **[revisi 3]** Diagram di bawah adalah rencana awal. Kenyataannya: PC rumah → WSL2 Ubuntu, PostgreSQL 16 lokal, Task Scheduler (bukan cron/Docker), `scripts/eod.sh` dengan urutan di §0, dan `psycopg` murni (tanpa SQLAlchemy). Pydantic dipakai hanya untuk konfigurasi dan validasi baris.
 
 ```
 VPS ($5/bln)
@@ -269,7 +339,7 @@ Keputusan desain yang memudahkan pivot: **adapter per sumber**, kolom `source`/`
 
 | # | Langkah | Status |
 |---|---|---|
-| 1 | Uji `curl` IDX + KSEI dari VPS (Cloudflare check) — `scripts/check_idx_access.sh` | ⬜ butuh VPS |
+| 1 | Uji `curl` IDX + KSEI dari VPS (Cloudflare check) — `scripts/check_idx_access.sh` | ↪ digantikan: ternyata hanya IP residensial yang lolos, jadi berjalan di PC rumah/WSL2 (§0); VPS = [RENCANA-MIGRASI-VPS.md](RENCANA-MIGRASI-VPS.md) |
 | 2 | Scaffold repo + docker-compose (postgres) + skema + `trading_calendar` | ✅ `6aa70c8` |
 | 3 | Collector IDX Stock Summary → `price_bars` | ✅ `6aa70c8` |
 | 4 | Collector IDX Index Summary → `index_bars` (IHSG) | ✅ `8a2d7a2` |
@@ -277,13 +347,19 @@ Keputusan desain yang memudahkan pivot: **adapter per sumber**, kolom `source`/`
 | 6 | Collector corp actions (KSEI schedule + split detector) → `corp_actions` | ✅ `8a2d7a2` |
 | 7 | `engine.compute()` — komponen §5 + probation tags → `signal_components` / `signal_log` | ✅ (this commit) |
 | 8 | `engine.backfill_outcomes()` + `vg eval` | ✅ (this commit) |
-| 9 | **Telegram: digest harian + eval mingguan** | ⬜ next |
-| 10 | cron di VPS, jalankan, **diamkan 2 bulan**, baca `vg eval`, paper-trade paralel | ⬜ |
-| 11 | Putuskan: sinyal naik ke lapis berbobot? Fase 1.5 (beli broker summary)? berhenti? | ⬜ |
+| 9 | **Telegram: digest harian + eval mingguan** | ✅ (`vg digest`, `vg digest --weekly`) |
+| 10 | jadwalkan, **diamkan 2 bulan**, baca `vg eval`, paper-trade paralel | ▶ berjalan: Task Scheduler 19:15 WIB; jam forward sejak 2026-09-04; `vg paper-update` jalan tiap EOD |
+| 11 | Putuskan: sinyal naik ke lapis berbobot? Fase 1.5 (beli broker summary)? berhenti? | ⬜ menunggu gerbang forward-test; semua 26 tag masih `probation` |
+| 12 | **[revisi 3]** Feed Tier 3: broker summary, inventory, price-history (tier-guarded), done-details | ✅ `vg collect-broker-summary`, `collect-broker-inventory`, `collect-price-history`, `collect-done-details`; `broker-deep` backfill malam hari |
+| 13 | **[revisi 3]** `broker_levels` + batas pasti net kelompok (`broker_bounds.py`) | ✅ |
+| 14 | **[revisi 3]** Validasi skema Pydantic + `pydantic-settings` di semua jalur tulis | ✅ commit `0d3a07e`; ⬜ belum di-deploy (butuh `pip install -e .` di venv produksi — sudah terpasang di venv WSL ini) |
+| 15 | **[revisi 3]** Mesin skoring broker (`engine/scoring.py`): Bandar Power Index, Aggressor Ratio, Retail Net-Flow Divergence | ✅ modul + 28 tes; ⬜ belum dihubungkan ke `compute`/digest; ⬜ belum di-forward-test; ⬜ Aggressor Ratio menunggu data `done_by_price` |
 
 ---
 
 ## Yang perlu Anda putuskan sebelum "mulai"
+
+> **[revisi 3]** Keempat butir ini sudah dijawab oleh praktik: watchlist ada di `.env` (`VG_WATCHLIST`), bot Telegram sudah terpasang, hosting = PC rumah (VPS ditunda), dan Index Alpha dilewati karena feed Tier 3 mengisi kebutuhan broker. Keputusan yang masih terbuka sekarang: (a) cadangan bila feed mati (Sectors.app / IDX Log Data), (b) kapan memindahkan ke VPS ISP Indonesia, (c) apakah ukuran §5 "Komponen broker" layak diberi ambang dan dihubungkan ke `compute` untuk forward-test. Daftar asli dibiarkan di bawah sebagai jejak.
 
 1. **Watchlist awal** — daftar ticker (mis. 5–15). IDX250 penuh tetap di-scan untuk RADAR + forward-test; watchlist cuma untuk digest detail.
 2. **VPS** — mau saya finalkan rekomendasi ke 1 provider (Biznet Gio Indonesia vs Vultr Singapura)? Butuh tahu: prefer bayar Rupiah/lokal atau kartu/USD?

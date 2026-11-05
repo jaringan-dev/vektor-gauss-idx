@@ -13,7 +13,7 @@ TEMPLATES = ROOT / "src" / "vg" / "web" / "templates"
 
 
 def _emitted_tags() -> set[str]:
-    src = (ROOT / "src" / "vg" / "engine.py").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "vg" / "engine" / "__init__.py").read_text(encoding="utf-8")
     body = src[src.index("def _classify"):src.index("# persistence")]
     return set(re.findall(r'tags\.append\("([A-Z0-9-]+)"\)', body))
 
@@ -40,7 +40,7 @@ def test_every_key_used_in_templates_exists_in_the_glossary():
 def test_every_quadrant_the_engine_assigns_has_a_term():
     for engine_value, (key, word) in glossary.QUADRANTS.items():
         assert key in glossary.TERMS and word
-    src = (ROOT / "src" / "vg" / "engine.py").read_text(encoding="utf-8")
+    src = (ROOT / "src" / "vg" / "engine" / "__init__.py").read_text(encoding="utf-8")
     assigned = set(re.findall(r'\): "([A-Z]+)",', src[src.index("c.quadrant = {"):src.index("cons = c.foreign_consistency_10d")]))
     assert assigned <= set(glossary.QUADRANTS)
 
