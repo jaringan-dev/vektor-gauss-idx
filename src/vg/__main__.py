@@ -204,6 +204,12 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--kind", choices=("morning", "evening", "backfill"), default="morning")
     st.add_argument("--no-save", action="store_true", help="do not store the report for the dashboard")
 
+    rm = sub.add_parser(
+        "remind-verify",
+        help="send the post-EOD verification checklist to Telegram, ONCE, after a healthy EOD (called at the end of eod.sh)")
+    rm.add_argument("--force", action="store_true", help="send now regardless of readiness; does not count as the one-off send")
+    rm.add_argument("--dry-run", action="store_true", help="print the message, send nothing, touch no database")
+
     bd = sub.add_parser("broker-deep", help="K7: fill broker history newest->oldest inside a feed-call budget (resumable; run nightly)")
     bd.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 2))
     bd.add_argument("--end", type=date.fromisoformat, default=date(2026, 6, 2))
@@ -720,6 +726,11 @@ def main(argv: list[str] | None = None) -> int:
             risk_eval.save_snapshot(risk_eval.snapshot_payload(groups, window, min_n=args.min_n))
             print("saved to analysis_snapshot (dashboard: /risk-test)")
         return 0
+
+    if args.cmd == "remind-verify":
+        from . import reminder as _reminder
+
+        return _reminder.run(force=args.force, dry_run=args.dry_run)
 
     if args.cmd == "status":
         import re as _re

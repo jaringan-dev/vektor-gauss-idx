@@ -60,7 +60,9 @@ vg collect-broker-summary --full || true
 # Done-details (HAKA/HAKI) for the WATCHLIST (+ VG_LQ45_TICKERS if set) only - never the whole market (~130 calls per
 # stock-day). Time-boxed by VG_DONE_BUDGET_MINUTES (default 15) so it cannot hold up pass 2 and the digest.
 # Feeds the Aggressor Ratio in pass 2. Best-effort Tier 3; a ticker already stored for the day costs 0 calls.
+T_DONE=$SECONDS
 vg collect-done-details --watchlist-only || true
+echo "-- order-flow harvest took $((SECONDS - T_DONE))s (budget ${VG_DONE_BUDGET_MINUTES:-15} min) --"
 [ "$GATE_OK" -eq 1 ] && { vg compute --backfill "$BACK" "$TODAY" || true; }   # pass 2 — broker signals land
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
 # feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.
@@ -93,6 +95,11 @@ vg digest || true
 
 # Tell the owner how the run went (silent when everything is fine, with a sound when something is not).
 vg status --telegram --kind evening || true
+
+# One-off checklist for the first healthy EOD after the broker-scoring release. It sends ONCE, only after a successful
+# compute with the new columns present (`vg remind-verify --force` resends). Last on purpose and always `|| true`:
+# it cannot change what `vg digest` or the status report above did.
+vg remind-verify || true
 
 if [ -n "${VG_HEALTHCHECK_URL:-}" ]; then
   # Dead-man's-switch: tells an OUTSIDE service the machine/cron is still alive.
