@@ -103,7 +103,7 @@ def test_theme_button_is_a_labelled_button_that_cycles_auto_light_dark():
 
 PAIRS = [("fg", "bg"), ("fg", "panel"), ("muted", "bg"), ("muted", "panel"), ("link", "panel"), ("link", "bg"), ("pos", "panel"), ("neg", "panel"),
          ("ready-fg", "ready-bg"), ("fail-fg", "fail-bg"), ("prob-fg", "prob-bg"), ("warn-fg", "warn-bg"), ("fg", "prob-bg"), ("muted", "prob-bg"),
-         ("fg", "side"), ("muted", "side")]
+         ("fg", "side"), ("muted", "side"), ("wash-fg", "wash-bg"), ("wash-fg", "panel"), ("wash-fg", "bg")]
 
 
 @pytest.mark.parametrize("theme", ["light", "dark"])

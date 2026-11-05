@@ -25,16 +25,21 @@ def _ui_routes():
 _DETAIL_ROUTES = {"/coverage/missing", "/stock/{ticker}", "/search", "/pattern/{tag}"}       # reached by clicking inside a screen, not from the sidebar
 
 
+# Top-bar addresses that serve the same page as a sidebar screen (aliases, not new screens): alias -> the sidebar address.
+_ALIASES = {"/eval": "/track-record", "/system": "/health"}
+
+
 def test_every_html_route_has_a_sidebar_link_and_vice_versa():
     """A new screen that forgets to register in _NAV (or a link to a deleted route) fails here."""
     nav_hrefs = {it["href"] for g in webapp._NAV for it in g["items"]}
-    assert _ui_routes() - _DETAIL_ROUTES == nav_hrefs
-    assert _DETAIL_ROUTES <= _ui_routes()                      # and the exemption list has no ghosts
+    assert _ui_routes() - _DETAIL_ROUTES - set(_ALIASES) == nav_hrefs
+    assert _DETAIL_ROUTES | set(_ALIASES) <= _ui_routes()    # and the exemption lists have no ghosts
+    assert set(_ALIASES.values()) <= nav_hrefs                # an alias always points at a real sidebar screen
 
 
 def test_every_nav_key_is_an_active_page_used_by_a_route():
     keys = {it["key"] for g in webapp._NAV for it in g["items"]}
-    assert keys == {"today", "tracker", "risk", "research", "screener", "ranking", "health", "coverage", "guide"}   # the active_page values the routes pass
+    assert keys == {"home", "today", "tracker", "risk", "research", "screener", "ranking", "health", "coverage", "guide"}   # the active_page values the routes pass
 
 
 @pytest.fixture()
@@ -57,13 +62,13 @@ def client(monkeypatch):
     return TestClient(webapp.app)
 
 
-@pytest.mark.parametrize("path,active", [("/", "today"), ("/track-record", "tracker"), ("/screener", "screener"), ("/ranking", "ranking")])
+@pytest.mark.parametrize("path,active", [("/", "home"), ("/today", "today"), ("/track-record", "tracker"), ("/screener", "screener"), ("/ranking", "ranking")])
 def test_pages_render_inside_the_shell_with_a_healthy_strip(client, path, active):
     r = client.get(path)
     assert r.status_code == 200
     current = re.findall(r'<a [^>]*aria-current="page"[^>]*>', r.text)   # real tags, not the CSS selector
     assert len(current) == 1
-    expected = {"today": 'href="/"', "tracker": 'href="/track-record"', "screener": 'href="/screener"', "ranking": 'href="/ranking"'}[active]
+    expected = {"home": 'href="/"', "today": 'href="/today"', "tracker": 'href="/track-record"', "screener": 'href="/screener"', "ranking": 'href="/ranking"'}[active]
     assert expected in current[0]
     assert "Data freshness" in r.text and "962 stocks" in r.text and "30 Oct 2026" in r.text
     assert 'class="lv-bad"' not in r.text and 'class="lv-warn"' not in r.text
@@ -78,7 +83,7 @@ def test_a_price_gap_turns_the_strip_red_on_every_page(client, monkeypatch):
                                    broker_counts={d: 190 for d in days}, ksei_month_end=date(2026, 9, 30))
     monkeypatch.setattr(freshness, "load_inputs", lambda today=None: broken)
     webapp._STRIP_CACHE.clear()
-    for path in ("/", "/track-record", "/screener", "/ranking"):
+    for path in ("/", "/today", "/track-record", "/screener", "/ranking"):
         r = client.get(path)
         assert r.status_code == 200
         assert 'class="lv-bad"' in r.text and "gap" in r.text

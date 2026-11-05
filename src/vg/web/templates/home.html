@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% from "_macros.html" import term, ticker, tag_chips, db_error, disclaimer %}
+{% block title %}Screener — Vektor Gauss{% endblock %}
+{% block subtitle %}Screener{% endblock %}
+
+{% macro sh(key, label, term_key=none, left=false) -%}
+{%- set s = sorts[key] if sorts else none -%}
+<th scope="col" role="columnheader"{% if left %} style="text-align:left"{% endif %}{% if s and s.active %} aria-sort="{{ 'descending' if p.dir == 'desc' else 'ascending' }}"{% endif %}>
+  {% if term_key %}<a class="t" href="/guide#{{ term_key }}" data-term="{{ term_key }}">{{ label }}</a>{% else %}{{ label }}{% endif %}
+  {% if s %}<a class="sortlink{{ ' on' if s.active else '' }}" href="{{ s.href }}" title="Sort by {{ label|lower }}" aria-label="Sort by {{ label|lower }}">{{ s.arrow or '↕' }}</a>{% endif %}
+</th>
+{%- endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not session_date %}
+    <div class="panel">
+      <h2>No signals yet</h2>
+      <p class="note">There are no rows in <code>signal_log</code>. Run <code>vg compute</code> first.</p>
+    </div>
+  {% else %}
+    <section class="grid kpis" aria-label="Session summary">
+      <div class="kpi">
+        <div class="k">Total accumulation</div>
+        <div class="v">{{ v.cards.acc.n }}</div>
+        <div class="s">stocks with an accumulation pattern, of {{ v.cards.acc.of }} listed</div>
+      </div>
+      <div class="kpi wash">
+        <div class="k">Wash trading alert</div>
+        <div class="v">{{ v.cards.wash.n }}</div>
+        <div class="s">concentrated buying, but the same houses also sell</div>
+      </div>
+      <div class="kpi">
+        <div class="k">Average BPI, watchlist</div>
+        <div class="v {{ v.cards.avg.c }}">{{ v.cards.avg.t }}</div>
+        <div class="s">{{ v.cards.avg.sub }}</div>
+      </div>
+    </section>
+
+    {% if v.notice %}<div class="answer notice" role="status"><span class="q">Scores for this session</span>{{ v.notice }}</div>{% endif %}
+
+    <div class="panel">
+      <h2>Stocks — session {{ session_date }}</h2>
+      <form method="get" action="/" class="filterbar" role="search">
+        <label class="sr-only" for="q">Search the screener</label>
+        <input id="q" class="filter" name="q" type="search" autocomplete="off" value="{{ q_text }}" placeholder="Search a stock or pattern… (e.g. BBRI, accumulation)">
+        {% if p.view %}<input type="hidden" name="view" value="{{ p.view }}">{% endif %}
+        {% if p.liquid %}<input type="hidden" name="liquid" value="1">{% endif %}
+        {% if p.wl %}<input type="hidden" name="wl" value="1">{% endif %}
+        {% if p.sort != 'bpi' or p.dir != 'desc' %}<input type="hidden" name="sort" value="{{ p.sort }}"><input type="hidden" name="dir" value="{{ p.dir }}">{% endif %}
+        <button type="submit" class="menu-btn">Search</button>
+      </form>
+      <p class="chips" aria-label="Filters">
+        {% for c in chips %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
+        {% if filtered %}<a class="fchip clear" href="{{ clear }}">Clear filters</a>{% endif %}
+      </p>
+      <p class="note">
+        {% if pg.total %}Showing {{ pg.start + 1 }}–{{ pg.end }} of {{ pg.total }}{% if filtered %} (filtered from {{ v.n_rows }}){% endif %}.{% else %}No stock matches these filters.{% endif %}
+        <span aria-hidden="true">★</span> = on your watchlist · <span aria-hidden="true">📌</span> = currently held.
+        Default order: {{ term('bpi', 'BPI') }}, highest first; stocks without a score come last.
+      </p>
+      <table id="screener" class="cards" role="table" aria-label="Stock screener">
+        <thead role="rowgroup">
+          <tr role="row">
+            {{ sh('ticker', 'Stock', none, true) }}
+            {{ sh('price', 'Price') }}
+            {{ sh('change', 'Change', 'change_today') }}
+            {{ sh('bpi', 'BPI (top 3)', 'bpi') }}
+            {{ sh('overlap', 'Same houses', 'overlap3') }}
+            {{ sh('aggr', 'Aggressor ratio', 'aggressor') }}
+            {{ sh('signals', 'Signals', none, true) }}
+          </tr>
+        </thead>
+        <tbody role="rowgroup">
+          {% for r in rows %}
+          <tr role="row"{% if r.wash %} class="is-wash"{% endif %}>
+            <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
+            <td role="cell" data-label="Price">{{ r.price }}</td>
+            <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}">{{ r.bpi.t }}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
+            <td role="cell" data-label="Same houses" class="{{ 'warnfg' if r.overlap_raw and r.overlap_raw >= 2 else '' }}">{{ r.overlap }}</td>
+            <td role="cell" data-label="Aggressor ratio"{% if r.aggr_note %} title="{{ r.aggr_note }}"{% endif %}{% if r.aggr == 'N/A' %} class="na"{% endif %}>{{ r.aggr }}</td>
+            <td role="cell" data-label="Signals" class="wrap">
+              {%- if r.wash %}<a class="badge wash" href="/pattern/AKUM-NETRAL-WASH" data-term="tag:AKUM-NETRAL-WASH">AKUM-NETRAL-WASH</a> {% endif -%}
+              {{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if pg and pg.pages > 1 %}
+      <nav class="pager" aria-label="Pages">
+        {% if pg_prev %}<a class="fchip" href="{{ pg_prev }}" rel="prev">← Previous</a>{% else %}<span class="fchip off">← Previous</span>{% endif %}
+        <span>Page {{ pg.page }} of {{ pg.pages }}</span>
+        {% if pg_next %}<a class="fchip" href="{{ pg_next }}" rel="next">Next →</a>{% else %}<span class="fchip off">Next →</span>{% endif %}
+      </nav>
+      {% endif %}
+      <p class="wide-note">
+        <a class="t" href="/guide#bpi" data-term="bpi">BPI</a> compares how concentrated the buying and the selling were: positive means a few houses bought while many sold.
+        {{ term('aggressor', 'Aggressor ratio') }} is N/A when no order-flow data was collected for the stock (it is collected for watchlist stocks only).
+        {% if computed_at %}Built at {{ computed_at }}{% if cache_hit %}, kept for up to 5 minutes{% endif %}.{% endif %}
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>Patterns describe what the transaction data looked like; they are not predictions. Money is in rupiah: T = trillion, B = billion, M = million.</p>
+  {{ disclaimer() }}
+{% endblock %}

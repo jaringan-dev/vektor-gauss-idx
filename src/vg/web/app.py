@@ -24,7 +24,7 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
-from . import freshness, fmt, glossary, listing
+from . import freshness, fmt, glossary, home as homemod, listing
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -40,7 +40,8 @@ _GLOSSARY_JSON = json.dumps(glossary.popover_data(), ensure_ascii=False).replace
 # Sidebar (A1). `key` must equal the `active_page` each route passes to its template.
 _NAV = [
     {"title": "Overview", "items": [
-        {"key": "today", "label": "Today", "href": "/"},
+        {"key": "home", "label": "Screener", "href": "/"},
+        {"key": "today", "label": "Today", "href": "/today"},
     ]},
     {"title": "Patterns", "items": [
         {"key": "tracker", "label": "Track record", "href": "/track-record"},
@@ -59,6 +60,25 @@ _NAV = [
         {"key": "guide", "label": "Guide & glossary", "href": "/guide"},
     ]},
 ]
+
+# Top bar: the four main sections. `/eval` and `/system` serve the same pages as `/track-record` and `/health` (aliases, not
+# redirects, so the address the user clicked stays in the bar). The stock link opens a sample stock; the page highlights it
+# for every /stock/... address.
+_TOP_NAV = [
+    {"key": "screener", "label": "Screener", "href": "/"},
+    {"key": "stock", "label": "Stock Detail", "href": "/stock/BBCA"},
+    {"key": "eval", "label": "Signal Evaluator", "href": "/eval"},
+    {"key": "system", "label": "System Monitor", "href": "/system"},
+]
+# active_page (the sidebar key) -> top-bar section. A route can override it with ctx["section"] (the stock page does).
+_SECTION = {"home": "screener", "today": "screener", "screener": "screener", "ranking": "screener",
+            "tracker": "eval", "risk": "eval", "research": "eval", "health": "system", "coverage": "system"}
+
+
+def _top_nav(ctx: dict) -> list[dict]:
+    section = ctx.get("section") or _SECTION.get(ctx.get("active_page", ""))
+    return [{**it, "active": it["key"] == section} for it in _TOP_NAV]
+
 
 # Coverage heatmap (F1): per-day row counts for 4 sources; cheap but not free, so 2 minutes.
 _COVERAGE_CACHE = TTLCache(ttl_seconds=120)
@@ -90,6 +110,7 @@ def _render(name: str, ctx: dict, status_code: int = 200) -> HTMLResponse:
     """Render a page inside the shell. Renders manually + wraps in HTMLResponse: avoids depending on
     the TemplateResponse positional signature, which changed across Starlette versions."""
     ctx["nav_groups"] = _NAV
+    ctx["top_nav"] = _top_nav(ctx)
     ctx["strip"] = _strip_ctx()
     ctx["glossary_json"] = _GLOSSARY_JSON
     return HTMLResponse(_TEMPLATES.get_template(name).render(ctx), status_code=status_code)
@@ -193,7 +214,36 @@ _TODAY_CACHE = TTLCache(ttl_seconds=600)
 _PATTERN_CACHE = TTLCache(ttl_seconds=600)
 
 
+_HOME_CACHE = TTLCache(ttl_seconds=300)
+
+
 @app.get("/", response_class=HTMLResponse)
+def home(q: str = "", view: str = "", liquid: str = "0", wl: str = "0", sort: str = "bpi", dir: str = "",  # `dir` is the public query-string name
+         page: str = "1", fresh: bool = False) -> HTMLResponse:
+    """The interactive score screener: header cards + a sortable, filterable table (BPI, shared houses, aggressor ratio, wash badge)."""
+    p = homemod.clean({"q": q, "view": view, "liquid": liquid, "wl": wl, "sort": sort, "dir": dir, "page": page})
+    ctx: dict = {"active_page": "home", "error": None, "session_date": None, "v": None, "rows": [], "p": p, "pg": None,
+                 "chips": homemod.chips(p), "sorts": {k: homemod.sort_link(p, k) for k in homemod.SORTS}, "q_text": p["q"],
+                 "pg_prev": None, "pg_next": None, "clear": homemod.query(homemod.DEFAULTS), "filtered": False,
+                 "computed_at": None, "cache_hit": False}
+    try:
+        sd = engine.latest_signal_date()
+        if sd is not None:
+            ctx["session_date"] = sd
+            raw, wall, ctx["cache_hit"] = _HOME_CACHE.get_or_compute(("home", sd), lambda: homemod.load(sd), fresh=fresh)
+            ctx["computed_at"] = datetime.fromtimestamp(wall).strftime("%H:%M")  # noqa: DTZ006 — local wall-clock label
+            v = homemod.build_view(raw, CONFIG.watchlist, CONFIG.holdings)
+            filtered = homemod.apply(v["rows"], p)
+            pg = listing.paginate(len(filtered), p["page"], homemod.PER_PAGE)
+            ctx.update(v=v, pg=pg, rows=filtered[pg["start"]:pg["end"]], filtered=any((p["q"], p["view"], p["liquid"], p["wl"])),
+                       pg_prev=homemod.query(p, page=pg["page"] - 1) if pg["has_prev"] else None,
+                       pg_next=homemod.query(p, page=pg["page"] + 1) if pg["has_next"] else None)
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("home.html", ctx)
+
+
+@app.get("/today", response_class=HTMLResponse)
 def today(fresh: bool = False) -> HTMLResponse:
     ctx: dict = {"active_page": "today", "error": None, "v": None, "empty": False, "computed_at": None, "cache_hit": False,
                  "wl": set(CONFIG.watchlist), "held": set(CONFIG.holdings)}
@@ -212,6 +262,7 @@ def today(fresh: bool = False) -> HTMLResponse:
 
 
 @app.get("/track-record", response_class=HTMLResponse)
+@app.get("/eval", response_class=HTMLResponse)
 def forward_tracker(fresh: bool = False) -> HTMLResponse:
     ctx: dict = {
         "active_page": "tracker",
@@ -540,6 +591,7 @@ def _health_view() -> dict:
 
 
 @app.get("/health", response_class=HTMLResponse)
+@app.get("/system", response_class=HTMLResponse)
 def system_health() -> HTMLResponse:
     ctx: dict = {"active_page": "health", "error": None, "h": None}
     try:
@@ -659,7 +711,7 @@ def stock_detail(ticker: str, capital: float | None = None, risk_pct: float | No
         capital = CONFIG.account_balance / 1_000_000
     if risk_pct is None:
         risk_pct = CONFIG.risk_pct * 100
-    ctx: dict = {"active_page": "screener", "ticker": t, "error": None, "not_found": False, "v": None,
+    ctx: dict = {"active_page": "screener", "section": "stock", "ticker": t, "error": None, "not_found": False, "v": None,
                  "capital": capital, "risk_pct": risk_pct}
     if not stockmod.TICKER_RE.match(t):
         ctx["not_found"] = True

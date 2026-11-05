@@ -529,7 +529,7 @@ def test_today_page_answers_the_three_questions_and_never_recommends(client, mon
     monkeypatch.setattr(webapp, "_track_summary", lambda: {"n": 26, "passed": 0, "failing": 5, "probation": 21})
     monkeypatch.setattr(webapp.CONFIG, "watchlist", ("BBCA",), raising=False)
     monkeypatch.setattr(webapp.CONFIG, "holdings", (), raising=False)
-    r = client.get("/")
+    r = client.get("/today")
     assert r.status_code == 200
     for needle in ("What happened on 2026-11-03, and what is worth a look?", "The Jakarta Composite closed at 7,500", "Your stocks",
                    "Foreign money flowing in", "Foreign money flowing out", "the data is certain about the direction",
@@ -541,13 +541,13 @@ def test_today_page_answers_the_three_questions_and_never_recommends(client, mon
 
 def test_today_page_handles_no_signals_and_database_failure(client, monkeypatch):
     monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: None)
-    assert "No signals yet" in client.get("/").text
+    assert "No signals yet" in client.get("/today").text
 
     def boom():
         raise RuntimeError("db down")
 
     monkeypatch.setattr(webapp.engine, "latest_signal_date", boom)
-    r = client.get("/")
+    r = client.get("/today")
     assert r.status_code == 200 and "Cannot read the data" in r.text and "db down" in r.text
 
 
@@ -566,14 +566,14 @@ def test_today_view_is_cached_for_the_same_signal_date_and_fresh_rebuilds_it(cli
     monkeypatch.setattr(today, "load", lambda sd, watch: (calls.append(sd), _today_raw())[1])
     monkeypatch.setattr(webapp, "_track_summary", lambda: None)
     webapp._TODAY_CACHE.clear()
-    first = client.get("/")
+    first = client.get("/today")
     assert first.status_code == 200 and len(calls) == 1 and "Built at" in first.text and "kept for up to 10 minutes" not in first.text
-    second = client.get("/")
+    second = client.get("/today")
     assert len(calls) == 1 and "kept for up to 10 minutes" in second.text              # served from the cache and says so
-    client.get("/?fresh=1")
+    client.get("/today?fresh=1")
     assert len(calls) == 2
     monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: LATEST + timedelta(days=1))
-    client.get("/")
+    client.get("/today")
     assert len(calls) == 3                                                           # a new signal date never reuses yesterday's view
 
 
