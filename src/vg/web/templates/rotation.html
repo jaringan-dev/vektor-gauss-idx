@@ -9,12 +9,12 @@
   {% elif not v or not v.latest %}
     <div class="panel"><h2>No index data yet</h2><p class="note">There are no rows for the market index in <code>index_bars</code>. Run <code>vg collect-index</code> first.</p></div>
   {% else %}
-    <div class="answer"><span class="q">{% if p.sector %}Which {{ p.sector }} stocks are gaining or losing strength against their sector?{% else %}Which sectors are gaining or losing strength against the market?{% endif %}</span>
+    <div class="answer"><span class="q">{% if p.sector %}Which {{ v.sector_name }} stocks are gaining or losing strength against their sector?{% else %}Which sectors are gaining or losing strength against the market?{% endif %}</span>
       A {{ term('rotation', 'relative rotation') }} chart: each dot is where an item stands today against {{ v.bench_name }}, and its tail shows the last {{ p.tail }} {{ v.unit }}.
       Right of the centre line it is stronger than its own recent norm, above the centre line that strength is rising. It describes the past; it is not a prediction.</div>
 
     <div class="panel">
-      <h2>{% if p.sector %}{{ p.sector }}: stocks against the {{ v.bench_name|replace('the ', '') }}{% else %}Sectors against the Jakarta Composite{% endif %}</h2>
+      <h2>{% if p.sector %}{{ v.sector_name }}: stocks against the {{ v.bench_name|replace('the ', '') }}{% else %}Sectors against the Jakarta Composite{% endif %}</h2>
       <p class="chips" aria-label="Sector">
         {% for c in chips.sectors %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
       </p>

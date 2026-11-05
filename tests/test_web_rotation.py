@@ -107,6 +107,14 @@ def test_clean_only_accepts_known_values():
     assert rotation.clean({"tail": "1"})["tail"] == rotation.TAIL_MIN
 
 
+def test_sector_names_are_english_on_the_page_and_in_the_address_and_either_spelling_is_accepted():
+    assert set(rotation.SECTOR_EN) == set(rotation.SECTOR_INDEX) and len(set(rotation.SECTOR_EN.values())) == 11
+    assert rotation.clean({"sector": "Properties & Real Estate"})["sector"] == "Properti & Real Estat"
+    assert rotation.clean({"sector": "Properti & Real Estat"})["sector"] == "Properti & Real Estat"             # old bookmarks keep working
+    assert rotation.clean({"sector": "Energy"})["sector"] == "Energi" and rotation.clean({"sector": "Mining"})["sector"] == ""
+    assert rotation.sector_label("Keuangan") == "Financials" and rotation.sector_label("Something new") == "Something new"
+
+
 def test_every_sector_has_an_index_and_the_names_match_the_data_set():
     assert len(rotation.SECTOR_INDEX) == 11 and len(set(rotation.SECTOR_INDEX.values())) == 11
     assert all(v.startswith("IDX") for v in rotation.SECTOR_INDEX.values())
@@ -125,7 +133,7 @@ def _raw_sectors(n=80):
 def test_sector_view_orders_rows_by_quadrant_and_uses_short_chart_labels():
     v = rotation.build_view(_raw_sectors(), rotation.clean({}))
     assert v["n_shown"] == 3 and v["unit"] == "sessions" and v["windows"] == "20 and 10" and v["bench_name"] == "the Jakarta Composite"
-    assert v["rows"][0]["label"] == "Energi" and v["rows"][0]["quad"] == "Outperform"
+    assert v["rows"][0]["label"] == "Energy" and v["rows"][0]["quad"] == "Outperform"             # English names; the database key stays Indonesian
     assert [i["short"] for i in v["items"]] == ["ENERGY", "FINANCE", "TECHNO"]
     assert v["counts"]["Outperform"] >= 1 and sum(v["counts"].values()) == 3 and v["rows"][-1]["quad"] in ("Underperform", "Weakening")
     assert v["chart"].startswith("<svg") and v["chart_m"].startswith("<svg")
@@ -153,7 +161,7 @@ def test_items_without_enough_history_are_listed_not_drawn():
     raw = _raw_sectors()
     raw["series"]["Kesehatan"] = raw["series"]["Energi"][-10:]
     v = rotation.build_view(raw, rotation.clean({}))
-    assert v["dropped"] == ["Kesehatan"] and v["n_shown"] == 3
+    assert v["dropped"] == ["Healthcare"] and v["n_shown"] == 3
 
 
 def test_empty_data_builds_without_a_chart():
@@ -163,10 +171,10 @@ def test_empty_data_builds_without_a_chart():
 
 def test_chips_link_to_each_sector_and_each_bar_size_and_keep_the_other_choice():
     c = rotation.chips(rotation.clean({"sector": "Energi", "freq": "weekly"}))
-    assert [x["label"] for x in c["sectors"]][:2] == ["All sectors", "Energi"] and len(c["sectors"]) == 12
+    assert [x["label"] for x in c["sectors"]][:2] == ["All sectors", "Energy"] and len(c["sectors"]) == 12
     on = [x["label"] for x in c["sectors"] if x["on"]]
-    assert on == ["Energi"] and [x["label"] for x in c["freqs"] if x["on"]] == ["Weekly"]
-    assert "freq=weekly" in c["sectors"][3]["href"] and "sector=Keuangan" in next(x for x in c["sectors"] if x["label"] == "Keuangan")["href"]
+    assert on == ["Energy"] and [x["label"] for x in c["freqs"] if x["on"]] == ["Weekly"]
+    assert "freq=weekly" in c["sectors"][3]["href"] and "sector=Financials" in next(x for x in c["sectors"] if x["label"] == "Financials")["href"]
     assert rotation.chips(rotation.clean({}))["sectors"][0]["href"] == "?"                            # defaults leave the address clean
 
 
@@ -281,6 +289,15 @@ def test_load_without_index_data_returns_an_empty_result(monkeypatch):
 
 # ---- the page ----------------------------------------------------------------------------------------------
 
+def _fake_load(sector):
+    """A sector screen holds tickers, not sector names: the same lines under stock codes."""
+    raw = _raw_sectors(120)
+    if not sector:
+        return raw
+    stocks = dict(zip(("BBCA", "BBRI", "BMRI"), raw["series"].values(), strict=True))
+    return {**raw, "series": stocks, "avg_value": dict.fromkeys(stocks, 9e9)}
+
+
 @pytest.fixture()
 def client(monkeypatch):
     eod = date(2026, 10, 30)
@@ -288,7 +305,7 @@ def client(monkeypatch):
     monkeypatch.setattr(freshness, "load_inputs", lambda today=None: freshness.FreshInputs(
         today=date(2026, 10, 31), eod_date=eod, price_counts={d: 962 for d in days},
         broker_counts={d: 190 for d in days}, ksei_month_end=date(2026, 9, 30)))
-    monkeypatch.setattr(rotation, "load", lambda sector: _raw_sectors(120) if not sector else {**_raw_sectors(120), "avg_value": {"Energi": 9e9, "Keuangan": 9e9}})
+    monkeypatch.setattr(rotation, "load", _fake_load)
     webapp._STRIP_CACHE.clear()
     webapp._ROTATION_CACHE.clear()
     return TestClient(webapp.app)
@@ -302,13 +319,13 @@ def test_rotation_page_shows_the_chart_the_controls_and_the_table(client):
                    'aria-label="Bar size"', 'aria-label="Relative rotation values"', "Relative rotation chart", "ENERGY", "Method: relative strength",
                    "not its proprietary formula", "Not investment advice"):
         assert needle in t, needle
-    assert re.search(r'<a class="tk" href="\?sector=Energi"><b|<b><a class="tk" href="\?sector=Energi">', t)
+    assert re.search(r'<a class="tk" href="\?sector=Energy">', t) and 'sector=Energi' not in t
     assert 'class="chart-wide"' in t and "None" not in re.search(r'aria-label="Relative rotation values".*?</table>', t, re.DOTALL).group(0)
 
 
 def test_rotation_page_for_one_sector_links_stocks(client, monkeypatch):
-    t = client.get("/rotation?sector=Energi&freq=weekly&tail=5").text
-    assert "Energi: stocks against the IDXENERGY index" in t and "its tail shows the last 5 weeks" in t and "The newest week may be unfinished." in t
+    t = client.get("/rotation?sector=Energy&freq=weekly&tail=5").text
+    assert "Energy: stocks against the IDXENERGY index" in t and "its tail shows the last 5 weeks" in t and "The newest week may be unfinished." in t
     assert 'href="/stock/' in t
 
 
@@ -343,7 +360,7 @@ def test_rotation_data_is_cached_per_sector_and_fresh_reloads(client, monkeypatc
     client.get("/rotation")
     client.get("/rotation?freq=weekly")                                                                 # same data, other bar size: no reload
     assert calls == [""]
-    client.get("/rotation?sector=Energi")
+    client.get("/rotation?sector=Energy")                                                               # the English address maps to the database key
     client.get("/rotation?fresh=1")
     assert calls == ["", "Energi", ""]
 
@@ -351,3 +368,25 @@ def test_rotation_data_is_cached_per_sector_and_fresh_reloads(client, monkeypatc
 def test_the_glossary_explains_the_rotation_terms_without_trading_advice():
     t = glossary.TERMS["rotation"]
     assert t.caveat and "forecast" in t.caveat and "proprietary" in t.caveat and t.how
+
+
+def test_no_indonesian_sector_name_is_visible_anywhere_on_the_rotation_pages(client):
+    from html import unescape
+
+    for url in ("/rotation", "/rotation?sector=Financials", "/rotation?sector=Properties%20%26%20Real%20Estate&freq=weekly"):
+        r = client.get(url)
+        assert r.status_code == 200, url
+        main = re.search(r"<main.*?</main>", r.text, re.DOTALL).group(0)
+        text = unescape(re.sub(r"<[^>]+>", " ", main))
+        for indonesian in rotation.SECTOR_EN:
+            assert indonesian not in text, (url, indonesian)
+        assert "Financials" in text and "Consumer Non-Cyclicals" in text
+
+
+def test_the_sector_chips_link_with_english_names_that_round_trip(client):
+    t = client.get("/rotation").text
+    hrefs = re.findall(r'<a class="fchip[^"]*" href="\?sector=([^"&]+)"', t)
+    from urllib.parse import unquote_plus as unquote
+
+    assert [unquote(h) for h in hrefs][:3] == ["Energy", "Basic Materials", "Industrials"]
+    assert all(rotation.clean({"sector": unquote(h)})["sector"] in rotation.SECTOR_INDEX for h in hrefs)

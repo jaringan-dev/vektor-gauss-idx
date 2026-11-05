@@ -26,7 +26,21 @@ SECTOR_INDEX = {
     "Keuangan": "IDXFINANCE", "Properti & Real Estat": "IDXPROPERT", "Teknologi": "IDXTECHNO",
     "Infrastruktur": "IDXINFRA", "Transportasi & Logistik": "IDXTRANS",
 }
+# English names (the IDX-IC English sector names) for everything the page shows and for the address. The database keeps the Indonesian
+# names, so they stay the internal key; `clean` accepts either spelling.
+SECTOR_EN = {
+    "Energi": "Energy", "Barang Baku": "Basic Materials", "Perindustrian": "Industrials",
+    "Barang Konsumen Primer": "Consumer Non-Cyclicals", "Barang Konsumen Non-Primer": "Consumer Cyclicals", "Kesehatan": "Healthcare",
+    "Keuangan": "Financials", "Properti & Real Estat": "Properties & Real Estate", "Teknologi": "Technology",
+    "Infrastruktur": "Infrastructures", "Transportasi & Logistik": "Transportation & Logistics",
+}
+SECTOR_FROM_EN = {v: k for k, v in SECTOR_EN.items()}
 MARKET_INDEX = "COMPOSITE"
+
+
+def sector_label(name: str) -> str:
+    """The English display name of a sector key (an unknown name is shown as it is, never lost)."""
+    return SECTOR_EN.get(name, name)
 FREQS = ("daily", "weekly")
 # bars in each moving average, per frequency: (RS-Ratio window, RS-Momentum window)
 WINDOWS = {"daily": (20, 10), "weekly": (10, 5)}
@@ -145,7 +159,9 @@ def quadrant(x: float, y: float) -> str:
 
 def clean(params: dict) -> dict:
     """Coerce untrusted query values into safe, known ones."""
-    sector = params.get("sector") if params.get("sector") in SECTOR_INDEX else ""
+    raw_sector = params.get("sector")
+    raw_sector = SECTOR_FROM_EN.get(raw_sector, raw_sector)                    # the English name from the address -> the database key
+    sector = raw_sector if raw_sector in SECTOR_INDEX else ""
     freq = params.get("freq") if params.get("freq") in FREQS else "daily"
     try:
         tail = int(params.get("tail", TAIL_DEFAULT))
@@ -170,7 +186,7 @@ def build_view(raw: dict, p: dict) -> dict:
             dropped.append(name)
             continue
         x, y = pts[-1][1], pts[-1][2]
-        items.append({"label": name, "short": name if p["sector"] else SECTOR_INDEX[name].removeprefix("IDX"), "quad": quadrant(x, y), "x": x, "y": y, "pts": [(a, b) for _d, a, b in pts],
+        items.append({"label": name if p["sector"] else sector_label(name), "short": name if p["sector"] else SECTOR_INDEX[name].removeprefix("IDX"), "quad": quadrant(x, y), "x": x, "y": y, "pts": [(a, b) for _d, a, b in pts],
                       "d_x": x - pts[0][1], "d_y": y - pts[0][2], "date": pts[-1][0]})
     rows = []
     for it in sorted(items, key=lambda i: (QUADRANT_ORDER.index(i["quad"]), -i["x"])):
@@ -179,11 +195,12 @@ def build_view(raw: dict, p: dict) -> dict:
     chart = charts.rotation_chart(items, p["tail"])
     chart_m = charts.rotation_chart(items, p["tail"], width=charts.W_MOBILE, height=340, uid="rot-m", tips=False)
     counts = {q: sum(1 for i in items if i["quad"] == q) for q in QUADRANT_ORDER}
+    dropped = [name if p["sector"] else sector_label(name) for name in dropped]
     return {"items": items, "rows": rows, "dropped": dropped, "chart": chart, "chart_m": chart_m, "counts": counts,
             "latest": raw["latest"].isoformat() if raw["latest"] else None,
             "last_bar": items[0]["date"].isoformat() if items else None,
             "windows": f"{l_ratio} and {l_mom}", "unit": "weeks" if weekly else "sessions",
-            "n_shown": len(items), "bench_name": ("the Jakarta Composite" if not p["sector"] else f"the {SECTOR_INDEX.get(p['sector'], '')} index")}
+            "n_shown": len(items), "sector_name": sector_label(p["sector"]), "bench_name": ("the Jakarta Composite" if not p["sector"] else f"the {SECTOR_INDEX.get(p['sector'], '')} index")}
 
 
 def chips(p: dict) -> dict:
@@ -197,6 +214,6 @@ def chips(p: dict) -> dict:
 
     return {
         "sectors": [{"label": "All sectors", "on": p["sector"] == "", "href": href(sector="")},
-                    *[{"label": s, "on": p["sector"] == s, "href": href(sector=s)} for s in SECTOR_INDEX]],
+                    *[{"label": sector_label(s), "on": p["sector"] == s, "href": href(sector=sector_label(s))} for s in SECTOR_INDEX]],
         "freqs": [{"label": f.capitalize(), "on": p["freq"] == f, "href": href(freq=f)} for f in FREQS],
     }
