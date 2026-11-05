@@ -239,8 +239,32 @@
       {% endif %}
     </div>
 
-    <div class="panel">
+    <div class="panel" id="ownership">
       <h2>Ownership (KSEI, monthly)</h2>
+      {% if v.own_chart %}
+      {% set oc = v.own_chart %}
+      <p class="note">Who holds the shares, month-end by month-end ({{ oc.n_months }} months to {{ oc.latest }}). The top bars show shares held per holder type in lots
+        (100 shares); local holders sit at the bottom, foreign holders above in a lighter tone. The strip underneath shows the three big groups as a share of all shares.
+        Hover a slice for its exact figure. {{ term('ksei', 'KSEI data') }} is monthly and published late.</p>
+      {{ chart(oc.chart, oc.chart_m) }}
+      <div class="grid">
+        <div>
+          <h3 style="font-size:14px;margin:12px 0 4px">Latest month ({{ oc.latest }}): share of all shares</h3>
+          <table aria-label="Holder types, latest month">
+            <thead><tr><th scope="col" style="text-align:left">Holder type</th><th scope="col">Local</th><th scope="col">Foreign</th></tr></thead>
+            <tbody>{% for r in oc.legend %}<tr><td style="text-align:left"><span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:{{ r.color }}"></span>{{ r.label }}</td><td>{{ r.local }}</td><td>{{ r.foreign }}</td></tr>{% endfor %}</tbody>
+          </table>
+        </div>
+        <div>
+          <h3 style="font-size:14px;margin:12px 0 4px">The three big groups{% if oc.since %}, now vs {{ oc.since }}{% endif %}</h3>
+          <table aria-label="Change in the three big holder groups">
+            <thead><tr><th scope="col" style="text-align:left">Group</th><th scope="col">Now</th>{% if oc.since %}<th scope="col">Then</th><th scope="col">Change</th>{% endif %}</tr></thead>
+            <tbody>{% for g in oc.shift %}<tr><td style="text-align:left"><span aria-hidden="true" style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;background:{{ g.color }}"></span>{{ g.label }}</td><td>{{ g.now }}</td>{% if oc.since %}<td>{{ g.then or '—' }}</td><td class="{{ g.delta_c }}">{{ g.delta or '—' }}</td>{% endif %}</tr>{% endfor %}</tbody>
+          </table>
+        </div>
+      </div>
+      <p class="wide-note">Total held: {{ oc.total_lots }} lots. The number of individual shareholders is not in our data, so it is not shown. A change in these shares describes who holds the stock; it is not a prediction.</p>
+      {% endif %}
       {% if v.ownership %}
       <table aria-label="KSEI ownership by month">
         <thead><tr><th scope="col" style="text-align:left">Month end</th><th scope="col">Local individuals</th><th scope="col">Local institutions</th><th scope="col">Foreign</th></tr></thead>
@@ -249,6 +273,36 @@
       <p class="wide-note">Each column is that group's share of the three groups shown together. {{ term('ksei', 'KSEI data') }} is monthly and published late.</p>
       {% else %}
       <p class="note">No KSEI ownership data for this stock.</p>
+      {% endif %}
+    </div>
+
+    {% set dc = v.disclosures %}
+    <div class="panel" id="filings">
+      <h2>Ownership filings: 5%+ holders and insiders</h2>
+      {% if dc.state == 'parsed' %}
+      <p class="note">What holders and insiders reported to the exchange (via KSEI), newest first. Showing {{ dc.shown }}{% if dc.total > dc.shown %} of {{ dc.total }}{% endif %} reported transactions.
+        This is only what was filed: it is not a full list of this stock's shareholders, and a filing can arrive days after the trade.</p>
+      <table aria-label="Ownership filings" class="sticky">
+        <thead><tr><th scope="col" style="text-align:left">Filed</th><th scope="col" style="text-align:left">Reporter</th><th scope="col" style="text-align:left">Action</th>
+          <th scope="col">Shares</th><th scope="col">Price</th><th scope="col">Holding before → after</th><th scope="col">Filing</th></tr></thead>
+        <tbody>{% for r in dc.rows %}
+          <tr><td style="text-align:left">{{ r.filed }}</td>
+            <td class="wrap"><b>{{ r.who }}</b><br><span class="note">{{ r.role }}{% if r.controller %} · controller{% endif %}</span></td>
+            <td style="text-align:left" class="{{ r.action_c }}">{{ r.action }}{% if r.raw_type %}<br><span class="note">{{ r.raw_type }}{% if r.tdate != '—' %} · {{ r.tdate }}{% endif %}</span>{% endif %}</td>
+            <td>{{ r.qty }}</td><td>{{ r.price }}</td>
+            <td>{{ r.holding }}{% if r.after_shares %}<br><span class="note">{{ r.after_shares }} shares</span>{% endif %}</td>
+            <td>{% if r.pdf %}<a href="{{ r.pdf }}" rel="noopener noreferrer" target="_blank">PDF<span class="sr-only"> of the filing from {{ r.filed }}</span></a>{% else %}—{% endif %}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      {% elif dc.state == 'filings' %}
+      <p class="note">Filings were found for this stock, but their tables have not been read into numbers yet, so only the headline is shown.</p>
+      <table aria-label="Ownership filings, headlines only">
+        <thead><tr><th scope="col" style="text-align:left">Filed</th><th scope="col" style="text-align:left">Reporter</th><th scope="col" style="text-align:left">Headline</th><th scope="col">Filing</th></tr></thead>
+        <tbody>{% for r in dc.rows %}<tr><td style="text-align:left">{{ r.filed }}</td><td class="wrap">{{ r.party }}</td><td class="wrap">{{ r.title }}</td>
+          <td>{% if r.pdf %}<a href="{{ r.pdf }}" rel="noopener noreferrer" target="_blank">PDF<span class="sr-only"> of the filing from {{ r.filed }}</span></a>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}
+      <p class="note">No ownership filings from 5%+ holders or insiders have been collected for this stock (collection starts September 2023).</p>
       {% endif %}
     </div>
 

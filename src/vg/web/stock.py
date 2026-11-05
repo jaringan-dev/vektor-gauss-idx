@@ -20,6 +20,8 @@ from .narrative import stock_summary
 
 TICKER_RE = re.compile(r"^[A-Z0-9]{3,6}$")
 HISTORY_DAYS = 190
+OWNERSHIP_MONTHS = 24
+DISCLOSURE_ROWS = 12
 CHART_SESSIONS = 90
 
 
@@ -106,12 +108,28 @@ def load(ticker: str) -> dict | None:
             "WHERE ticker = %s ORDER BY month_end DESC LIMIT 6", (ticker,))
         own = cur.fetchall()
         cur.execute(
+            "SELECT month_end, detail FROM ownership_monthly WHERE ticker = %s AND detail IS NOT NULL "
+            "ORDER BY month_end DESC LIMIT %s", (ticker, OWNERSHIP_MONTHS))
+        own_series = cur.fetchall()[::-1]
+        cur.execute(
+            "SELECT h.filed_date, h.reporter_name, h.is_insider, h.is_controller, h.position, h.direction, h.transaction_type, "
+            "h.shares_qty, h.price, h.transaction_date, h.shares_after, h.voting_rights_before, h.voting_rights_after, f.pdf_url "
+            "FROM disclosure_holdings h JOIN disclosure_filings f USING (no_pengumuman) WHERE h.ticker = %s "
+            "ORDER BY h.filed_date DESC, h.no_pengumuman DESC, h.row_seq LIMIT %s", (ticker, DISCLOSURE_ROWS))
+        disc_rows = cur.fetchall()
+        cur.execute("SELECT count(*) FROM disclosure_holdings WHERE ticker = %s", (ticker,))
+        disc_total = cur.fetchone()[0]
+        cur.execute("SELECT filed_date, party, title, pdf_url FROM disclosure_filings WHERE ticker = %s "
+                    "ORDER BY filed_at DESC LIMIT %s", (ticker, DISCLOSURE_ROWS))
+        disc_filings = cur.fetchall()
+        cur.execute(
             "SELECT ex_date, type, exercise_ratio, proceed_ratio FROM corp_actions WHERE ticker = %s "
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
-            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring}
+            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring,
+            "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
 
 
 # retail_div_state (engine/scoring.py) -> words for the page. Descriptive only.
@@ -187,6 +205,96 @@ def _ownership_row(o) -> dict:
     total = sum(v for v in vals if v)
     cells = [fmt.pct_plain(v / total, 1) if (v is not None and total) else "—" for v in vals]
     return {"month": o[0].strftime("%b %Y"), "indiv": cells[0], "inst": cells[1], "foreign": cells[2]}
+
+
+def ownership_series(rows) -> list[dict]:
+    """[(month_end, detail json)] oldest first -> [{d, local, foreign}] in shares. A month whose detail is missing or empty is skipped."""
+    out = []
+    for month_end, detail in rows or []:
+        if not isinstance(detail, dict):
+            continue
+        local, foreign = detail.get("local") or {}, detail.get("foreign") or {}
+        if not any(v for v in (*local.values(), *foreign.values())):
+            continue
+        out.append({"d": month_end, "local": {k: _f(v) for k, v in local.items()}, "foreign": {k: _f(v) for k, v in foreign.items()}})
+    return out
+
+
+def ownership_view(rows) -> dict | None:
+    """The balance-position panel: two chart widths, the latest month as a table, and how the three big groups moved over 12 months.
+    None when there is no usable month (the template then keeps the plain table only)."""
+    months = ownership_series(rows)
+    chart, chart_m = charts.ownership_stack(months), charts.ownership_stack(months, width=charts.W_MOBILE, uid="own-m", tips=False)
+    if not chart:
+        return None
+    last = months[-1]
+    total = sum(charts.group_shares(last).values())
+    legend = []
+    for code in charts.OWNER_ORDER:
+        loc, fgn = (last["local"].get(code) or 0), (last["foreign"].get(code) or 0)
+        legend.append({"label": charts.OWNER_LABEL[code], "color": charts.OWNER_COLOR[code],
+                       "local": fmt.pct_plain(loc / total, 1) if total else "—",
+                       "foreign": fmt.pct_plain(fgn / total, 1) if total else "—"})
+    year_ago = next((m for m in reversed(months[:-1]) if (last["d"].year - m["d"].year) * 12 + last["d"].month - m["d"].month >= 12), None)
+    now_g = charts.group_shares(last)
+    then_g = charts.group_shares(year_ago) if year_ago else None
+    shift = []
+    for key, label, color in charts.GROUP_STRIP[::-1]:
+        now = now_g[key] / total
+        row = {"label": label, "color": color, "now": fmt.pct_plain(now, 1), "then": None, "delta": None, "delta_c": ""}
+        if then_g and sum(then_g.values()):
+            then = then_g[key] / sum(then_g.values())
+            pts = round((now - then) * 100, 1) + 0.0                  # + 0.0 turns -0.0 into 0.0, so a flat group never prints "-0.0 pts"
+            row.update(then=fmt.pct_plain(then, 1), delta=f"{pts:+.1f} pts", delta_c="" if pts == 0 else fmt.signcls(pts))
+        shift.append(row)
+    return {"chart": chart, "chart_m": chart_m, "legend": legend, "shift": shift, "latest": last["d"].strftime("%b %Y"),
+            "since": year_ago["d"].strftime("%b %Y") if year_ago else None, "n_months": len(months),
+            "total_lots": f"{total / charts.SHARES_PER_LOT:,.0f}"}
+
+
+def _vr(x) -> str:
+    """Voting-right fraction as a percentage; small holdings keep four decimals so 0.0346% does not become 0.03%."""
+    x = _f(x)
+    if x is None:
+        return "—"
+    return f"{x * 100:.4f}%" if abs(x) < 0.001 else f"{x * 100:.2f}%"
+
+
+_DIRECTION = {"buy": ("Bought", "pos"), "sell": ("Sold", "neg")}
+# The filing's own job title, in English. It is only meaningful for insiders: for every other reporter the parser reads an address
+# note ("Alamat Identitas : Tidak ditampilkan") into the same field, so the title is never shown for them.
+_POSITION = {"Direksi": "Director", "Dewan Komisaris": "Commissioner"}
+
+
+def _role(insider, position) -> str:
+    if insider is None:
+        return "Reporter type not read"
+    return _POSITION.get(position or "", "Director / commissioner") if insider else "Substantial holder (5%+)"
+
+
+def disclosure_view(d: dict | None) -> dict:
+    """Ownership filings for the stock page. state: parsed (rows with names and numbers), filings (only the filing list, the PDF was not
+    parsed), empty (nothing filed). Pure."""
+    d = d or {}
+    rows, filings, total = d.get("rows") or [], d.get("filings") or [], d.get("total") or 0
+    if rows:
+        out = []
+        for (filed, who, insider, controller, position, direction, ttype, qty, price, tdate, after, vr_b, vr_a, pdf) in rows:
+            word, cls = _DIRECTION.get(direction or "", ("Other", ""))
+            out.append({
+                "filed": filed.isoformat(), "who": who or "—",
+                "role": _role(insider, position), "controller": bool(controller),
+                "action": word, "action_c": cls, "raw_type": ttype or "",
+                "qty": f"{_f(qty):,.0f}" if qty is not None else "—", "price": fmt.price(price) if price is not None else "—",
+                "tdate": tdate.isoformat() if tdate else "—",
+                "holding": f"{_vr(vr_b)} → {_vr(vr_a)}" if (vr_b is not None or vr_a is not None) else "—",
+                "after_shares": f"{_f(after):,.0f}" if after is not None else "", "pdf": pdf or "",
+            })
+        return {"state": "parsed", "rows": out, "total": total, "shown": len(out)}
+    if filings:
+        return {"state": "filings", "total": len(filings), "shown": len(filings), "rows": [
+            {"filed": f.isoformat(), "party": party or "—", "title": title or "", "pdf": pdf or ""} for f, party, title, pdf in filings]}
+    return {"state": "empty", "rows": [], "total": 0, "shown": 0}
 
 
 def group_series(raw: dict) -> dict | None:
@@ -360,4 +468,6 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
         "ownership": own, "corp": [{"date": c[0].isoformat(), "type": c[1], "ratio": c[3] or c[2] or ""} for c in raw["corp"]],
         "risk": risk_view, "has_atr": plan is not None,
         "scoring": scoring_view(raw.get("scoring"), raw["latest"], tags_today),
+        "own_chart": ownership_view(raw.get("own_series")),
+        "disclosures": disclosure_view(raw.get("disclosures")),
     }

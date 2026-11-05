@@ -373,3 +373,110 @@ def count_bars(days: list[date], counts: list[int], *, height: int = 140, label:
     desc = (f"Number of {label} on each of the last {len(days)} sessions, from {days[0].isoformat()} to {days[-1].isoformat()}. "
             f"Highest day {cmax:,}.")
     return _svg(uid, height, f"Daily number of {label}", desc, "".join(body), width)
+
+
+# ---- KSEI balance position (stacked ownership by holder type, month by month) ----------------------------------------------
+# KSEI's nine holder categories x local/foreign. Mid-tone colours that read on both themes; a foreign slice reuses its category's
+# hue at half strength. The slices are never identified by colour alone: every slice has a hover title and the page prints the
+# latest figures in a table next to the chart.
+OWNER_ORDER = ("ID", "CP", "MF", "SC", "IB", "IS", "PF", "FD", "OT")
+OWNER_LABEL = {"ID": "Individual", "CP": "Corporate", "MF": "Mutual fund", "SC": "Securities company", "IB": "Bank", "IS": "Insurance",
+               "PF": "Pension fund", "FD": "Foundation", "OT": "Other"}
+OWNER_COLOR = {"ID": "#f4a259", "CP": "#e4572e", "MF": "#17bebb", "SC": "#e86a92", "IB": "#8f6bd9", "IS": "#3a6ea5",
+               "PF": "#2fa36b", "FD": "#a3c16b", "OT": "#d98cf0"}
+SHARES_PER_LOT = 100
+# the three-group strip under the stack: bottom to top
+GROUP_STRIP = (("local_ind", "Local individual", "#f4a259"), ("local_inst", "Local institution", "#4f7cff"), ("foreign", "Foreign", "#a66cff"))
+
+
+def _fmt_lot(v: float) -> str:
+    if v >= 1e9:
+        return f"{v / 1e9:.1f}B"
+    if v >= 1e6:
+        return f"{v / 1e6:,.0f}M"
+    if v >= 1e3:
+        return f"{v / 1e3:,.0f}K"
+    return f"{v:,.0f}"
+
+
+def _nice_ceil(v: float) -> float:
+    """Round a maximum up to a clean number (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 or 10 times a power of ten) that hugs it, so the bars fill the panel."""
+    if v <= 0:
+        return 1.0
+    base = 10 ** (len(str(int(v))) - 1) if v >= 1 else 1.0
+    for m in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if v <= base * m:
+            return base * m
+    return base * 10
+
+
+def group_shares(m: dict) -> dict[str, float]:
+    """One month -> shares of the three strip groups (local individual, local institution = local total minus individual, foreign)."""
+    loc, fgn = m.get("local") or {}, m.get("foreign") or {}
+    loc_total = sum(v or 0 for k, v in loc.items() if k in OWNER_ORDER)
+    return {"local_ind": loc.get("ID") or 0, "local_inst": max(loc_total - (loc.get("ID") or 0), 0),
+            "foreign": sum(v or 0 for k, v in fgn.items() if k in OWNER_ORDER)}
+
+
+def ownership_stack(months: list[dict], *, width: int = W, uid: str = "own", tips: bool = True) -> str | None:
+    """months: [{d: date, local: {code: shares}, foreign: {code: shares}}], oldest first.
+
+    Top panel: shares held per holder category, in lots, local slices at the bottom and foreign above them. Bottom strip: the share
+    of local individuals / local institutions / foreign in the total. Returns None with fewer than 3 usable months.
+    `tips=False` drops the per-slice hover text (a phone has no hover, and the page would carry it twice)."""
+    months = [m for m in months if sum(group_shares(m).values()) > 0]
+    if len(months) < 3:
+        return None
+    n = len(months)
+    xs, step = _x_positions(n, width)
+    cw = max(3.0, min(22.0, step * 0.72))
+    top, stack_bottom = PAD_T, 176
+    strip_top, strip_bottom = 196, 244
+    totals = [sum(group_shares(m).values()) / SHARES_PER_LOT for m in months]
+    ymax = _nice_ceil(max(totals))
+    y = _scale(0, ymax, top, stack_bottom)
+    body = [f'<text x="{width - PAD_R + 4}" y="{top + 8}" fill="var(--muted)">{_fmt_lot(ymax)} lot</text>',
+            f'<text x="{width - PAD_R + 4}" y="{stack_bottom}" fill="var(--muted)">0</text>']
+    for i in (1, 2, 3):                                           # light gridlines at quarters of the scale
+        gy = y(ymax * i / 4)
+        body.append(f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{gy:.1f}" y2="{gy:.1f}" stroke="var(--border)" stroke-dasharray="2 4"/>')
+    for m, x, tot in zip(months, xs, totals):
+        label = m["d"].strftime("%b %Y")
+        run = 0.0
+        for side, name in (("local", "Local"), ("foreign", "Foreign")):
+            for code in OWNER_ORDER:
+                v = ((m.get(side) or {}).get(code) or 0) / SHARES_PER_LOT
+                if v <= 0:
+                    continue
+                y0, y1 = y(run + v), y(run)
+                run += v
+                op = "1" if side == "local" else ".5"
+                tip = f"<title>{label} · {name} {OWNER_LABEL[code].lower()}: {_fmt_lot(v)} lot ({v / tot * 100:.1f}% of all)</title>" if tips else ""
+                body.append(f'<rect x="{x - cw / 2:.1f}" y="{y0:.1f}" width="{cw:.1f}" height="{max(0.4, y1 - y0):.1f}" fill="{OWNER_COLOR[code]}" '
+                            f'opacity="{op}">{tip}</rect>')
+    body.append(f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{stack_bottom}" y2="{stack_bottom}" stroke="var(--border)"/>')
+    ys = _scale(0, 1, strip_top, strip_bottom)
+    body.append(f'<text x="{width - PAD_R + 4}" y="{strip_top + 8}" fill="var(--muted)">100%</text>'
+                f'<text x="{width - PAD_R + 4}" y="{strip_bottom}" fill="var(--muted)">0</text>')
+    for m, x in zip(months, xs):
+        g = group_shares(m)
+        tot = sum(g.values())
+        run = 0.0
+        for key, name, col in GROUP_STRIP:
+            share = g[key] / tot
+            y0, y1 = ys(run + share), ys(run)
+            run += share
+            tip = f'<title>{m["d"].strftime("%b %Y")} · {name}: {share * 100:.1f}% of all shares</title>' if tips else ""
+            body.append(f'<rect x="{x - cw / 2:.1f}" y="{y0:.1f}" width="{cw:.1f}" height="{max(0.4, y1 - y0):.1f}" fill="{col}">{tip}</rect>')
+    every = 1 if step >= 24 else 3                                # phone width: a label every third month
+    for i, (m, x) in enumerate(zip(months, xs)):
+        if i % every == 0:
+            lab = m["d"].strftime("%b %y" if m["d"].month == 1 else "%b")           # the year only on January: a year on the first label would run into the next one
+            body.append(f'<text x="{x:.1f}" y="{strip_bottom + 14}" text-anchor="middle" fill="var(--muted)">{escape(lab)}</text>')
+    last, g = months[-1], group_shares(months[-1])
+    tot = sum(g.values())
+    desc = (f"Shares held by holder type over {n} month-ends, {months[0]['d'].strftime('%b %Y')} to {last['d'].strftime('%b %Y')}, "
+            f"with the share of local individuals, local institutions and foreigners underneath. Latest month: foreign {g['foreign'] / tot * 100:.1f}%, "
+            f"local individual {g['local_ind'] / tot * 100:.1f}%, local institution {g['local_inst'] / tot * 100:.1f}%. "
+            "Every slice has the exact figure in its hover text, and the table below the chart lists the latest month.")
+    return _svg(uid, strip_bottom + PAD_B, "KSEI balance position by holder type", desc, "".join(body), width)
