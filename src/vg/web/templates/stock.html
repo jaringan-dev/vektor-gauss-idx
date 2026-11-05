@@ -99,7 +99,7 @@
           <div class="v {{ c.bpi3.c }}">{{ c.bpi3.t }}</div><div class="s">top 5: {{ c.bpi5.t }}</div></div>
         <div class="kpi"><div class="k">{{ term('overlap3', 'Shared top-3 brokers') }}</div>
           <div class="v">{{ c.overlap }}</div>
-          <div class="s">{% if c.wash %}same houses on both sides{% elif c.has_bpi %}buyers and sellers mostly differ{% else %}{{ c.overlap }}{% endif %}</div></div>
+          <div class="s">{% if c.same_houses %}same houses on both sides{% elif c.overlap != 'N/A' %}buyers and sellers mostly differ{% else %}no broker ladder{% endif %}</div></div>
         <div class="kpi"><div class="k">{{ term('aggressor', 'Buyer aggression (HAKA)') }}</div>
           <div class="v">{{ c.haka }}</div>
           <div class="s">{% if c.has_aggr %}ratio {{ c.ratio }} · {{ c.coverage }} of volume flagged{% else %}no order-flow data for this day{% endif %}</div></div>
@@ -121,7 +121,7 @@
           <tbody>
             {% for h in sc.history %}
             <tr><td style="text-align:left">{{ h.date }}</td><td class="{{ h.bpi3.c }}">{{ h.bpi3.t }}</td>
-                <td>{{ h.overlap }}{% if h.wash %} <span class="badge warn">same houses</span>{% endif %}</td><td>{{ h.haka }}</td><td class="wrap">{{ h.div }}</td></tr>
+                <td>{{ h.overlap }}{% if h.same_houses %} <span class="badge warn">same houses</span>{% endif %}</td><td>{{ h.haka }}</td><td class="wrap">{{ h.div }}</td></tr>
             {% endfor %}
           </tbody>
         </table>

@@ -75,6 +75,16 @@ def test_with_all_columns_present_it_selects_the_last_ten_sessions_read_only():
     assert all(s.lstrip().upper().startswith("SELECT") for s, _ in cur.executed)
 
 
+def test_it_takes_the_last_ten_SCORED_sessions_not_the_last_ten_sessions():
+    """Regression: with the newest sessions unscored, 'the last 10 sessions' were all NULL and the panel said
+    'no scoring' although older sessions had scores."""
+    cur = _Cur(len(SCORING_COLUMNS), rows=[])
+    stockmod._load_scoring(cur, "BBCA")
+    sql = cur.executed[1][0]
+    assert f"num_nonnulls({', '.join(SCORING_COLUMNS)}) > 0" in sql
+    assert sql.index("num_nonnulls") < sql.index("ORDER BY")           # the filter applies before the LIMIT
+
+
 # ---- the view -----------------------------------------------------------------------------------------------------------
 
 def test_view_states():
@@ -211,3 +221,20 @@ def test_the_panel_describes_and_never_advises(client, monkeypatch):
 def test_unknown_stock_is_still_a_404(client, monkeypatch):
     monkeypatch.setattr(stockmod, "load", lambda t: None)
     assert client.get("/stock/ZZZZ").status_code == 404
+
+
+def test_the_caption_follows_the_overlap_not_the_wash_flag():
+    """Regression: '2 of 3' shared brokers with a low index was captioned 'buyers and sellers mostly differ'."""
+    low = stockmod.scoring_view([_srow(bpi3=D("0.033"), bpi_overlap3=2)], LATEST, [])["current"]
+    assert low["same_houses"] is True and low["wash"] is False              # shared houses, but not the tag's high-index case
+    assert stockmod.scoring_view([_srow(bpi_overlap3=1)], LATEST, [])["current"]["same_houses"] is False
+    assert stockmod.scoring_view([_srow(bpi_overlap3=None)], LATEST, [])["current"]["same_houses"] is False
+
+
+def test_page_captions_two_shared_houses_correctly_even_without_a_high_index(client, monkeypatch):
+    r = _page(client, monkeypatch, [_srow(bpi3=D("0.033"), bpi_overlap3=2)])
+    assert "same houses on both sides" in r.text and "buyers and sellers mostly differ" not in r.text
+    r = _page(client, monkeypatch, [_srow(bpi3=D("0.033"), bpi_overlap3=1)])
+    assert "buyers and sellers mostly differ" in r.text and "same houses on both sides" not in r.text
+    r = _page(client, monkeypatch, [_srow(bpi3=None, bpi5=None, bpi_overlap3=None)])
+    assert "no broker ladder" in r.text and r.status_code == 200

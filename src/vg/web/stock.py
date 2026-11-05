@@ -28,7 +28,11 @@ def _f(v):
 
 
 def _load_scoring(cur, ticker: str) -> list | None:
-    """The last 10 sessions of the broker-scoring columns (session_date first), newest first. READ-ONLY.
+    """The last 10 SCORED sessions of the broker-scoring columns (session_date first), newest first. READ-ONLY.
+
+    "Scored" matters: the newest sessions of a stock can be unscored (the broker table did not cover it that day, or the
+    scores were not computed for that stretch yet), and taking the last 10 sessions regardless would then show an empty
+    panel although older scores exist. The page labels it when the newest scored session is not the stock's latest one.
 
     None = the columns do not exist yet: they are created by `vg init-db`, which the EOD runs, so until the first EOD of
     the scoring release a SELECT naming them would fail and take the whole page down with it. We ask the catalogue
@@ -40,7 +44,8 @@ def _load_scoring(cur, ticker: str) -> list | None:
         return None
     cur.execute(
         f"SELECT session_date, {', '.join(SCORING_COLUMNS)} FROM signal_components "
-        "WHERE ticker = %s ORDER BY session_date DESC LIMIT 10", (ticker,))
+        f"WHERE ticker = %s AND num_nonnulls({', '.join(SCORING_COLUMNS)}) > 0 ORDER BY session_date DESC LIMIT 10",
+        (ticker,))
     return cur.fetchall()
 
 
@@ -145,6 +150,8 @@ def _score_row(day, vals: tuple) -> dict:
         "has_bpi": bpi3 is not None, "has_aggr": haka is not None, "has_div": r["retail_div_state"] is not None,
         "bpi3": _pts(bpi3), "bpi5": _pts(r["bpi5"]),
         "overlap": f"{overlap} of 3" if overlap is not None else _NA,
+        # same_houses = the overlap alone (what the caption states); wash = overlap AND a high index (the tag's rule)
+        "same_houses": bool(overlap is not None and overlap >= WASH_OVERLAP_MIN),
         "wash": bool(bpi3 is not None and overlap is not None and overlap >= WASH_OVERLAP_MIN and bpi3 >= BPI_HIGH),
         "haka": fmt.pct_plain(haka, 0) if haka is not None else _NA,
         "ratio": f"{ratio:.2f}" if ratio is not None else _NA,
