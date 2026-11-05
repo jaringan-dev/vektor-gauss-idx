@@ -11,6 +11,8 @@ import re
 from datetime import date, timedelta
 
 from .. import broker_bounds, risk
+from ..engine import BPI_HIGH, WASH_OVERLAP_MIN
+from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
 from . import charts, fmt
 from .glossary import plain_tag, quad_key, quad_word
@@ -23,6 +25,23 @@ CHART_SESSIONS = 90
 
 def _f(v):
     return None if v is None else float(v)
+
+
+def _load_scoring(cur, ticker: str) -> list | None:
+    """The last 10 sessions of the broker-scoring columns (session_date first), newest first. READ-ONLY.
+
+    None = the columns do not exist yet: they are created by `vg init-db`, which the EOD runs, so until the first EOD of
+    the scoring release a SELECT naming them would fail and take the whole page down with it. We ask the catalogue
+    first and only then select. [] = the columns exist but this stock has no row."""
+    cur.execute(
+        "SELECT count(*) FROM information_schema.columns WHERE table_name = 'signal_components' AND column_name = ANY(%s)",
+        (list(SCORING_COLUMNS),))
+    if cur.fetchone()[0] != len(SCORING_COLUMNS):
+        return None
+    cur.execute(
+        f"SELECT session_date, {', '.join(SCORING_COLUMNS)} FROM signal_components "
+        "WHERE ticker = %s ORDER BY session_date DESC LIMIT 10", (ticker,))
+    return cur.fetchall()
 
 
 def load(ticker: str) -> dict | None:
@@ -44,6 +63,7 @@ def load(ticker: str) -> dict | None:
             "bkr_foreign_net_d0, bkr_foreign_net_lo, bkr_foreign_net_hi, ksei_foreign_trend_3m, price_chg_5d "
             "FROM signal_components WHERE ticker = %s ORDER BY session_date DESC LIMIT 15", (ticker,))
         comps = cur.fetchall()
+        scoring = _load_scoring(cur, ticker)
         cur.execute(
             "SELECT b.session_date, b.open, b.high, b.low, b.close, b.volume, COALESCE(a.split_factor, 1) "
             "FROM price_bars b LEFT JOIN price_adj a USING (session_date, ticker) "
@@ -86,7 +106,72 @@ def load(ticker: str) -> dict | None:
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
-            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest}
+            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring}
+
+
+# retail_div_state (engine/scoring.py) -> words for the page. Descriptive only.
+_DIV_WORDS = {
+    "retail_buying_institutions_selling": "Retail buying, foreign institutions selling",
+    "retail_selling_institutions_buying": "Retail selling, foreign institutions buying",
+    "both_buying": "Both buying",
+    "both_selling": "Both selling",
+    "indeterminate": "Not settled by the data",
+}
+_NA = "N/A"
+
+
+def _range(lo, hi) -> str:
+    """'-133.2B to -127.0B', a single figure when both ends coincide, N/A when the bounds are missing."""
+    lo, hi = _f(lo), _f(hi)
+    if lo is None or hi is None:
+        return _NA
+    a, b = fmt.idr(lo), fmt.idr(hi)
+    return a if a == b else f"{a} to {b}"
+
+
+def _pts(x) -> dict:
+    """A concentration index in [-1, 1] shown as percentage points of the day's traded value, with a sign and class."""
+    x = _f(x)
+    return {"t": f"{x * 100:+.1f} pts", "c": fmt.signcls(x)} if x is not None else {"t": _NA, "c": ""}
+
+
+def _score_row(day, vals: tuple) -> dict:
+    """One session of scoring columns -> display cells. Every missing measure becomes N/A, never an error."""
+    r = dict(zip(SCORING_COLUMNS, vals, strict=True))
+    bpi3, overlap = _f(r["bpi3"]), r["bpi_overlap3"]
+    haka, ratio, cov = _f(r["aggr_haka_share"]), _f(r["aggr_ratio"]), _f(r["aggr_coverage"])
+    return {
+        "date": day.isoformat(),
+        "has_bpi": bpi3 is not None, "has_aggr": haka is not None, "has_div": r["retail_div_state"] is not None,
+        "bpi3": _pts(bpi3), "bpi5": _pts(r["bpi5"]),
+        "overlap": f"{overlap} of 3" if overlap is not None else _NA,
+        "wash": bool(bpi3 is not None and overlap is not None and overlap >= WASH_OVERLAP_MIN and bpi3 >= BPI_HIGH),
+        "haka": fmt.pct_plain(haka, 0) if haka is not None else _NA,
+        "ratio": f"{ratio:.2f}" if ratio is not None else _NA,
+        "coverage": fmt.pct_plain(cov, 0) if cov is not None else _NA,
+        "retail": _range(r["retail_net_lo"], r["retail_net_hi"]),
+        "inst": _range(r["finst_net_lo"], r["finst_net_hi"]),
+        "div": _DIV_WORDS.get(r["retail_div_state"] or "", _NA),
+    }
+
+
+def scoring_view(rows: list | None, latest: date, tags_today: list[str]) -> dict:
+    """The broker-scoring panel. Pure. Three states, so the page always renders:
+    absent = the columns are not in the database yet; empty = they are, but this stock has no scored session;
+    ok = at least one scored session (`current` is the newest one, `history` the last 10)."""
+    if rows is None:
+        return {"state": "absent"}
+    scored = [(r[0], r[1:]) for r in rows if any(v is not None for v in r[1:])]
+    if not scored:
+        return {"state": "empty"}
+    view = [_score_row(d, v) for d, v in scored]
+    cur = view[0]
+    return {
+        "state": "ok", "current": cur, "history": view,
+        "stale": scored[0][0] != latest,                         # newest scored session is not the stock's latest session
+        "wash_today": "AKUM-NETRAL-WASH" in tags_today,
+        "bpi_high_pts": f"{BPI_HIGH * 100:.0f}", "wash_min": WASH_OVERLAP_MIN,
+    }
 
 
 def _ownership_row(o) -> dict:
@@ -267,4 +352,5 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
         "sellers": sellers, "levels_day": raw["levels_day"].isoformat() if raw["levels_day"] else None,
         "ownership": own, "corp": [{"date": c[0].isoformat(), "type": c[1], "ratio": c[3] or c[2] or ""} for c in raw["corp"]],
         "risk": risk_view, "has_atr": plan is not None,
+        "scoring": scoring_view(raw.get("scoring"), raw["latest"], tags_today),
     }

@@ -38,6 +38,13 @@ import psycopg
 from ..broker_bounds import group_net_bounds
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
 
+# The signal_components columns that hold these measures (db/schema.sql). One list, used by the dashboard query and the
+# post-EOD reminder; tests pin it to the schema and to the engine's column list.
+SCORING_COLUMNS = (
+    "bpi3", "bpi5", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage",
+    "retail_net_lo", "retail_net_hi", "finst_net_lo", "finst_net_hi", "retail_div_state",
+)
+
 # A top-N share can exceed 1 only if the units disagree (IDR vs lots, or a wrong day). Tolerate rounding, no more.
 _SHARE_TOLERANCE = 1e-6
 

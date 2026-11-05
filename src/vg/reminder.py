@@ -21,16 +21,13 @@ from datetime import date
 
 from .config import CONFIG
 from .db import connect
+from .engine.scoring import SCORING_COLUMNS  # noqa: F401 - re-exported: the list the message and readiness check use
 from .telegram import TelegramSender
 
 PHASE = "verify_reminder"
 
 # The signal_components columns added by the broker-scoring release (db/schema.sql). Tests pin this list to both
 # the schema and the engine's column list, so the "N kolom baru" in the message cannot drift from the truth.
-SCORING_COLUMNS = (
-    "bpi3", "bpi5", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage",
-    "retail_net_lo", "retail_net_hi", "finst_net_lo", "finst_net_hi", "retail_div_state",
-)
 
 _RECENT_COMPUTE_HOURS = 12     # an EOD (feed wait + harvest + two computes) finishes well inside this
 

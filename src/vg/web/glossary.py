@@ -114,6 +114,26 @@ _T = [
          how="For each broker whose buy and sell are both visible: the smaller of the two, summed over brokers.",
          caveat="It counts a broker's own clients trading against each other as well as market-making or intraday trading, and the data cannot "
                 "tell which, so a high value is not proof of a market maker."),
+    Term("bpi", "Bandar Power Index", "How much more concentrated the buying is than the selling. The share of the day's traded value bought by the "
+         "three biggest buyers, minus the share sold by the three biggest sellers, in percentage points.", "concepts",
+         how="top-3 buyers' bought value / traded value, minus top-3 sellers' sold value / traded value. The top-5 version works the same way.",
+         caveat="Positive means a few brokers did the buying while the selling was spread out. It is not proof that one party is accumulating, "
+                "least of all when the same brokers appear on both sides (see shared top-3 brokers). It is measured on broker codes, not clients, "
+                "and it has not been forward-tested yet."),
+    Term("overlap3", "Shared top-3 brokers", "How many of the three biggest buyers are also among the three biggest sellers that day, from 0 to 3.", "concepts",
+         caveat="Two or more usually means the same houses are on both sides (crossing, market making, or a broker serving buyers and sellers alike), "
+                "which makes a high concentration much less informative. That is what the 'concentrated buying, but the same houses also sell' pattern flags."),
+    Term("aggressor", "Aggressor ratio (HAKA / HAKI)", "Of the volume where the aggressor is known, the share where the buyer lifted the offer (HAKA) "
+         "instead of the seller hitting the bid (HAKI). 50% is balanced.", "concepts",
+         how="HAKA volume / (HAKA + HAKI) on the regular board; the ratio shown beside it is HAKA / HAKI.",
+         caveat="It needs tick-by-tick order flow, which is collected only for the watchlist, so most stocks show N/A. Negotiated trades are left out "
+                "because they have no spread to cross."),
+    Term("retail_div", "Retail vs foreign institutions", "Whether the retail brokers and the foreign institutional brokers were net buyers or net sellers "
+         "that day, each as a range that is guaranteed to contain the truth.", "concepts",
+         how="Net of the listed retail broker codes and of the foreign institutional broker codes, from the certain bounds. A state is given only when "
+             "the whole range of both sits on one side of zero.",
+         caveat="Retail and institution come from the broker's code, not from its clients, so both are estimates (only a handful of codes count as retail). "
+                "'Not settled by the data' is the usual answer, because the broker table hides part of the sell side."),
     Term("gross", "Gross buy / gross sell", "A broker's total bought (or sold) value for the day, without netting the two.", "concepts"),
     Term("ihsg", "IHSG (Jakarta Composite Index)", "The overall index of the Indonesian stock market.", "concepts"),
     # ---- track record ---------------------------------------------------------------------------------------------

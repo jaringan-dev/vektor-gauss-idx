@@ -83,6 +83,52 @@
     </div>
     {% endif %}
 
+    {% set sc = v.scoring %}
+    <div class="panel" id="broker-scoring">
+      <h2>Broker scoring <span class="badge probation">experimental, not yet forward-tested</span></h2>
+      {% if sc.state == 'absent' %}
+      <p class="note">These measures are not in the database yet. They are created by the first end-of-day run after the scoring update and fill in from that day on.</p>
+      {% elif sc.state == 'empty' %}
+      <p class="note">No broker scoring for this stock yet. It needs the day's broker table, and broker data covers about 200 liquid stocks.</p>
+      {% else %}
+      {% set c = sc.current %}
+      <p class="note">Three plain measures of who is on each side of the trading. They describe the day; they are not a signal and carry no weight until the forward test shows they hold up.
+         Scored session: {{ c.date }}{% if sc.stale %} — <b>not</b> this stock's latest session ({{ v.latest }}): the broker table did not cover it that day{% endif %}.</p>
+      <div class="grid kpis">
+        <div class="kpi"><div class="k">{{ term('bpi', 'Bandar Power Index, top 3') }}</div>
+          <div class="v {{ c.bpi3.c }}">{{ c.bpi3.t }}</div><div class="s">top 5: {{ c.bpi5.t }}</div></div>
+        <div class="kpi"><div class="k">{{ term('overlap3', 'Shared top-3 brokers') }}</div>
+          <div class="v">{{ c.overlap }}</div>
+          <div class="s">{% if c.wash %}same houses on both sides{% elif c.has_bpi %}buyers and sellers mostly differ{% else %}{{ c.overlap }}{% endif %}</div></div>
+        <div class="kpi"><div class="k">{{ term('aggressor', 'Buyer aggression (HAKA)') }}</div>
+          <div class="v">{{ c.haka }}</div>
+          <div class="s">{% if c.has_aggr %}ratio {{ c.ratio }} · {{ c.coverage }} of volume flagged{% else %}no order-flow data for this day{% endif %}</div></div>
+        <div class="kpi"><div class="k">{{ term('retail_div', 'Retail vs foreign institutions') }}</div>
+          <div class="v" style="font-size:15px">{{ c.div }}</div>
+          <div class="s">retail {{ c.retail }} · institutions {{ c.inst }}</div></div>
+      </div>
+      {% if sc.wash_today %}
+      <p class="wide-note"><b>Flagged today:</b> {{ tag_chip('AKUM-NETRAL-WASH') }} The buying looks concentrated (at least {{ sc.bpi_high_pts }} points above the selling), but
+         {{ sc.wash_min }} or more of the three biggest buyers are also among the three biggest sellers, so it is not read as one party accumulating.</p>
+      {% endif %}
+      {% if not c.has_aggr %}
+      <p class="note">N/A under buyer aggression: tick-by-tick order flow is collected only for the watchlist, and not every day has been collected yet.</p>
+      {% endif %}
+      <details>
+        <summary>Last {{ sc.history|length }} scored session{{ 's' if sc.history|length != 1 else '' }}</summary>
+        <table aria-label="Broker scoring by session">
+          <thead><tr><th scope="col" style="text-align:left">Day</th>{{ th('bpi', 'Index, top 3') }}{{ th('overlap3', 'Shared') }}{{ th('aggressor', 'HAKA share') }}{{ th('retail_div', 'Retail vs institutions') }}</tr></thead>
+          <tbody>
+            {% for h in sc.history %}
+            <tr><td style="text-align:left">{{ h.date }}</td><td class="{{ h.bpi3.c }}">{{ h.bpi3.t }}</td>
+                <td>{{ h.overlap }}{% if h.wash %} <span class="badge warn">same houses</span>{% endif %}</td><td>{{ h.haka }}</td><td class="wrap">{{ h.div }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+    </div>
+
     <div class="panel">
       <h2>{{ term('pattern', 'Patterns') }} flagged today</h2>
       {% if v.tags_today %}

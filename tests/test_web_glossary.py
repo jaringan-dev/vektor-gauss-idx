@@ -88,3 +88,31 @@ def test_helpers_never_lose_an_unknown_tag_or_quadrant():
     assert glossary.quad_key(None) is None and glossary.quad_word("???") == "—"
     assert glossary.quad_key("AKUMULASI") == "q_accumulation" and glossary.quad_word("DISTRIBUSI") == "Distribution"
     assert glossary.split_tags("A, B ,,C") == ["A", "B", "C"] and glossary.split_tags(None) == []
+
+
+# ---- broker scoring (stock page panel) -----------------------------------------------------------------------------------
+
+_SCORING_TERMS = ("bpi", "overlap3", "aggressor", "retail_div")
+
+
+def test_scoring_terms_are_explained_and_state_their_limits():
+    for key in _SCORING_TERMS:
+        term = glossary.TERMS[key]
+        assert term.short and term.group == "concepts", key
+    for key in ("bpi", "overlap3", "aggressor", "retail_div"):
+        assert glossary.TERMS[key].caveat, f"{key} must say what it does NOT tell you"
+    assert "forward-tested" in glossary.TERMS["bpi"].caveat
+    assert "N/A" in glossary.TERMS["aggressor"].caveat                     # the glossary names what the page shows when empty
+
+
+def test_the_stock_template_uses_exactly_the_scoring_terms_the_glossary_defines():
+    text = (TEMPLATES / "stock.html").read_text(encoding="utf-8")
+    used = set(re.findall(r"""\b(?:term|th)\(\s*['"]([a-z0-9_]+)['"]""", text))
+    assert set(_SCORING_TERMS) <= used
+    assert used - set(glossary.TERMS) == set()
+
+
+def test_the_wash_tag_rule_quotes_the_real_thresholds():
+    rule = glossary.TAGS["AKUM-NETRAL-WASH"].rule
+    assert engine.BPI_HIGH == 0.10 and "10 points" in rule
+    assert engine.WASH_OVERLAP_MIN == 2 and "2 or more" in rule
