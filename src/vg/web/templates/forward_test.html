@@ -8,7 +8,7 @@
     <thead>
       <tr>
         {{ th('pattern', 'pattern', true) }}{{ th('n', 'n') }}{{ th('span', 'span') }}
-        {{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_h10', 'edge 10d') }}
+        {{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_trend', '5d trend') }}{{ th('edge_h10', 'edge 10d') }}
         {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}
         {{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}
         {% if show_status %}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">verdict</th>{% endif %}
@@ -22,6 +22,7 @@
         <td>{{ r.span_days }}d</td>
         <td class="{{ r.edge_h1.c }}">{{ r.edge_h1.t }}</td>
         <td class="{{ r.edge_h5.c }}">{{ r.edge_h5.t }}</td>
+        <td class="trend">{% if r.trend %}{{ r.trend|safe }}{% else %}<span class="note" title="Fewer than 3 months with a known 5-day result, so there is no trend to draw">—</span>{% endif %}</td>
         <td class="{{ r.edge_h10.c }}">{{ r.edge_h10.t }}</td>
         <td>{{ r.hit }}</td>
         <td>{{ r.univ_hit }}</td>

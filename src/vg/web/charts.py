@@ -283,6 +283,76 @@ def group_panels(days: list[date], net_panels: list[tuple[str, list[float | None
     return _svg(uid, height, "Net flow by broker group per day", desc, "".join(body), width)
 
 
+SPARK_MIN_MONTHS = 3
+
+
+def _month_index(d: date) -> int:
+    return d.year * 12 + d.month - 1
+
+
+def sparkline(points: list[tuple[date, int, float | None]], *, y_max: float, small_n: int, uid: str, months: int = 12,
+              width: int = 120, height: int = 30) -> str | None:
+    """Tiny month-by-month trend of a pattern's 5-day edge (checklist F5). `points` = [(month_start, n, edge)], oldest first.
+
+    Honesty rules: every sparkline in one table shares the SAME vertical scale (`y_max`, ± around a dashed zero line), so a
+    flat line really means a small edge and not a zoomed-in one; a month with fewer than `small_n` signals is a HOLLOW dot
+    that is never joined by a line (a thin month is shown but not allowed to draw a trend); a calendar month with no data
+    is a gap, not an interpolation. Returns None with fewer than SPARK_MIN_MONTHS usable months: two points are not a trend.
+    Direction is position (above/below the zero line) plus the title text, never colour alone.
+    """
+    pts = [(m, n, e) for m, n, e in points if e is not None]
+    if not pts or y_max <= 0:
+        return None
+    last = _month_index(pts[-1][0])
+    pts = [p for p in pts if last - _month_index(p[0]) < months]
+    if len(pts) < SPARK_MIN_MONTHS:
+        return None
+    first = _month_index(pts[0][0])
+    span = max(last - first, 1)
+    pad = 5
+    top, bottom = pad, height - pad
+    y = _scale(-y_max, y_max, top, bottom)
+    xs = [pad + (_month_index(m) - first) / span * (width - 2 * pad) for m, _, _ in pts]
+    ys = [y(max(-y_max, min(y_max, e))) for _, _, e in pts]
+    zero = y(0)
+    body = [f'<line x1="{pad}" x2="{width - pad}" y1="{zero:.1f}" y2="{zero:.1f}" stroke="var(--border)" stroke-dasharray="3 3"/>']
+    for i in range(1, len(pts)):
+        solid = pts[i][1] >= small_n and pts[i - 1][1] >= small_n and _month_index(pts[i][0]) - _month_index(pts[i - 1][0]) == 1
+        if solid:
+            body.append(f'<line x1="{xs[i - 1]:.1f}" y1="{ys[i - 1]:.1f}" x2="{xs[i]:.1f}" y2="{ys[i]:.1f}" stroke="var(--fg)" stroke-width="1.5"/>')
+    for (m, n, e), x, yy in zip(pts, xs, ys):
+        fill = "var(--fg)" if n >= small_n else "var(--panel)"
+        note = f" (n {n:,}, small sample)" if n < small_n else f" (n {n:,})"
+        body.append(f'<circle cx="{x:.1f}" cy="{yy:.1f}" r="2.6" fill="{fill}" stroke="var(--fg)" stroke-width="1.2">'
+                    f'<title>{m.strftime("%b %Y")}: {e * 100:+.2f}%{note}</title></circle>')
+    desc = ("Edge after 5 days, month by month (above the dashed line means the pattern beat the market that month; hollow dots are months with "
+            f"fewer than {small_n} occurrences; a month beyond the scale is drawn at the edge of the box, its real value is listed here). " + "; ".join(f"{m.strftime('%b %Y')} {e * 100:+.2f}% (n {n:,})" for m, n, e in pts) + ".")
+    svg = _svg(uid, height, "Monthly trend of the 5-day edge", desc, "".join(body), width)
+    # a percentage width collapses inside an auto-width table cell, so a sparkline gets its real pixel width
+    return svg.replace('width="100%"', f'width="{width}"', 1)
+
+
+SPARK_SCALE_PERCENTILE = 0.9
+
+
+def spark_scale(series: list[list[tuple[date, int, float | None]]], *, small_n: int, months: int = 12) -> float:
+    """One shared vertical half-range for a whole table of sparklines: the 90th percentile of |edge| over the well-sampled months in
+    the window. A percentile, not the maximum: one rare pattern with a +9% month would otherwise flatten every other line to a ruler.
+    Months beyond the scale are drawn at the edge of the box (their true value stays in the tooltip and the text), thin months
+    (< `small_n`) never count, and the floor 0.2% stops an all-quiet table from being magnified into noise."""
+    vals: list[float] = []
+    for pts in series:
+        usable = [p for p in pts if p[2] is not None]
+        if not usable:
+            continue
+        last = _month_index(usable[-1][0])
+        vals += [abs(e) for m, n, e in usable if n >= small_n and last - _month_index(m) < months]
+    if not vals:
+        return 0.002
+    vals.sort()
+    return max(vals[int(SPARK_SCALE_PERCENTILE * (len(vals) - 1) + 0.5)], 0.002)
+
+
 def count_bars(days: list[date], counts: list[int], *, height: int = 140, label: str = "stocks flagged",
                width: int = W, uid: str = "count") -> str | None:
     """How many stocks a pattern flagged on each day (zero days are drawn as empty, not skipped)."""

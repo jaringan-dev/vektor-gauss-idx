@@ -131,6 +131,14 @@ _T = [
     Term("edge_h1", "Edge after 1 day", "Edge measured 1 trading day after the pattern appeared.", "report"),
     Term("edge_h5", "Edge after 5 days", "Edge measured 5 trading days after the pattern appeared. This is the number that decides pass or fail.",
          "report"),
+    Term("edge_trend", "Monthly trend of the 5-day edge",
+         "One dot per calendar month: how far the pattern's 5-day edge sat above or below the market that month. Above the dashed line means it beat "
+         "the market in that month. Every line in a table uses the same scale, so you can compare them.",
+         "report",
+         how="The same edge as the 5-day column (pattern return minus the market return on the same day), averaged within each month. "
+             "Only occurrences whose 5-day result is known are counted, so the newest month is usually thin.",
+         caveat="A hollow dot is a month with fewer than 30 occurrences: it is shown but never joined by a line, because a thin month can look "
+                "like a trend by luck. A wiggle from month to month is normal noise; it is not a reason to trust or distrust a pattern."),
     Term("edge_h10", "Edge after 10 days", "Edge measured 10 trading days after the pattern appeared.", "report"),
     Term("hit", "Hit rate", "The percentage of occurrences that ended higher after 5 days.", "report"),
     Term("uhit", "Market hit rate", "The percentage of all stocks that ended higher after 5 days over the same period. The yardstick for the hit rate.",

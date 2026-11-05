@@ -147,3 +147,87 @@ def test_group_panels_clip_outliers_and_say_so_on_their_own_line():
     svg = charts.group_panels(ds, [("A", lo, hi)])
     assert "beyond the scale" in svg and "+90.0%" in svg                       # real range kept in the tooltip
     _parse(svg)
+
+
+# ---- sparkline: monthly trend of the 5-day edge (checklist F5) -------------------------------------------------------
+
+def _months(edges, n=100, start=date(2026, 1, 1)):
+    """[(month_start, n, edge)] for consecutive calendar months; `n` may be an int or a per-month list."""
+    out = []
+    for i, e in enumerate(edges):
+        y, m = divmod(start.month - 1 + i, 12)
+        out.append((date(start.year + y, m + 1, 1), n[i] if isinstance(n, list) else n, e))
+    return out
+
+
+def _spark(points, **kw):
+    kw.setdefault("y_max", 0.01)
+    kw.setdefault("small_n", 30)
+    kw.setdefault("uid", "t")
+    return charts.sparkline(points, **kw)
+
+
+def test_sparkline_is_well_formed_accessible_and_lists_every_month():
+    svg = _spark(_months([0.004, -0.002, 0.006, 0.001]))
+    root = _parse(svg)
+    assert root.get("role") == "img" and root.get("aria-labelledby") == "t-t t-d"
+    assert 'width="120"' in svg and 'width="100%"' not in svg                 # pixel width: a % collapses in a table cell
+    assert svg.count("<circle") == 4
+    for word in ("Jan 2026 +0.40%", "Feb 2026 -0.20%", "Apr 2026 +0.10%"):
+        assert word in svg                                                   # the numbers are in the text, not only the picture
+
+
+def test_sparkline_needs_three_usable_months_not_two():
+    assert _spark(_months([0.004, 0.002])) is None
+    assert _spark(_months([0.004, None, 0.002])) is None                     # a month with no edge is not a point
+    assert _spark(_months([0.004, 0.002, 0.001])) is not None
+    assert _spark([]) is None and _spark(_months([0.1, 0.1, 0.1]), y_max=0) is None
+
+
+def test_a_thin_month_is_a_hollow_dot_and_is_never_joined_by_a_line():
+    svg = _spark(_months([0.004, 0.003, 0.009, 0.002], n=[100, 100, 5, 100]))
+    root = _parse(svg)
+    circles = [e for e in root.iter() if e.tag.endswith("circle")]
+    assert [c.get("fill") for c in circles] == ["var(--fg)", "var(--fg)", "var(--panel)", "var(--fg)"]
+    segs = [e for e in root.iter() if e.tag.endswith("line") and e.get("stroke") == "var(--fg)"]
+    assert len(segs) == 1                                                    # only Jan-Feb; the 5-signal month breaks the line on both sides
+    assert "small sample" in svg
+
+
+def test_a_missing_calendar_month_is_a_gap_not_an_interpolation():
+    pts = _months([0.004, 0.003, 0.002, 0.001])
+    del pts[1]                                                               # no Feb
+    segs = [e for e in _parse(_spark(pts)).iter() if e.tag.endswith("line") and e.get("stroke") == "var(--fg)"]
+    assert len(segs) == 1                                                    # Mar-Apr only; Jan and Mar are not joined across the hole
+
+
+def test_the_vertical_scale_is_shared_and_outliers_are_clipped_not_stretched():
+    big, small = _months([0.05, -0.05, 0.05]), _months([0.001, -0.001, 0.001])
+    ys = lambda svg: [float(e.get("cy")) for e in _parse(svg).iter() if e.tag.endswith("circle")]
+    a, b = ys(_spark(big, y_max=0.01)), ys(_spark(small, y_max=0.01))
+    assert min(a) >= 5 - 1e-6 and max(a) <= 25 + 1e-6                       # clipped to the plot area (height 30, pad 5)
+    assert max(b) - min(b) < 4 < max(a) - min(a)                             # same scale: the tiny edge really looks tiny
+
+
+def test_spark_scale_ignores_thin_months_and_has_a_floor():
+    series = [_months([0.003, -0.004, 0.002]), _months([0.5, 0.001, 0.001], n=[3, 100, 100])]
+    # well-sampled |edges| = .001 .001 .002 .003 .004 -> 90th percentile .004; the 3-signal 50% month is not counted at all
+    assert charts.spark_scale(series, small_n=30) == pytest.approx(0.004)
+    assert charts.spark_scale([_months([0.0001, 0.0, 0.0001])], small_n=30) == 0.002
+    assert charts.spark_scale([], small_n=30) == 0.002
+
+
+def test_one_rare_outlier_month_does_not_flatten_every_other_line():
+    quiet = [_months([0.005, -0.004, 0.006, -0.005]) for _ in range(5)]          # 20 ordinary months around +-0.5%
+    loud = [_months([0.095, 0.002, 0.001, 0.001])]                               # one well-sampled +9.5% month
+    scale = charts.spark_scale(quiet + loud, small_n=30)
+    assert scale < 0.01                                                          # the maximum would have been 0.095
+    svg = _spark(_months([0.095, 0.002, 0.001]), y_max=scale)                    # the outlier is pinned to the top edge, not off the box
+    assert min(float(e.get("cy")) for e in _parse(svg).iter() if e.tag.endswith("circle")) == pytest.approx(5.0)
+    assert "+9.50%" in svg                                                       # and its real value is still in the text
+
+
+def test_sparkline_only_looks_at_the_last_twelve_months():
+    pts = _months([0.9] + [0.001] * 12)                                      # a huge month 13 months before the newest
+    assert charts.spark_scale([pts], small_n=30) == pytest.approx(0.002)     # dropped from the scale
+    assert _spark(pts).count("<circle") == 12                                # and from the drawing

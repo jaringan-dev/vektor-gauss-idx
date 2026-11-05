@@ -49,6 +49,7 @@ def client(monkeypatch):
     monkeypatch.setattr(freshness, "load_inputs", lambda today=None: healthy)
     monkeypatch.setattr(webapp, "_eval_version", lambda: ("ts", 1))
     monkeypatch.setattr(webapp.engine, "eval_tags", lambda since=None: [])
+    monkeypatch.setattr(webapp.engine, "tag_monthly_edge", lambda since=None: {})
     monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: None)
     monkeypatch.setattr(webapp.engine, "rank_components", lambda *a, **k: (None, 0, []))
     webapp._STRIP_CACHE.clear()

@@ -126,6 +126,9 @@ sourced later from Sectors `shareholders-composition` or elsewhere).
 
 Run tests (offline, no DB): `pytest`
 
+**Before every commit or push, run the FULL suite in WSL and see it green** (`cd ~/vektor-gauss && . .venv/bin/activate && pytest -q`;
+for worktree code use the recipe in the project memory). A partial run once let a regression onto `main` (checklist H6).
+
 ## Uptime monitoring (optional but recommended)
 
 The digest and the (future) superadmin dashboard both monitor from *inside* the

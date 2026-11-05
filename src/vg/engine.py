@@ -1082,6 +1082,38 @@ def eval_tags(since: date | None = None) -> list[dict]:
         ]
 
 
+def tag_monthly_edge(since: date | None = None) -> dict[str, list[tuple[date, int, float | None]]]:
+    """Per tag, per calendar month: (month_start, n, edge_h5), oldest month first.
+
+    Same definition as `eval_tags` (tag ret_h5 minus the date-matched equal-weight universe ret_h5, so a month's number is
+    directly comparable with the tag's pooled edge), only grouped by month; `since` restricts to signals on/after that date,
+    exactly like `eval_tags`. Only rows whose 5-day outcome has matured count, so the newest month is usually thin: callers
+    must show `n` next to the number (checklist F5 / G2).
+    """
+    params: dict = {}
+    since_clause = ""
+    if since is not None:
+        since_clause = " AND s.session_date >= %(since)s"
+        params["since"] = since
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT s.tag, date_trunc('month', s.session_date)::date AS month, count(*) AS n,
+                   avg(s.ret_h5 - m.ret_h5_all) AS edge_h5
+            FROM signal_log s
+            JOIN market_breadth m USING (session_date)
+            WHERE s.ret_h5 IS NOT NULL{since_clause}
+            GROUP BY 1, 2
+            ORDER BY 1, 2
+            """,
+            params,
+        )
+        out: dict[str, list[tuple[date, int, float | None]]] = {}
+        for tag, month, n, edge in cur.fetchall():
+            out.setdefault(tag, []).append((month, int(n), None if edge is None else float(edge)))
+        return out
+
+
 def latest_signal_date() -> date | None:
     """Most recent session_date that has any signal_log rows (may trail price)."""
     with connect() as conn, conn.cursor() as cur:

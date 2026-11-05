@@ -23,7 +23,7 @@ from .. import engine, research, risk, risk_eval
 from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
-from . import coverage as cov
+from . import charts, coverage as cov
 from . import freshness, fmt, glossary, listing
 from .auth import AuthMiddleware
 from . import status as gate
@@ -148,11 +148,16 @@ def _cached_view_rows(since, fresh: bool = False) -> tuple[list[dict], float, bo
 def _view_rows(since) -> list[dict]:
     """Shape `engine.eval_tags(since)` into display rows, each with an honest verdict."""
     rows = []
-    for r in engine.eval_tags(since):
+    eval_rows = engine.eval_tags(since)
+    monthly = engine.tag_monthly_edge(since)
+    y_max = charts.spark_scale(list(monthly.values()), small_n=patternmod.SMALL_MONTH_N)
+    for r in eval_rows:
         st = gate.classify(r)
         rows.append(
             {
                 "tag": r["tag"],
+                "trend": charts.sparkline(monthly.get(r["tag"], []), y_max=y_max, small_n=patternmod.SMALL_MONTH_N,
+                                          uid=f"trend-{'f' if since else 'a'}-{r['tag']}"),
                 "n": r["n"],
                 "small_n": gate.is_small_n(r["n"]),
                 "n_liquid": r.get("n_liquid") or 0,
