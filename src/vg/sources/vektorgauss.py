@@ -26,6 +26,7 @@ httpx directly and needs no curl_cffi / residential IP.
 from __future__ import annotations
 
 import json
+import time
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -193,6 +194,8 @@ class VgBrokerSummarySource(BrokerSummarySource):
         end = json.loads(raw).get("broker_end_date")
         return _date.fromisoformat(end) if end else None
 
+    _retry_waits: tuple[float, ...] = (2.0, 6.0)  # seconds before the 2nd and 3rd try
+
     def _download(self, ticker: str, on_date: date | None = None) -> bytes:
         if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
             raise RuntimeError(
@@ -207,12 +210,27 @@ class VgBrokerSummarySource(BrokerSummarySource):
             # endpoint returns only the latest published day.
             d = on_date.isoformat()
             params["start_date"] = params["end_date"] = d
-        resp = httpx.get(
-            url,
-            headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
-            params=params or None,
-            timeout=CONFIG.http_timeout,
-        )
+        # A 5xx or a dropped connection is the feed or the network blinking (5 Nov: ten 502s in a row ended the night's backfill,
+        # and the same names answered 200 an hour later; 4 Nov: three minutes of DNS failures). Wait and ask again a couple of
+        # times. 4xx (bad key, quota, ban) is NOT retried: asking harder would only make that worse.
+        for wait in (*self._retry_waits, None):
+            try:
+                resp = httpx.get(
+                    url,
+                    headers={"accept": "application/json", "X-API-Key": CONFIG.feed_api_key},
+                    params=params or None,
+                    timeout=CONFIG.http_timeout,
+                )
+                if resp.status_code < 500:
+                    break
+                failure: Exception | None = None
+            except httpx.TransportError as exc:
+                resp, failure = None, exc
+            if wait is None:
+                if failure is not None:
+                    raise failure
+                break  # out of tries: raise_for_status below reports the 5xx
+            time.sleep(wait)
         resp.raise_for_status()
         return resp.content
 

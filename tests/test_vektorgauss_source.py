@@ -105,6 +105,7 @@ def test_download_sends_start_equals_end_only_for_a_dated_pull(monkeypatch):
     captured = {}
 
     class _Resp:
+        status_code = 200
         content = b"{}"
 
         def raise_for_status(self):
@@ -124,6 +125,64 @@ def test_download_sends_start_equals_end_only_for_a_dated_pull(monkeypatch):
 
     src._download("bbca")
     assert captured["params"] is None       # latest-day request carries no date parameters
+
+
+class _Reply:
+    def __init__(self, status: int):
+        self.status_code = status
+        self.content = b"{}"
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise vektorgauss.httpx.HTTPStatusError(
+                f"{self.status_code}", request=None, response=self)  # type: ignore[arg-type]
+
+
+def _feed_that_answers(monkeypatch, *answers):
+    """Make httpx.get return/raise `answers` in order; returns the list of calls made."""
+    calls: list[int] = []
+    queue = list(answers)
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        calls.append(1)
+        a = queue.pop(0)
+        if isinstance(a, Exception):
+            raise a
+        return _Reply(a)
+
+    monkeypatch.setattr(vektorgauss.httpx, "get", fake_get)
+    monkeypatch.setattr(vektorgauss.time, "sleep", lambda s: None)
+    monkeypatch.setattr(vektorgauss.CONFIG, "feed_base_url", "http://feed.test")
+    monkeypatch.setattr(vektorgauss.CONFIG, "feed_api_key", "k")
+    return calls
+
+
+def test_download_asks_again_after_a_502_and_after_a_dropped_connection(monkeypatch):
+    calls = _feed_that_answers(monkeypatch, 502, vektorgauss.httpx.ConnectError("dns"), 200)
+    assert VgBrokerSummarySource()._download("BBCA") == b"{}"
+    assert len(calls) == 3
+
+
+def test_download_gives_up_after_three_tries_and_reports_the_502(monkeypatch):
+    calls = _feed_that_answers(monkeypatch, 502, 502, 502)
+    res = VgBrokerSummarySource().fetch(date(2026, 11, 4), "BBCA")
+    assert res.status == "error" and "502" in res.detail
+    assert len(calls) == 3
+
+
+def test_download_raises_the_network_error_when_every_try_drops(monkeypatch):
+    err = vektorgauss.httpx.ConnectError("dns")
+    calls = _feed_that_answers(monkeypatch, err, err, err)
+    res = VgBrokerSummarySource().fetch(date(2026, 11, 4), "BBCA")
+    assert res.status == "error" and "ConnectError" in res.detail
+    assert len(calls) == 3
+
+
+def test_download_does_not_retry_a_4xx(monkeypatch):
+    calls = _feed_that_answers(monkeypatch, 429)
+    res = VgBrokerSummarySource().fetch(date(2026, 11, 4), "BBCA")
+    assert res.status == "error" and "429" in res.detail
+    assert len(calls) == 1                  # quota/ban: asking again would only make it worse
 
 
 # --- broker inventory (broker-accumulation) ---------------------------------
