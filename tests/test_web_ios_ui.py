@@ -131,7 +131,7 @@ def test_edge_load_reads_four_horizons_for_the_asked_tags_only():
     cur = _Cur([("AKUM-ASING", 120, 0.55, 0.004, 110, 0.5, 0.0, 100, 0.6, 0.012, 80, 0.7, 0.03)])
     out = edge.load_cur(cur, ["AKUM-ASING"])
     assert out["AKUM-ASING"][1] == (120, 0.55, 0.004) and out["AKUM-ASING"][10] == (80, 0.7, 0.03)
-    assert "tag = ANY(%s)" in cur.sql and cur.params == (["AKUM-ASING"],) and "ret_h1" in cur.sql and "ret_h10" in cur.sql
+    assert "tag = ANY(%s)" in cur.sql and cur.params == (["AKUM-ASING"],) and "ret2_h1" in cur.sql and "ret2_h10" in cur.sql   # outcome v2
     cur_all = _Cur([])
     edge.load_cur(cur_all, None)
     assert "WHERE" not in cur_all.sql and cur_all.params is None

@@ -169,11 +169,11 @@ _TREND = {"up": "↑", "down": "↓", "flat": "→", "nodata": "?"}
 
 
 def _eval_version() -> tuple:
-    """Cheap change token for the eval tables: `market_breadth` is tiny (~1.6k rows) and is
-    rewritten by every `vg backfill-outcomes`, so its newest computed_at + row count moves
-    exactly when the underlying outcomes do."""
+    """Cheap change token for the eval tables: `market_breadth2` is tiny (~1.6k rows) and is
+    rebuilt by every `vg backfill-outcomes2`, so its newest computed_at + row count moves
+    exactly when the underlying (v2) outcomes do."""
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT max(computed_at), count(*) FROM market_breadth")
+        cur.execute("SELECT max(computed_at), count(*) FROM market_breadth2")
         ts, n = cur.fetchone()
     return (str(ts), n)
 
@@ -208,6 +208,7 @@ def _view_rows(since) -> list[dict]:
                 "edge_h5": _cell(r.get("edge_h5")),
                 "edge_h10": _cell(r.get("edge_h10")),
                 "edge_h5_liquid": _cell(r.get("edge_h5_liquid")),
+                "edge_h5_v1": _cell(r.get("edge_h5_v1")),
                 "hit": _hit(r.get("hit_rate")),
                 "univ_hit": _hit(r.get("univ_hit_rate")),
                 "status": st,

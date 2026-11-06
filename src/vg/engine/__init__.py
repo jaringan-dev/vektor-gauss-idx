@@ -1142,6 +1142,11 @@ def eval_tags(since: date | None = None) -> list[dict]:
 
     `since` restricts to signals emitted on/after that date — the forward-test
     window (VG_FORWARD_SINCE). Without it the whole history is pooled (in-sample).
+
+    Since 2026-11-07 every number here is OUTCOME V2 (`outcomes2.py`): entry at the VWAP of t+1, total return adjusted
+    with IDX's own reference prices + cash dividends, against `market_breadth2` (same formula). The old v1 numbers
+    (entry at the signal-day close, split-only adjustment, see the 2026-11-07 audit) are kept as `edge_h5_v1` so a reader
+    can see how much the correction moved each tag. Needs `vg backfill-outcomes2`.
     """
     params: dict = {"liq": LIQUID_VALUE_IDR}
     since_clause = ""
@@ -1152,24 +1157,26 @@ def eval_tags(since: date | None = None) -> list[dict]:
         cur.execute(
             f"""
             SELECT s.tag,
-                   count(*)                                       AS n,
-                   min(s.session_date)                            AS first_date,
-                   max(s.session_date)                            AS last_date,
-                   avg(s.ret_h5)                                  AS avg_h5,
-                   avg(s.ret_h1  - m.ret_h1_all)                  AS edge_h1,
-                   avg(s.ret_h5  - m.ret_h5_all)                  AS edge_h5,
-                   avg(s.ret_h10 - m.ret_h10_all)                 AS edge_h10,
-                   avg((s.ret_h5 > 0)::int)::float                AS hit_rate,
-                   avg(m.hit_h5_all)                              AS univ_hit_rate,
-                   count(*) FILTER (WHERE p.value > %(liq)s)      AS n_liquid,
-                   avg(s.ret_h5 - m.ret_h5_liquid)
-                       FILTER (WHERE p.value > %(liq)s)           AS edge_h5_liquid,
-                   (avg((s.ret_h5 > 0)::int)
-                       FILTER (WHERE p.value > %(liq)s))::float   AS hit_rate_liquid
+                   count(*)                                        AS n,
+                   min(s.session_date)                             AS first_date,
+                   max(s.session_date)                             AS last_date,
+                   avg(s.ret2_h5)                                  AS avg_h5,
+                   avg(s.ret2_h1  - m2.ret2_h1_all)                AS edge_h1,
+                   avg(s.ret2_h5  - m2.ret2_h5_all)                AS edge_h5,
+                   avg(s.ret2_h10 - m2.ret2_h10_all)               AS edge_h10,
+                   avg((s.ret2_h5 > 0)::int)::float                AS hit_rate,
+                   avg(m2.hit2_h5_all)                             AS univ_hit_rate,
+                   count(*) FILTER (WHERE p.value > %(liq)s)       AS n_liquid,
+                   avg(s.ret2_h5 - m2.ret2_h5_liquid)
+                       FILTER (WHERE p.value > %(liq)s)            AS edge_h5_liquid,
+                   (avg((s.ret2_h5 > 0)::int)
+                       FILTER (WHERE p.value > %(liq)s))::float    AS hit_rate_liquid,
+                   avg(s.ret_h5 - m.ret_h5_all)                    AS edge_h5_v1
             FROM signal_log s
-            JOIN market_breadth m USING (session_date)
+            JOIN market_breadth2 m2 USING (session_date)
+            LEFT JOIN market_breadth m USING (session_date)
             JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
-            WHERE s.ret_h5 IS NOT NULL{since_clause}
+            WHERE s.ret2_h5 IS NOT NULL{since_clause}
             GROUP BY s.tag
             ORDER BY n DESC
             """,
@@ -1199,10 +1206,10 @@ def tag_monthly_edge(since: date | None = None) -> dict[str, list[tuple[date, in
         cur.execute(
             f"""
             SELECT s.tag, date_trunc('month', s.session_date)::date AS month, count(*) AS n,
-                   avg(s.ret_h5 - m.ret_h5_all) AS edge_h5
+                   avg(s.ret2_h5 - m2.ret2_h5_all) AS edge_h5
             FROM signal_log s
-            JOIN market_breadth m USING (session_date)
-            WHERE s.ret_h5 IS NOT NULL{since_clause}
+            JOIN market_breadth2 m2 USING (session_date)
+            WHERE s.ret2_h5 IS NOT NULL{since_clause}
             GROUP BY 1, 2
             ORDER BY 1, 2
             """,

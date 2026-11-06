@@ -5,11 +5,12 @@ Two screens use it: the "Signal Historical Edge" card on a stock page (the patte
 
 Per pattern and horizon H the numbers are, over every past signal whose H-session result is known:
   * win rate    = the share of signals whose return was above zero;
-  * expectancy  = the average return of those signals (a plain average of ret_hH).
+  * expectancy  = the average return of those signals (a plain average of ret2_hH).
 
 Both are RAW: not market-adjusted and before trading costs, over the whole stored history, so they flatter a pattern the
 way every in-sample number does. They sit next to the forward-test verdict (which is the number that decides anything)
-and the pages say so. `ret_h1/h3/h5/h10` are filled by `vg backfill-outcomes`; a horizon with no known result is N/A.
+and the pages say so. Since 2026-11-07 they are outcome v2 (`outcomes2.py`: entry at the VWAP of t+1, total return), the
+same basis as the Track record; `ret2_h1/h3/h5/h10` are filled by `vg backfill-outcomes2`. No known result = N/A.
 
 `load_cur` is the only part that touches the database (psycopg, read-only, one aggregate query); everything else is pure.
 """
@@ -21,7 +22,7 @@ from . import fmt
 HORIZONS = (1, 3, 5, 10)
 SMALL_N = 30                       # below this many signals a horizon's numbers are marked as thin
 NA = "N/A"
-_COLS = tuple(f"ret_h{h}" for h in HORIZONS)          # names come from this constant, never from user input
+_COLS = tuple(f"ret2_h{h}" for h in HORIZONS)         # names come from this constant, never from user input
 
 PURE_TAG, WASH_TAG = "AKUM-ASING", "AKUM-NETRAL-WASH"
 

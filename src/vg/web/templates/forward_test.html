@@ -11,6 +11,7 @@
         {{ th('edge_h1', 'edge 1d') }}{{ th('edge_h5', 'edge 5d') }}{{ th('edge_trend', '5d trend') }}{{ th('edge_h10', 'edge 10d') }}
         {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}
         {{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}
+        <th scope="col" title="The same signals measured the old way (entry at the signal-day close, split-only adjustment), for comparison. It does not count toward the verdict.">edge 5d<br><span class="note">old method</span></th>
         {% if show_status %}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">verdict</th>{% endif %}
       </tr>
     </thead>
@@ -28,6 +29,7 @@
         <td>{{ r.univ_hit }}</td>
         <td>{{ r.n_liquid }}</td>
         <td class="{{ r.edge_h5_liquid.c }}">{{ r.edge_h5_liquid.t }}</td>
+        <td class="note">{{ r.edge_h5_v1.t if r.edge_h5_v1 else '—' }}</td>
         {% if show_status %}
         <td class="{{ r.edge_after_cost.c }}">{{ r.edge_after_cost.t }}</td>
         <td>{{ verdict(r.status.code, r.status.label) }}</td>
@@ -50,7 +52,11 @@
       Each pattern below is a rule that flags stocks from transaction data. A pattern only counts as <b>proven</b> when it has at least
       {{ min_n }} occurrences over at least {{ min_span }} days <i>and</i> its edge is still positive after about {{ cost_bp }} bp of trading costs.
       {% if n_passed %}Right now <b>{{ n_passed }} pattern{{ 's' if n_passed != 1 else '' }} {{ 'has' if n_passed == 1 else 'have' }} passed</b>.{% else %}Right now <b>no pattern has passed</b>.{% endif %} Failures are shown as prominently as passes, because that is the point of this page.
-      Not sure what a column means? Click any dotted word.</div>
+      Not sure what a column means? Click any dotted word.
+      <br><br><b>Corrected on 7 Nov 2026.</b> Returns are now measured as a holder could have earned them: bought at the average price of the
+      day <i>after</i> the signal (the signal only exists after the close), and adjusted for splits, bonus shares, rights issues and cash
+      dividends using the exchange's own reference prices. The old method bought at the signal-day close and adjusted for splits only,
+      which turned some rights issues into losses of up to 96%; its 5-day edge is kept in the "old method" column for comparison.</div>
     <div class="panel" id="expectancy">
       <h2>Expectancy by horizon</h2>
       {% if edge_rows %}
