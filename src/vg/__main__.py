@@ -228,6 +228,9 @@ def build_parser() -> argparse.ArgumentParser:
     st.add_argument("--kind", choices=("morning", "evening", "backfill"), default="morning")
     st.add_argument("--no-save", action="store_true", help="do not store the report for the dashboard")
 
+    au = sub.add_parser("audit-data", help="data-integrity audit (read-only): corporate actions, splits, float, KSEI base, broker copies; exit 1 if any check is BAD")
+    au.add_argument("--since", type=date.fromisoformat, default=None, help="first session for the corporate-action checks (default 2025-01-01)")
+
     rm = sub.add_parser(
         "remind-verify",
         help="send the post-EOD verification checklist to Telegram, ONCE, after a healthy EOD (called at the end of eod.sh)")
@@ -794,6 +797,15 @@ def main(argv: list[str] | None = None) -> int:
         from . import reminder as _reminder
 
         return _reminder.run(force=args.force, dry_run=args.dry_run)
+
+    if args.cmd == "audit-data":
+        from . import audit as _audit
+
+        level, findings = _audit.report(args.since or _audit.SINCE)
+        for c in findings:
+            print(f"{c.as_dict()['mark']} {c.name:<28} {c.text}")
+        print(f"\noverall: {level}")
+        return 1 if level == "bad" else 0
 
     if args.cmd == "status":
         import re as _re

@@ -1,5 +1,6 @@
 """EOD quality gate (quality.py) — pure rules + the eod.sh wiring. Includes the real 14/15/25 Sep incident."""
 
+import re
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -79,4 +80,4 @@ def test_eod_runs_the_gate_before_compute_and_guards_both_compute_passes():
     first = text.index('vg compute             --backfill "$BACK" "$TODAY"')
     assert gate < first
     assert '[ "$GATE_OK" -eq 1 ] && { vg compute --backfill' in text          # pass 2 is guarded too
-    assert text.count("vg compute") == 2                                       # no unguarded third compute
+    assert len(re.findall(r"\bvg compute(?![\w-])", text)) == 2                # no unguarded third compute (`vg compute-adj` is another command)

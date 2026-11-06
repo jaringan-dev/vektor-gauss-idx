@@ -70,6 +70,9 @@ echo "-- order-flow harvest took $((SECONDS - T_DONE))s (budget ${VG_DONE_BUDGET
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical
 # feed data for the Transaction/Inventory/Compare charts. Best-effort, Tier 3.
 vg collect-broker-inventory --universe || true
+# Rebuild the split/bonus/dividend factors from today's corp_actions (~1 min) so adjusted prices and returns never run on
+# factors that miss a newly announced action (audit 2026-11-07: they were last rebuilt by hand, days behind). Best-effort.
+vg compute-adj || true
 vg backfill-outcomes
 vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 
