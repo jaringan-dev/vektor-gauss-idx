@@ -187,12 +187,20 @@ def day_counts(lo: list[float | None], hi: list[float | None]) -> dict[str, int]
     return out
 
 
+FULL_RANGE_MAX = 2.0         # draw every bar whole when the biggest day is at most this many times the typical half-range
+
+
 def _scale_amp(pairs: list[tuple[float, float]]) -> float:
-    """Half-range of the value axis: the typical day sets it (90th percentile of the largest end of each range), so a couple of huge
-    days cannot flatten every other bar. Never below 1% of the day's value."""
+    """Half-range of the value axis. When the biggest day is within FULL_RANGE_MAX x the typical one, the axis simply covers every bar
+    (with a little headroom): nothing is cut, and the typical bars shrink by at most half. Only a truly extreme day (a 56% day among 3%
+    days) lets the typical day set the axis instead (90th percentile of the largest end of each range), so it cannot flatten every other
+    bar; that day is cut and marked. Never below 1% of the day's value."""
     extremes = sorted(max(abs(a), abs(b)) for a, b in pairs)
-    amp = max(extremes[min(len(extremes) - 1, int(len(extremes) * 0.9))] * 1.15, 0.01)
-    return min(amp, extremes[-1]) if extremes[-1] > 0.01 else amp
+    typical = max(extremes[min(len(extremes) - 1, int(len(extremes) * 0.9))] * 1.15, 0.01)
+    full = extremes[-1]
+    if full <= typical * FULL_RANGE_MAX:
+        return max(full * 1.05, 0.01)
+    return typical
 
 
 def _day_marks(x: float, cw: float, y, a: float, b: float, amp: float, label: str) -> tuple[str, bool]:

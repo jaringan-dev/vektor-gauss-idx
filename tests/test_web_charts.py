@@ -234,3 +234,20 @@ def test_sparkline_only_looks_at_the_last_twelve_months():
     pts = _months([0.9] + [0.001] * 12)                                      # a huge month 13 months before the newest
     assert charts.spark_scale([pts], small_n=30) == pytest.approx(0.002)     # dropped from the scale
     assert _spark(pts).count("<circle") == 12                                # and from the drawing
+
+
+def test_bounds_band_draws_a_moderately_bigger_day_whole_instead_of_cutting_it():
+    # The BBCA case: typical days around 40%, the biggest at 56% (1.3x). Cutting it would also cut its CERTAIN (solid) part.
+    ds = _days(20)
+    lo = [0.30] * 19 + [0.52]
+    hi = [0.36] * 19 + [0.56]
+    svg = charts.bounds_band(ds, lo, hi)
+    _parse(svg)
+    assert "cut off at the edge" not in svg and 'stroke-width="1.5"' not in svg      # nothing cut, no cap
+    assert "+59%" in svg                                                              # the axis covers the biggest day (+5% headroom)
+
+
+def test_scale_amp_switches_to_the_typical_day_only_for_a_truly_extreme_one():
+    typical = [(0.0, 0.10)] * 19
+    assert charts._scale_amp([*typical, (0.0, 0.20)]) == pytest.approx(0.21)       # 20% vs an 11.5% typical half-range: < 2x, drawn whole
+    assert charts._scale_amp([*typical, (0.0, 0.80)]) == pytest.approx(0.115)      # 80%: 7x, the typical day sets the axis

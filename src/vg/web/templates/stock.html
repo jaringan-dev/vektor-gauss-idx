@@ -13,6 +13,12 @@
               color:var(--muted); text-decoration:none; white-space:nowrap; }
   nav.toc a:hover, nav.toc a:focus-visible { background:var(--prob-bg); color:var(--fg); }
   nav.toc a[aria-current="location"] { background:var(--accent-soft); color:var(--accent-text); font-weight:600; }
+  /* Wide screens: every link visible (wraps to a second row), no sideways scrollbar. Phones keep the one swipeable row. */
+  @media (min-width:641px) { nav.toc ul { flex-wrap:wrap; overflow-x:visible; } }
+  /* Charts fill the panel instead of stopping at their 720px design width: the SVG scales, so its text grows with it
+     (11px -> ~14px in a 950px panel). Capped so a very wide window does not blow them up. The inline max-width is the default
+     for every page; only this page overrides it. */
+  .chart-wide > svg { max-width:1040px !important; margin:0 auto; }
   /* Secondary sections start folded; the heading stays visible and opens them. */
   details.panel.fold > summary { list-style:none; display:flex; align-items:center; gap:8px; margin:0; color:inherit; font-size:inherit; cursor:pointer; }
   details.panel.fold > summary::-webkit-details-marker { display:none; }
