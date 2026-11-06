@@ -35,6 +35,11 @@ CONSISTENCY_ACC = 6            # >= 6 of last 10 days foreign net-buy -> accumul
 CONSISTENCY_DIST = 3          # <= 3 of last 10 -> distribution
 NONREG_HIGH = 0.20            # negotiated value / total value > 20% -> CROSSING-TINGGI
 KSEI_TREND_BAND = 0.005      # +/- 0.5pp month-over-3-months
+# KSEI2 (audit 2026-11-07, B5/B8): a month-end file counts only once it was available (stored before the next open, or, for
+# months loaded later in a backfill, KSEI_PUBLISH_LAG_DAYS after month end), and no delta is taken across months where the
+# scripless share of all shares moved by SCRIPLESS_JUMP or more (old shares deposited into KSEI, not trading).
+KSEI_PUBLISH_LAG_DAYS = 7
+SCRIPLESS_JUMP = 0.05
 _LOOKBACK_TD = 26            # trading days of history to load per ticker
 _FWD_HORIZONS = (1, 3, 5, 10)
 LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval breakdown
@@ -199,6 +204,11 @@ class Components:
     ksei_foreign_d3m: float | None = None      # 3-month change (fraction), persisted
     ksei_inst_d3m: float | None = None
     ksei_indiv_d3m: float | None = None
+    # KSEI2 (transient, not persisted): the same 3-month deltas, only from files available at the time and never across a
+    # scripless jump (None = not measurable that way).
+    ksei2_foreign_trend: str = "nodata"
+    ksei2_inst_d3m: float | None = None
+    ksei2_indiv_d3m: float | None = None
     quadrant: str | None = None
     data_flags: list[str] = field(default_factory=list)
 
@@ -401,6 +411,43 @@ def _ksei_metrics(cur: psycopg.Cursor, ticker: str, session_date: date) -> _Ksei
         foreign_d3m=fd, inst_d3m=id_, indiv_d3m=dd,
         foreign_trend=band(fd), retail_trend=band(dd),
     )
+
+
+def ksei2_from_rows(rows: list[tuple]) -> tuple[str, float | None, float | None]:
+    """KSEI2: (foreign trend, local-institution 3-month delta, local-individual 3-month delta) from the available month-end
+    rows, newest first, each (detail, local_individual, local_institution, foreign_total, scripless_pct). Same arithmetic as
+    v1, but nothing is measured across months whose scripless share of all shares moved by SCRIPLESS_JUMP or more: those
+    percentages shift because old shares were deposited into KSEI, not because anyone traded (SGER Oct-2026: 44.7% -> 100%).
+    Pure, unit-tested. Returns ("nodata", None, None) when it cannot measure."""
+    if len(rows) < 3:
+        return "nodata", None, None
+    used = rows[: min(4, len(rows))]
+    sps = [r[4] for r in used if r[4] is not None]
+    if sps and max(sps) - min(sps) >= SCRIPLESS_JUMP:
+        return "nodata", None, None
+    now, then = _ksei_shares(*used[0][:4]), _ksei_shares(*used[-1][:4])
+    if now is None or then is None:
+        return "nodata", None, None
+    fd = now[0] - then[0]
+    trend = "up" if fd > KSEI_TREND_BAND else "down" if fd < -KSEI_TREND_BAND else "flat"
+    return trend, now[1] - then[1], now[2] - then[2]
+
+
+def _ksei_metrics2(cur: psycopg.Cursor, ticker: str, session_date: date) -> tuple[str, float | None, float | None]:
+    """The month-end rows that were AVAILABLE on `session_date` (stored before 08:00 WIB of the next day, or, for months
+    loaded later in a backfill, at least KSEI_PUBLISH_LAG_DAYS after month end), then `ksei2_from_rows`."""
+    cur.execute(
+        """
+        SELECT detail, local_individual, local_institution, foreign_total, (detail->>'scripless_pct')::float8
+        FROM ownership_monthly
+        WHERE ticker = %(t)s AND month_end <= %(d)s
+          AND (month_end + %(lag)s <= %(d)s
+               OR fetched_at <= ((%(d)s::date + 1)::timestamp + interval '8 hours') AT TIME ZONE 'Asia/Jakarta')
+        ORDER BY month_end DESC LIMIT 4
+        """,
+        {"t": ticker, "d": session_date, "lag": KSEI_PUBLISH_LAG_DAYS},
+    )
+    return ksei2_from_rows(cur.fetchall())
 
 
 @dataclass(slots=True)
@@ -638,6 +685,11 @@ def _classify(c: Components) -> list[str]:
         tags.append("KSEI-INST-AKUM")          # local institution % rising 3m
     if c.ksei_indiv_d3m is not None and c.ksei_indiv_d3m < -KSEI_TREND_BAND:
         tags.append("KSEI-RITEL-EXIT")         # local individual % falling 3m
+    # v2 of the two above (audit 2026-11-07): only files available at the time, never across a scripless jump. New clock.
+    if c.ksei2_inst_d3m is not None and c.ksei2_inst_d3m > KSEI_TREND_BAND:
+        tags.append("KSEI2-INST-AKUM")
+    if c.ksei2_indiv_d3m is not None and c.ksei2_indiv_d3m < -KSEI_TREND_BAND:
+        tags.append("KSEI2-RITEL-EXIT")
     if c.foreign_float_5d is not None and c.foreign_float_5d > FLOAT_ACCUM_BAND:
         tags.append("FLOAT-ASING-PADAT")       # foreign net-took a slice of a thin float
 
@@ -718,6 +770,17 @@ def _classify(c: Components) -> list[str]:
             c.data_flags.append("KSEI-DIVERGEN")
         elif c.ksei_foreign_trend_3m == "down":
             tags.append("KSEI-KONFIRM")
+    # v2 cross-check on the KSEI2 trend (available files only, no scripless jump). Annotation only, new clock.
+    if "AKUM-ASING" in tags:
+        if c.ksei2_foreign_trend == "down":
+            tags.append("KSEI2-DIVERGEN")
+        elif c.ksei2_foreign_trend == "up":
+            tags.append("KSEI2-KONFIRM")
+    if "DISTRIBUSI-ASING" in tags:
+        if c.ksei2_foreign_trend == "up":
+            tags.append("KSEI2-DIVERGEN")
+        elif c.ksei2_foreign_trend == "down":
+            tags.append("KSEI2-KONFIRM")
 
     if "CROSSING-TINGGI" in c.data_flags:
         tags.append("CROSSING-TINGGI")
@@ -761,6 +824,25 @@ def _classify(c: Components) -> list[str]:
             tags.append("BROKER2-ASING-AKUM")
         if c.bkr_foreign_net_hi / c.day_value <= -BROKER_FOREIGN_BAND and direction == "up":
             tags.append("BROKER2-ASING-DIST")
+        # v2 of BROKER-DOMISILI-*: the broker side counts only when its CERTAIN interval says which way it went.
+        if c.nff_d0 is not None:
+            rd = c.nff_d0 / c.day_value
+            lo, hi = c.bkr_foreign_net_lo / c.day_value, c.bkr_foreign_net_hi / c.day_value
+            bsign = 1 if lo >= BROKER_XCHECK_BAND else -1 if hi <= -BROKER_XCHECK_BAND else 0
+            if bsign and abs(rd) >= BROKER_XCHECK_BAND:
+                if (rd > 0) == (bsign > 0):
+                    tags.append("BROKER2-DOMISILI-KONFIRM")
+                else:
+                    tags.append("BROKER2-DOMISILI-DIVERGEN")
+
+    # v2 of FOREIGN-INST / DOM-RETAIL (audit 2026-11-07, B4): v1 sums net buyers only, so it can only ever see buying.
+    # These use the CERTAIN cohort bounds the scoring step already computes (retail houses, foreign institutions) and fire
+    # only when the whole interval clears the band. New clock.
+    if c.day_value:
+        if c.finst_net_lo is not None and c.finst_net_lo / c.day_value >= PARTICIPANT_BAND:
+            tags.append("FOREIGN-INST2")
+        if c.retail_net_lo is not None and c.retail_net_lo / c.day_value >= PARTICIPANT_BAND:
+            tags.append("DOM-RETAIL2")
 
     # HEURISTIC participant classifier (INFERENCE — RETAIL_BROKERS + avg-ticket +
     # concentration; a broker aggregates many clients, so these are model labels,
@@ -851,6 +933,7 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.ksei_foreign_d3m, c.ksei_inst_d3m, c.ksei_indiv_d3m = (
                 snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
             )
+            c.ksei2_foreign_trend, c.ksei2_inst_d3m, c.ksei2_indiv_d3m = _ksei_metrics2(cur, t, session_date)
             c.disclosure_5d, c.disclosure_20d = disc.get(t, (0, 0))
             bsnap = _broker_metrics(cur, t, cal)
             c.bkr_foreign_net_d0 = bsnap.foreign_net_d0
