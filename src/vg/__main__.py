@@ -199,6 +199,13 @@ def build_parser() -> argparse.ArgumentParser:
     rv.add_argument("--min-n", type=int, default=30)
     rv.add_argument("--save", action="store_true", help="store both scopes in analysis_snapshot for the dashboard (/risk-test)")
 
+    rt = sub.add_parser(
+        "record-trades",
+        help="record the feed's running-trade WebSocket into trade_flow_1m (one row per stock per minute) until the market closes")
+    rt.add_argument("--max-seconds", type=float, default=None, help="stop after this many seconds (a smoke test); default: until 16:05 WIB")
+    rt.add_argument("--flush-seconds", type=float, default=10.0, help="how often the minute buckets are written to the database")
+    rt.add_argument("--dry-run", action="store_true", help="connect and count, write nothing (no database rows, no run_log)")
+
     st = sub.add_parser("status", help="is the system running? checks + Telegram status message (daily); the dashboard shows the same at /health")
     st.add_argument("--telegram", action="store_true", help="send the report to Telegram (OK reports from evening/backfill are silent)")
     st.add_argument("--kind", choices=("morning", "evening", "backfill"), default="morning")
@@ -726,6 +733,11 @@ def main(argv: list[str] | None = None) -> int:
             risk_eval.save_snapshot(risk_eval.snapshot_payload(groups, window, min_n=args.min_n))
             print("saved to analysis_snapshot (dashboard: /risk-test)")
         return 0
+
+    if args.cmd == "record-trades":
+        from . import tradeflow as _tradeflow
+
+        return _tradeflow.record(max_seconds=args.max_seconds, flush_seconds=args.flush_seconds, dry_run=args.dry_run)
 
     if args.cmd == "remind-verify":
         from . import reminder as _reminder

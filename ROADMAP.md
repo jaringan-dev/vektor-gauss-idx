@@ -99,3 +99,20 @@ Register-ScheduledTask -TaskName "VektorGauss-Status" -Action $a -Trigger $t -Se
 
 **If the whole PC is off, nothing can be sent.** For that, create a free check at healthchecks.io (period 1 day, grace 3 hours), put its ping URL in
 `.env` as `VG_STATUS_HEALTHCHECK_URL=...`, and connect the check to your Telegram or email there. A missing morning ping then reaches you another way.
+
+## Running-trade recorder (`vg record-trades`) - register the weekday task (one time, PowerShell)
+
+The feed's running-trade WebSocket keeps no history and allows ONE connection per account, so exactly one recorder must run per day.
+It waits for the open (08:50), records until 16:05 WIB, writes one row per stock per minute to `trade_flow_1m`, and logs one `run_log`
+row (phase `trade_record`). It costs no REST quota. The PC and WSL must be up for the whole session; the run holds its own WSL session.
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d Ubuntu-24.04 -u vg -- bash -lc ~/vektor-gauss/scripts/record_trades.sh"
+$t = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 8:55AM
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 9)
+Register-ScheduledTask -TaskName "VektorGauss-TradeRecorder" -Action $a -Trigger $t -Settings $s
+```
+
+Smoke test any time the market is open (writes real rows): `vg record-trades --max-seconds 120`; add `--dry-run` to count without writing.
+What is NOT proven yet: that the feed's buy/sell label is the aggressive side (compare a recorded day with `done-details`), and that
+big single prints (one ENRG print was Rp149B) are regular-board trades rather than crossings.

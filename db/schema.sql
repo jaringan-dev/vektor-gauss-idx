@@ -542,3 +542,25 @@ CREATE TABLE IF NOT EXISTS analysis_snapshot (
     computed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     payload      JSONB NOT NULL
 );
+
+-- Running-trade stream (`vg record-trades`, src/vg/tradeflow.py): every match order the exchange reported, summed per stock per
+-- minute. The feed keeps no history, so this table only has the days the recorder was running. `minute` is minutes since 00:00
+-- exchange time (09:15 = 555). buy/sell is the action the feed labels each trade with (documented as the aggressive side by the tick
+-- rule - not yet verified here against done-details). Values are rupiah, lots are 1 lot = 100 shares.
+CREATE TABLE IF NOT EXISTS trade_flow_1m (
+    session_date DATE NOT NULL,
+    ticker       TEXT NOT NULL,
+    minute       SMALLINT NOT NULL,
+    n_buy        INTEGER NOT NULL DEFAULT 0,
+    n_sell       INTEGER NOT NULL DEFAULT 0,
+    buy_lot      NUMERIC NOT NULL DEFAULT 0,
+    sell_lot     NUMERIC NOT NULL DEFAULT 0,
+    buy_val      NUMERIC NOT NULL DEFAULT 0,
+    sell_val     NUMERIC NOT NULL DEFAULT 0,
+    max_val      NUMERIC NOT NULL DEFAULT 0,      -- the biggest single trade in the minute
+    px_high      NUMERIC NOT NULL,
+    px_low       NUMERIC NOT NULL,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_date, ticker, minute)
+);
+CREATE INDEX IF NOT EXISTS idx_trade_flow_1m_day ON trade_flow_1m (session_date, minute);

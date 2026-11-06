@@ -17,6 +17,8 @@ dependencies = [
     # NoDecode (comma-separated tickers from the environment) needs pydantic-settings >= 2.7.
     "pydantic>=2.7",
     "pydantic-settings>=2.7",
+    # Running-trade recorder (vg record-trades): the feed's WebSocket needs a custom header, which only a script client can send.
+    "websockets>=12",
 ]
 
 [project.optional-dependencies]
