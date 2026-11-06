@@ -68,6 +68,11 @@ WASH_OVERLAP_MIN = 2
 BPI_HIGH = 0.10    # bpi3 >= 10 points of the day's value ~ the top fifth of the 5 Nov 2026 live distribution (80th pct +0.099)
 
 
+def is_wash(bpi3: float | None, overlap3: int | None) -> bool:
+    """The AKUM-NETRAL-WASH rule, in one place so `compute` and `backfill_wash` can never disagree about it."""
+    return bpi3 is not None and overlap3 is not None and overlap3 >= WASH_OVERLAP_MIN and bpi3 >= BPI_HIGH
+
+
 @dataclass(slots=True)
 class _Bar:
     d: date
@@ -639,8 +644,7 @@ def _classify(c: Components) -> list[str]:
     # Bandar Power Index, wash filter: the buy side looks concentrated, but two or more of the top-3 buyers are also
     # top-3 sellers - the same houses on both sides - so it is NOT read as pure accumulation. Descriptive, probation.
     # Needs no price history, so it sits above the early return.
-    if (c.bpi3 is not None and c.bpi_overlap3 is not None
-            and c.bpi_overlap3 >= WASH_OVERLAP_MIN and c.bpi3 >= BPI_HIGH):
+    if is_wash(c.bpi3, c.bpi_overlap3):
         tags.append("AKUM-NETRAL-WASH")
 
     if c.price_chg_5d is None or c.nff_w1 is None:
@@ -877,6 +881,58 @@ def compute_day(session_date: date) -> ComputeSummary:
              f"{len(tickers)} tickers, {len(log_rows)} tags")
 
     return ComputeSummary(session_date, "ok", len(tickers), len(log_rows))
+
+
+WASH_TAG = "AKUM-NETRAL-WASH"
+
+
+class WashBackfillRefused(ValueError):
+    """The requested range would touch the forward-test window (or the window is not defined)."""
+
+
+def backfill_wash(start: date | None = None, end: date | None = None, *, dry_run: bool = False) -> dict:
+    """Write AKUM-NETRAL-WASH for sessions BEFORE the forward-test window, from the broker scores `compute` already stored.
+
+    This is the in-sample history of one tag. It changes nothing else: no other tag, no component, nothing on or after
+    VG_FORWARD_SINCE (a range that reaches it is refused, and if VG_FORWARD_SINCE is not set nothing is written at all).
+    The tag is read from `signal_components.bpi3 / bpi_overlap3` with the same `is_wash` rule `compute` uses, so there is no
+    second copy of the logic and no data is recomputed. The 0.10 threshold was picked looking at the 5 Nov 2026 distribution,
+    so every row written here is IN-SAMPLE: it shows what the tag would have said, it is not evidence the tag works.
+
+    Returns {"start", "end", "days", "rows", "by_month", "written"}; `dry_run` counts without writing.
+    """
+    from ..config import CONFIG
+
+    fwd = CONFIG.forward_since
+    if fwd is None:
+        raise WashBackfillRefused("VG_FORWARD_SINCE is not set, so I cannot tell where the forward test starts; nothing written")
+    last_allowed = date.fromordinal(fwd.toordinal() - 1)
+    if end is None:
+        end = last_allowed
+    if end > last_allowed:
+        raise WashBackfillRefused(f"{end} is inside the forward-test window (from {fwd}); the last date allowed is {last_allowed}")
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT min(session_date) FROM signal_components WHERE bpi3 IS NOT NULL")
+        first = cur.fetchone()[0]
+        if first is None:
+            return {"start": None, "end": end, "days": 0, "rows": 0, "by_month": {}, "written": 0}
+        start = max(start, first) if start is not None else first
+        cur.execute(
+            "SELECT sc.session_date, sc.ticker, sc.bpi3, sc.bpi_overlap3, pb.close "
+            "FROM signal_components sc JOIN price_bars pb ON pb.session_date = sc.session_date AND pb.ticker = sc.ticker "
+            "WHERE sc.session_date BETWEEN %s AND %s AND sc.bpi3 IS NOT NULL AND sc.bpi_overlap3 IS NOT NULL",
+            (start, end))
+        hits = [(d, t, WASH_TAG, "probation", c) for d, t, b3, o3, c in cur.fetchall() if is_wash(float(b3), int(o3))]
+        by_month: dict[str, int] = {}
+        for d, *_ in hits:
+            by_month[f"{d:%Y-%m}"] = by_month.get(f"{d:%Y-%m}", 0) + 1
+        written = 0
+        if not dry_run and hits:
+            written = upsert_many(cur, "signal_log", ("session_date", "ticker", "tag", "layer", "close"), hits,
+                                  conflict=("session_date", "ticker", "tag"), update=("close",))
+            _log(cur, "backfill_wash", end, "ok", written, f"{start}..{end}: in-sample history of {WASH_TAG}, nothing at or after {fwd}")
+    return {"start": start, "end": end, "days": len({h[0] for h in hits}), "rows": len(hits), "by_month": dict(sorted(by_month.items())),
+            "written": written}
 
 
 def _log(cur, phase, sd, status, rows, err):

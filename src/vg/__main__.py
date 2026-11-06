@@ -158,6 +158,13 @@ def build_parser() -> argparse.ArgumentParser:
     gm.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
     sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
+    bw = sub.add_parser(
+        "backfill-wash",
+        help="IN-SAMPLE history of AKUM-NETRAL-WASH from the stored broker scores; only sessions before VG_FORWARD_SINCE",
+    )
+    bw.add_argument("--from", dest="start", metavar="YYYY-MM-DD", help="first session (default: the first one with a broker score)")
+    bw.add_argument("--to", dest="end", metavar="YYYY-MM-DD", help="last session (default and maximum: the day before VG_FORWARD_SINCE)")
+    bw.add_argument("--dry-run", action="store_true", help="count what would be written, write nothing")
     sub.add_parser(
         "paper-update",
         help="open new paper trades for FLOAT-ASING-PADAT/TIKET-BESAR-AKUM, resolve open ones",
@@ -532,6 +539,24 @@ def main(argv: list[str] | None = None) -> int:
             for d in days:
                 _cs(engine.compute_day(d))
             print(f"computed {len(days)} trading days")
+        return 0
+
+    if args.cmd == "backfill-wash":
+        try:
+            res = engine.backfill_wash(_d(args.start) if args.start else None, _d(args.end) if args.end else None, dry_run=args.dry_run)
+        except engine.WashBackfillRefused as exc:
+            print(f"refused: {exc}")
+            return 2
+        if res["start"] is None:
+            print("no stored broker scores (signal_components.bpi3), nothing to do")
+            return 0
+        verb = "would write" if args.dry_run else "wrote"
+        print(f"{engine.WASH_TAG}: {verb} {res['rows']} rows on {res['days']} sessions, {res['start']} .. {res['end']}")
+        for month, n in res["by_month"].items():
+            print(f"  {month}: {n}")
+        print("IN-SAMPLE: the threshold was chosen looking at 5 Nov 2026 data, so this is what the tag WOULD have said, not proof it works.")
+        if not args.dry_run:
+            print(f"signal_log rows updated with forward returns: {engine.backfill_outcomes()}")
         return 0
 
     if args.cmd == "backfill-outcomes":
