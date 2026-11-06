@@ -78,3 +78,18 @@ def test_broker2_domisili_compares_only_a_certain_broker_sign():
     assert "BROKER2-DOMISILI-DIVERGEN" in _classify(_dom(-V * 0.2, -V * (b + 0.01), V * 0.05))     # brokers certainly selling
     unsure = set(_classify(_dom(-V * 0.05, V * 0.05, V * 0.05)))                                    # range straddles zero
     assert not unsure & {"BROKER2-DOMISILI-KONFIRM", "BROKER2-DOMISILI-DIVERGEN"}
+
+
+# ---- FLOAT2 --------------------------------------------------------------------------------------------------------
+
+def test_float2_uses_the_real_free_float_not_the_listed_shares():
+    from vg.engine import FLOAT_ACCUM_BAND
+
+    # BBCA-like: 0.6% of listed shares bought by foreigners in a week is 1.4% of its 42% free float.
+    listed, free = 122_042_299_500, 51_820_646_928
+    net = 0.006 * listed
+    c = Components(ticker="X", foreign_float_5d=net / listed, foreign_float2_5d=net / free)
+    tags = _classify(c)
+    assert net / listed < FLOAT_ACCUM_BAND < net / free
+    assert "FLOAT2-ASING-PADAT" in tags and "FLOAT-ASING-PADAT" not in tags
+    assert "FLOAT2-ASING-PADAT" not in _classify(Components(ticker="X", foreign_float2_5d=None))   # no usable report: silent

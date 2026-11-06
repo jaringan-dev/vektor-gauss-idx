@@ -291,6 +291,12 @@ _TAGS = [
             "5-day net foreign flow at least 1% of the 'tradable shares' figure from IDX.", "ownership",
             "Rare; small sample. Despite the name, the figure IDX supplies equals ALL listed shares for most stocks, so this is not "
             "measured against the free float (audit 7 Nov 2026)."),
+    TagInfo("FLOAT2-ASING-PADAT", "Foreigners taking a big slice of the free float",
+            "A week of net foreign buying equals a meaningful part of the shares that really trade freely: the free float the company "
+            "itself reports each month (controller, affiliates, treasury and locked-up shares excluded).",
+            "5-day net foreign flow at least 1% of the free float in the latest published monthly registry report (LBRE); not measured "
+            "when the report is older than 75 days, inconsistent, or a corporate action has changed the share count since.",
+            "ownership", "New pattern (7 Nov 2026); forward test starts now."),
     TagInfo("LAPOR-KEPEMILIKAN-RAMAI", "Sudden burst of ownership filings",
             "Many ownership-change filings arrived in a short time; the direction is not known from this pattern alone.",
             "At least 3 filings in 5 trading days and at least 2× the 20-day average rate.", "ownership"),

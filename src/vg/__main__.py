@@ -228,6 +228,13 @@ def build_parser() -> argparse.ArgumentParser:
     rt.add_argument("--flush-seconds", type=float, default=10.0, help="how often the minute buckets are written to the database")
     rt.add_argument("--dry-run", action="store_true", help="connect and count, write nothing (no database rows, no run_log)")
 
+    ffc = sub.add_parser("collect-free-float",
+                         help="real free float per issuer from the monthly registry reports (LBRE) announced on IDX -> free_float_monthly")
+    ffw = ffc.add_mutually_exclusive_group()
+    ffw.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="announcement days, inclusive")
+    ffw.add_argument("--recent", type=int, default=None, metavar="DAYS", help="the last N calendar days (default 10)")
+    ffc.add_argument("--refetch", action="store_true", help="re-read announcements already stored")
+
     st = sub.add_parser("status", help="is the system running? checks + Telegram status message (daily); the dashboard shows the same at /health")
     st.add_argument("--telegram", action="store_true", help="send the report to Telegram (OK reports from evening/backfill are silent)")
     st.add_argument("--kind", choices=("morning", "evening", "backfill"), default="morning")
@@ -827,6 +834,20 @@ def main(argv: list[str] | None = None) -> int:
         from . import reminder as _reminder
 
         return _reminder.run(force=args.force, dry_run=args.dry_run)
+
+    if args.cmd == "collect-free-float":
+        from datetime import timedelta as _td
+
+        from . import freefloat as _ff
+
+        if args.backfill:
+            start, end = date.fromisoformat(args.backfill[0]), date.fromisoformat(args.backfill[1])
+        else:
+            end = date.today()
+            start = end - _td(days=args.recent or 10)
+        s = _ff.collect(start, end, refetch=args.refetch)
+        print(f"free float {start}..{end}: {s}")
+        return 0 if not s["errors"] or s["stored"] else 1
 
     if args.cmd == "audit-data":
         from . import audit as _audit

@@ -40,6 +40,9 @@ vg collect-price-history --universe || true
 vg collect-disclosure  --backfill "$BACK" "$TODAY"
 vg parse-disclosure    # Phase B: catch up on anything unparsed (cheap — usually 0-15/day)
 vg collect-halts       --backfill "$BACK" "$TODAY"
+# Real free float from the issuers' monthly registry reports (LBRE), for FLOAT2-ASING-PADAT. Before compute, so a report announced
+# today can be used tonight. Announcements already stored are skipped; busy days (5th-12th of a month) ~200 PDFs. Best-effort.
+vg collect-free-float --recent 10 || true
 vg detect-ca
 # Quality gate (ARSITEKTUR-DATA-v1 K4): if today's inputs are broken (price gap, OHLC violations) compute
 # would turn them into wrong signals that eval later scores. A BLOCK finding skips compute and alerts.

@@ -436,6 +436,29 @@ CREATE TABLE IF NOT EXISTS signal_snapshot (
     PRIMARY KEY (session_date, ticker, tag)
 );
 
+-- Real free float per issuer per month, from the monthly registry report (LBRE) each company files with IDX (src/vg/freefloat.py,
+-- `vg collect-free-float`). free_float_shares excludes controller, affiliates, treasury, lock-up etc. (listing rule I-A).
+-- first_announced_at = when the month was FIRST published (a later KOREKSI replaces the figures but not this time), so a
+-- session only uses a month once it was public. consistent = the stated % matches shares / listed within rounding.
+CREATE TABLE IF NOT EXISTS free_float_monthly (
+    ticker                  TEXT NOT NULL,
+    month_end               DATE NOT NULL,
+    free_float_shares       NUMERIC NOT NULL,
+    listed_shares           NUMERIC NOT NULL,
+    free_float_pct          NUMERIC NOT NULL,
+    prev_free_float_shares  NUMERIC,
+    prev_listed_shares      NUMERIC,
+    holders_sid             INT,
+    consistent              BOOLEAN NOT NULL,
+    is_correction           BOOLEAN NOT NULL DEFAULT false,
+    no_pengumuman           TEXT NOT NULL,
+    announced_at            TIMESTAMP NOT NULL,          -- IDX announcement time (WIB, as IDX gives it)
+    first_announced_at      TIMESTAMP NOT NULL,
+    pdf_url                 TEXT,
+    fetched_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, month_end)
+);
+
 -- ---------------------------------------------------------------------------
 -- Operational
 -- ---------------------------------------------------------------------------

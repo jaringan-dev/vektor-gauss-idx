@@ -101,6 +101,7 @@ flowchart LR
 |---|---|---|---|
 | EOD | 19:15 WIB, hari kerja | `scripts/eod.sh` | Task `VektorGauss-EOD`; kunci `flock` mencegah tumpang tindih |
 | Kepemilikan KSEI | tiap hari, sampai file bulan lalu masuk | `vg collect-ownership --pending` (di dalam EOD) | tidak mengunduh apa pun setelah file bulan lalu tersimpan |
+| Free float (LBRE) | tiap hari | `vg collect-free-float --recent 10` (di dalam EOD) | pengumuman yang sudah tersimpan dilewati; ramai hari ke-5 s/d 12 tiap bulan |
 | Backfill broker dalam (K7) | 00:10 tiap malam | `scripts/deep_backfill.sh` → `vg broker-deep` | Task `VektorGauss-DeepBackfill`; terbatas budget panggilan harian (`VG_DEEP_BUDGET`) dan berjalan paralel (`VG_DEEP_WORKERS`) |
 | Recorder trade | 08:55, Sen-Jum | `scripts/record_trades.sh` → `vg record-trades` | Task `VektorGauss-TradeRecorder`; melewati hari libur bursa |
 | Status pagi/malam | harian | `scripts/status.sh` → `vg status` | Bisa memberi tahu bila EOD tidak jalan |
@@ -119,6 +120,7 @@ Windows Task Scheduler. `ci.yml` menjalankan tes dan lint.
 | IDX pengumuman (halts, filing) | `sources/trading_halt.py`, `sources/disclosure.py` | `collect-halts`, `collect-disclosure` | `trading_halts`, `disclosure_filings` |
 | PDF formulir KSEI | `sources/disclosure_pdf.py` | `parse-disclosure` | `disclosure_holdings` |
 | KSEI kepemilikan bulanan | `sources/ksei.py` | `collect-ownership` (`--pending` tiap hari), `ownership` | `ownership_monthly` |
+| Free float riil (LBRE bulanan emiten) | `freefloat.py` (pengumuman BEI "Registrasi Pemegang Efek", PDF templat BEI) | `collect-free-float` (`--recent` tiap hari, `--backfill`) | `free_float_monthly` (dipakai `FLOAT2-ASING-PADAT`) |
 | KSEI jadwal aksi korporasi | `sources/ksei.py` | `collect-corpactions`, `detect-ca` | `corp_actions` |
 | Feed: riwayat harga (cadangan) | `sources/vektorgauss.py` | `collect-price-history` | `price_bars` (tidak menimpa IDX) |
 | Feed: broker summary (top-20 net beli) | `sources/vektorgauss.py`, `collect.py` | `collect-broker-summary`, `broker-deep` | `broker_flows`, `broker_levels` |
@@ -167,7 +169,7 @@ flowchart LR
 |---|---|
 | Kalender dan daftar | `trading_calendar`, `tickers` |
 | Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth`, `market_breadth2` |
-| Kepemilikan dan filing | `ownership_monthly`, `corp_actions`, `disclosure_filings`, `disclosure_holdings`, `trading_halts` |
+| Kepemilikan dan filing | `ownership_monthly`, `free_float_monthly`, `corp_actions`, `disclosure_filings`, `disclosure_holdings`, `trading_halts` |
 | Broker | `broker_flows`, `broker_levels`, `broker_flows_full`, `broker_inventory`, `done_by_price`, `broker_affiliation_groups` |
 | Aliran trade | `trade_flow_1m` |
 | Sinyal | `signal_components`, `signal_log`, `signal_snapshot`, `paper_trades` |

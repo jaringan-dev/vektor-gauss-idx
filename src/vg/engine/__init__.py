@@ -40,6 +40,9 @@ KSEI_TREND_BAND = 0.005      # +/- 0.5pp month-over-3-months
 # scripless share of all shares moved by SCRIPLESS_JUMP or more (old shares deposited into KSEI, not trading).
 KSEI_PUBLISH_LAG_DAYS = 7
 SCRIPLESS_JUMP = 0.05
+# FLOAT2 (B3): real free float from the issuers' monthly registry reports (freefloat.py). A report older than this is stale.
+FREE_FLOAT_MAX_AGE_DAYS = 75
+REF_JUMP = 0.02               # an IDX reference price this far from the previous close = a corporate action (outcomes2.REF_JUMP)
 _LOOKBACK_TD = 26            # trading days of history to load per ticker
 _FWD_HORIZONS = (1, 3, 5, 10)
 LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval breakdown
@@ -156,7 +159,9 @@ class Components:
     avg_ticket_z: float | None = None        # z vs own trailing ~20d
     bid_offer_imb: float | None = None       # (bidvol - offervol) / (bidvol + offervol) at close
     float_ratio: float | None = None         # tradable_shares / listed_shares
-    foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares
+    foreign_float_5d: float | None = None    # 5d foreign net shares / tradable_shares (= listed shares for ~96% of stocks)
+    foreign_net_shares_5d: float | None = None   # transient: the numerator above, reused by FLOAT2
+    foreign_float2_5d: float | None = None   # transient: 5d foreign net shares / REAL free float (LBRE, freefloat.py)
     disclosure_5d: int | None = None         # ownership-disclosure filings, trailing 5 td
     disclosure_20d: int | None = None        # ... trailing 20 td (baseline)
     # Broker-summary (vektorgauss, Tier 3). Foreign-BROKER net in IDR — a
@@ -450,6 +455,37 @@ def _ksei_metrics2(cur: psycopg.Cursor, ticker: str, session_date: date) -> tupl
     return ksei2_from_rows(cur.fetchall())
 
 
+def _free_float(cur: psycopg.Cursor, ticker: str, session_date: date) -> float | None:
+    """The real free-float share count (LBRE, freefloat.py) usable on `session_date`, or None. Usable means: the month was
+    first announced before 08:00 WIB of the next day, the report is internally consistent, it is at most FREE_FLOAT_MAX_AGE_DAYS
+    old, and NO corporate action happened after its month end (an IDX reference-price reset on an IDX bar): after a rights
+    issue, split or bonus the share count in the report no longer describes the stock (FORU, rights on 22-Sep-2026)."""
+    cur.execute(
+        """
+        SELECT month_end, free_float_shares FROM free_float_monthly
+        WHERE ticker = %(t)s AND consistent AND month_end < %(d)s AND month_end >= %(d)s::date - %(age)s
+          AND first_announced_at <= (%(d)s::date + 1)::timestamp + interval '8 hours'
+        ORDER BY month_end DESC LIMIT 1
+        """,
+        {"t": ticker, "d": session_date, "age": FREE_FLOAT_MAX_AGE_DAYS},
+    )
+    row = cur.fetchone()
+    if not row or not row[1] or float(row[1]) <= 0:
+        return None
+    month_end, shares = row
+    cur.execute(
+        """
+        SELECT 1 FROM (
+            SELECT session_date, prev, source_tier, lag(close) OVER (ORDER BY session_date) AS pc
+            FROM price_bars WHERE ticker = %(t)s AND session_date > %(m)s::date - 10 AND session_date <= %(d)s) x
+        WHERE session_date > %(m)s AND source_tier = 0 AND pc > 0 AND prev > 0 AND abs(prev / pc - 1) > %(ref)s
+        LIMIT 1
+        """,
+        {"t": ticker, "m": month_end, "d": session_date, "ref": REF_JUMP},
+    )
+    return None if cur.fetchone() else float(shares)
+
+
 @dataclass(slots=True)
 class _BrokerSnap:
     foreign_net_d0: float | None = None
@@ -662,10 +698,11 @@ def _components(
     if b0.tradable_shares and b0.listed_shares and b0.listed_shares > 0:
         c.float_ratio = b0.tradable_shares / b0.listed_shares
 
-    if b0.tradable_shares and b0.tradable_shares > 0:
-        five = [back(k) for k in range(5)]
-        if all(g is not None for g in five):
-            c.foreign_float_5d = sum(g.foreign_net_shares for g in five) / b0.tradable_shares
+    five = [back(k) for k in range(5)]
+    if all(g is not None for g in five):
+        c.foreign_net_shares_5d = sum(g.foreign_net_shares for g in five)
+        if b0.tradable_shares and b0.tradable_shares > 0:
+            c.foreign_float_5d = c.foreign_net_shares_5d / b0.tradable_shares
 
     return c
 
@@ -692,6 +729,10 @@ def _classify(c: Components) -> list[str]:
         tags.append("KSEI2-RITEL-EXIT")
     if c.foreign_float_5d is not None and c.foreign_float_5d > FLOAT_ACCUM_BAND:
         tags.append("FLOAT-ASING-PADAT")       # foreign net-took a slice of a thin float
+    # v2 (audit 2026-11-07, B3): the same 1% band against the REAL free float from the issuer's monthly registry report,
+    # only when that report was public and no corporate action has changed the share count since. New forward clock.
+    if c.foreign_float2_5d is not None and c.foreign_float2_5d > FLOAT_ACCUM_BAND:
+        tags.append("FLOAT2-ASING-PADAT")
 
     # Unusual ownership-disclosure activity (>5% / insider filings). No direction —
     # weight-0 proxy pending the PDF parse (Phase B).
@@ -934,6 +975,9 @@ def compute_day(session_date: date) -> ComputeSummary:
                 snap.foreign_d3m, snap.inst_d3m, snap.indiv_d3m
             )
             c.ksei2_foreign_trend, c.ksei2_inst_d3m, c.ksei2_indiv_d3m = _ksei_metrics2(cur, t, session_date)
+            if c.foreign_net_shares_5d is not None:
+                ffs = _free_float(cur, t, session_date)
+                c.foreign_float2_5d = None if ffs is None else c.foreign_net_shares_5d / ffs
             c.disclosure_5d, c.disclosure_20d = disc.get(t, (0, 0))
             bsnap = _broker_metrics(cur, t, cal)
             c.bkr_foreign_net_d0 = bsnap.foreign_net_d0
