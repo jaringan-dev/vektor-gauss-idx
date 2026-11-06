@@ -649,3 +649,24 @@ def test_view_and_page_show_the_group_chart_with_its_caveats(client, monkeypatch
     for needle in ("Who is buying and selling?", "Net flow by group</a>", "round-trip</a>", "an estimate", "not proof of a market maker", "share one scale",
                    "1 day left out", 'aria-labelledby="groups-t groups-d"', 'aria-labelledby="groups-m-t groups-m-d"'):
         assert needle in r.text, needle
+
+
+# ---- 'On this page' + folded secondary sections ------------------------------------------------------------
+
+def test_stock_page_sections_have_anchors_for_the_on_this_page_bar(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw())
+    t = client.get("/stock/BBCA").text
+    assert '<nav id="toc" class="toc" aria-label="On this page" hidden></nav>' in t       # hidden until the script fills it
+    for sid in ("patterns", "risk", "recent", "historical-edge", "ownership", "filings", "brokers"):
+        assert re.search(rf'class="panel[^"]*" id="{sid}"', t), sid
+        assert f'"{sid}":' in t, sid                                                          # every anchor has a short label in the bar
+    assert t.index('id="toc"') < t.index('id="patterns"')                                    # the bar comes before the sections
+
+
+def test_secondary_sections_start_folded_with_their_heading_visible(client, monkeypatch):
+    monkeypatch.setattr(stockmod, "load", lambda t: _raw())
+    t = client.get("/stock/BBCA").text
+    for sid, heading in (("brokers", "Biggest brokers"), ("ownership", "Ownership (KSEI, monthly)"),
+                         ("filings", "Ownership filings")):
+        assert re.search(rf'<details class="panel fold" id="{sid}">\s*<summary><h2>{re.escape(heading)}', t), sid
+    assert 'class="panel fold" id="patterns"' not in t and '<details class="panel fold" id="risk"' not in t   # the core stays open

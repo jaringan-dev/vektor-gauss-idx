@@ -1,6 +1,28 @@
 {% extends "base.html" %}
 {% from "_macros.html" import term, th, tag_chip, verdict, chart, range_key, db_error, disclaimer %}
 {% block title %}{{ ticker }} — Vektor Gauss{% endblock %}
+
+{% block head_extra %}
+<style>
+  /* "On this page": a sticky row of section links (the page has up to 14 sections). Scrolls sideways on a phone. */
+  nav.toc { position:sticky; z-index:4; margin:0 0 14px; padding:6px 8px; background:var(--glass); border:1px solid var(--glass-edge);
+            border-radius:var(--r-sm); -webkit-backdrop-filter:saturate(180%) blur(10px); backdrop-filter:saturate(180%) blur(10px); }
+  nav.toc[hidden] { display:none; }
+  nav.toc ul { display:flex; gap:4px; list-style:none; margin:0; padding:0; overflow-x:auto; scrollbar-width:thin; }
+  nav.toc a { display:inline-flex; align-items:center; min-height:28px; padding:0 10px; border-radius:999px; font-size:12px;
+              color:var(--muted); text-decoration:none; white-space:nowrap; }
+  nav.toc a:hover, nav.toc a:focus-visible { background:var(--prob-bg); color:var(--fg); }
+  nav.toc a[aria-current="location"] { background:var(--accent-soft); color:var(--accent-text); font-weight:600; }
+  /* Secondary sections start folded; the heading stays visible and opens them. */
+  details.panel.fold > summary { list-style:none; display:flex; align-items:center; gap:8px; margin:0; color:inherit; font-size:inherit; cursor:pointer; }
+  details.panel.fold > summary::-webkit-details-marker { display:none; }
+  details.panel.fold > summary::before { content:"\25B8"; color:var(--muted); transition:transform .15s; }
+  details.panel.fold[open] > summary::before { transform:rotate(90deg); }
+  details.panel.fold > summary h2 { margin:0; }
+  details.panel.fold[open] > summary { margin-bottom:10px; }
+  @media (prefers-reduced-motion: reduce) { details.panel.fold > summary::before { transition:none; } }
+</style>
+{% endblock %}
 {% block subtitle %}{{ ticker }}{% if v and v.name %} <span style="font-weight:400;color:var(--muted);font-size:15px">· {{ v.name }}{% if v.sector %} · {{ v.sector }}{% endif %}</span>{% endif %}{% endblock %}
 
 {% block content %}
@@ -34,8 +56,11 @@
       {% endif %}
     </div>
 
+    {# Filled by the script at the end of this page from the sections that are actually shown; without JS it stays hidden. #}
+    <nav id="toc" class="toc" aria-label="On this page" hidden></nav>
+
     {% if v.charts.price %}
-    <div class="panel">
+    <div class="panel" id="price">
       <h2>Price, last 90 sessions</h2>
       <p class="note">Candles: hollow = closed above the open, solid = closed below. Dashed lines are the {{ term('mech_stop', 'stop level') }} (red) and the
          {{ term('r_target', 'targets') }} (green) of the risk plan below. Bars underneath are volume, then (grey) how many {{ term('pattern', 'patterns') }} were flagged each day.
@@ -44,7 +69,7 @@
     </div>
     {% endif %}
     {% if v.charts.flow %}
-    <div class="panel">
+    <div class="panel" id="flow">
       <h2>{{ term('foreign_today', 'Foreign flow') }} per day</h2>
       <p class="note">Bars: net foreign flow each day (green above the zero line = net buying, red below = net selling). The thin line is the running total over the period.
          Hover a bar or the line for the exact amount.</p>
@@ -52,7 +77,7 @@
     </div>
     {% endif %}
     {% if v.charts.band %}
-    <div class="panel">
+    <div class="panel" id="broker-days">
       <h2>Are foreign brokers buying or selling? Day by day</h2>
       <p class="note">Each bar is one day: how much the foreign brokers bought or sold, as a share of that day's traded value. The broker table shows only part of the
          selling side, so the exact figure is unknown; what we can say for sure is a {{ term('certain_bounds', 'certain range') }}. The solid part of a bar is the amount that is
@@ -66,7 +91,7 @@
     </div>
     {% endif %}
     {% if v.charts.groups %}
-    <div class="panel">
+    <div class="panel" id="groups">
       <h2>Who is buying and selling? {{ term('group_flow', 'Net flow by group') }} per day</h2>
       <p class="note">The same bars as above, split into three groups of brokers. Every rupiah bought is sold by someone, so the three groups always cancel out.
          <b>Foreign houses</b> are the foreign institutional brokers, <b>domestic retail brokers</b> are the mass-retail apps and brokers, and <b>all other brokers</b> are everyone else
@@ -89,7 +114,7 @@
     {% endif %}
 
     {% if v.comp and v.comp.bounds %}
-    <div class="panel">
+    <div class="panel" id="bounds">
       <h2>Foreign brokers today: {{ term('certain_bounds', 'certain bounds') }}</h2>
       <p>Net foreign-broker flow was between <b>{{ v.comp.bounds }}</b>. It is a range, not a single number, because the sell side of the
          broker table is only partly visible; the true value is guaranteed to be inside it.</p>
@@ -203,7 +228,7 @@
       {% endif %}
     </div>
 
-    <div class="panel">
+    <div class="panel" id="patterns">
       <h2>{{ term('pattern', 'Patterns') }} flagged today</h2>
       {% if v.tags_today %}
       <p class="note">Each pattern is a fixed rule. The verdict shows how that rule has actually performed in the {{ term('forward_test', 'forward test') }}, after costs.</p>
@@ -243,7 +268,7 @@
       {% endif %}
     </div>
 
-    <div class="panel">
+    <div class="panel" id="risk">
       <h2>Risk plan <span class="badge probation">mechanical, not a forecast</span></h2>
       {% if v.risk %}
       <p class="note">A volatility-based way to size risk, using the latest close as the {{ term('ref_price', 'reference price') }} and the {{ term('atr', 'ATR') }}.
@@ -285,7 +310,7 @@
       {% endif %}
     </div>
 
-    <div class="panel">
+    <div class="panel" id="recent">
       <h2>Last 10 sessions</h2>
       <table class="cards" aria-label="Last 10 sessions">
         <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col">Close</th><th scope="col">Change</th>{{ th('foreign_today', 'Foreign flow') }}<th scope="col">Traded value</th></tr></thead>
@@ -298,8 +323,8 @@
       </table>
     </div>
 
-    <div class="panel">
-      <h2>Biggest brokers on the latest broker session{% if v.levels_day %} ({{ v.levels_day }}){% endif %}</h2>
+    <details class="panel fold" id="brokers">
+      <summary><h2>Biggest brokers on the latest broker session{% if v.levels_day %} ({{ v.levels_day }}){% endif %}</h2></summary>
       {% if v.buyers or v.sellers %}
       <p class="note">{{ term('gross', 'Gross') }} value per broker (buying and selling are not netted). One broker serves many clients, so this is not the identity of a single party.</p>
       <div class="grid">
@@ -311,10 +336,10 @@
       {% else %}
       <p class="note">Broker data is not available for this stock. Per-broker coverage is limited to about 200 liquid stocks.</p>
       {% endif %}
-    </div>
+    </details>
 
-    <div class="panel" id="ownership">
-      <h2>Ownership (KSEI, monthly)</h2>
+    <details class="panel fold" id="ownership">
+      <summary><h2>Ownership (KSEI, monthly)</h2></summary>
       {% include "_own_panel.html" %}
       {% if v.ownership %}
       <table aria-label="KSEI ownership by month">
@@ -325,11 +350,11 @@
       {% else %}
       <p class="note">No KSEI ownership data for this stock.</p>
       {% endif %}
-    </div>
+    </details>
 
     {% set dc = v.disclosures %}
-    <div class="panel" id="filings">
-      <h2>Ownership filings: 5%+ holders and insiders</h2>
+    <details class="panel fold" id="filings">
+      <summary><h2>Ownership filings: 5%+ holders and insiders</h2></summary>
       {% if dc.state == 'parsed' %}
       <p class="note">What holders and insiders reported to the exchange (via KSEI), newest first. Showing {{ dc.shown }}{% if dc.total > dc.shown %} of {{ dc.total }}{% endif %} reported transactions.
         This is only what was filed: it is not a full list of this stock's shareholders, and a filing can arrive days after the trade.</p>
@@ -355,15 +380,68 @@
       {% else %}
       <p class="note">No ownership filings from 5%+ holders or insiders have been collected for this stock (collection starts September 2023).</p>
       {% endif %}
-    </div>
+    </details>
 
     {% if v.corp %}
-    <div class="panel">
-      <h2>Recent corporate actions</h2>
+    <details class="panel fold" id="corp">
+      <summary><h2>Recent corporate actions</h2></summary>
       <table aria-label="Recent corporate actions"><thead><tr><th scope="col" style="text-align:left">Ex-date</th><th scope="col" style="text-align:left">Type</th><th scope="col">Detail (DPS / ratio)</th></tr></thead>
         <tbody>{% for c in v.corp %}<tr><td style="text-align:left">{{ c.date }}</td><td style="text-align:left">{{ c.type }}</td><td>{{ c.ratio }}</td></tr>{% endfor %}</tbody></table>
-    </div>
+    </details>
     {% endif %}
+
+    <script>
+      /* Build "On this page" from the sections that were rendered (each has an id); a link to a folded section opens it. */
+      (function () {
+        var toc = document.getElementById("toc"); if (!toc) return;
+        var LABELS = { "price": "Price", "flow": "Foreign flow", "broker-days": "Broker days", "groups": "By group", "bounds": "Bounds",
+                       "broker-scoring": "Scoring", "historical-edge": "Edge history", "patterns": "Patterns", "risk": "Risk plan",
+                       "recent": "Last 10", "brokers": "Top brokers", "ownership": "Ownership", "filings": "Filings", "corp": "Corp. actions" };
+        var secs = [].filter.call(document.querySelectorAll("main .panel[id]"), function (s) { return LABELS[s.id]; });
+        if (secs.length < 3) return;
+        var ul = document.createElement("ul"), links = {}, hold = 0;
+        secs.forEach(function (s) {
+          var li = document.createElement("li"), a = document.createElement("a");
+          a.href = "#" + s.id; a.textContent = LABELS[s.id]; links[s.id] = a;
+          li.appendChild(a); ul.appendChild(li);
+        });
+        toc.appendChild(ul); toc.hidden = false;
+
+        function openFor(id) { var el = document.getElementById(id); if (el && el.tagName === "DETAILS") el.open = true; }
+        function mark(a) { for (var k in links) links[k].removeAttribute("aria-current"); a.setAttribute("aria-current", "location"); }
+        toc.addEventListener("click", function (e) {
+          var a = e.target.closest("a"); if (!a) return;
+          openFor(a.hash.slice(1)); mark(a);   /* the last sections can never scroll to the top, so mark the clicked one directly */
+          hold = Date.now() + 1200;             /* ...and let the jump finish before scrolling takes over again */
+        });
+        if (location.hash) openFor(location.hash.slice(1));
+
+        /* Sit just under the sticky top bar and freshness strip, and keep jumped-to headings clear of all three. */
+        function place() {
+          var nav = parseFloat(getComputedStyle(document.body).getPropertyValue("--topnav-h")) || 0;
+          var strip = document.querySelector(".strip");
+          var st = strip && getComputedStyle(strip).position === "sticky" ? strip.getBoundingClientRect().height : 0;
+          toc.style.top = (nav + st) + "px";
+          document.documentElement.style.scrollPaddingTop = (nav + st + toc.getBoundingClientRect().height + 8) + "px";
+        }
+        place(); addEventListener("resize", place);
+
+        if ("IntersectionObserver" in window) {
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+              if (!e.isIntersecting || Date.now() < hold) return;
+              var a = links[e.target.id]; mark(a);
+              ul.scrollLeft = a.offsetLeft - ul.offsetLeft - (ul.clientWidth - a.offsetWidth) / 2;   /* sideways only: never moves the page */
+            });
+          }, { rootMargin: "-25% 0px -65% 0px" });
+          secs.forEach(function (s) { io.observe(s); });
+          addEventListener("scroll", function () {        /* back above the first section: nothing is "current" */
+            if (Date.now() >= hold && secs[0].getBoundingClientRect().top > innerHeight * 0.35)
+              for (var k in links) links[k].removeAttribute("aria-current");
+          }, { passive: true });
+        }
+      })();
+    </script>
   {% endif %}
 {% endblock %}
 
