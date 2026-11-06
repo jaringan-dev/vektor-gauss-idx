@@ -26,6 +26,7 @@ from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
 from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, movers as moversmod, rotation as rotmod, runlog, watchlist as watchlistmod
+from . import balance as balancemod, inventory as inventorymod, seasonal as seasonalmod, stalker as stalkermod
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -55,6 +56,12 @@ _NAV = [
         {"key": "ranking", "label": "Top rankings", "href": "/ranking", "icon": "🏆"},
         {"key": "rotation", "label": "Sector rotation", "href": "/rotation", "icon": "🔄"},
     ]},
+    {"title": "Analysis", "items": [
+        {"key": "balance", "label": "Balance position", "href": "/balance", "icon": "🧮"},
+        {"key": "seasonality", "label": "Seasonality", "href": "/seasonality", "icon": "🗓️"},
+        {"key": "stalker", "label": "Broker stalker", "href": "/stalker", "icon": "🕵️"},
+        {"key": "inventory", "label": "Broker inventory", "href": "/inventory", "icon": "📦"},
+    ]},
     {"title": "Data", "items": [
         {"key": "health", "label": "System health", "href": "/health", "icon": "⚙️"},
         {"key": "coverage", "label": "Coverage & gaps", "href": "/coverage", "icon": "🗺️"},
@@ -75,6 +82,7 @@ _TOP_NAV = [
 ]
 # active_page (the sidebar key) -> top-bar section. A route can override it with ctx["section"] (the stock page does).
 _SECTION = {"home": "screener", "today": "screener", "screener": "screener", "movers": "screener", "ranking": "screener", "rotation": "screener",
+            "balance": "stock", "seasonality": "stock", "stalker": "stock", "inventory": "stock",
             "tracker": "eval", "risk": "eval", "research": "eval", "health": "system", "coverage": "system"}
 
 
@@ -509,6 +517,64 @@ def movers(board: str = "gainer", liquid: str = "0", reg: str = "0", d: str = Qu
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("movers.html", ctx)
+
+
+_ANALYSIS_CACHE = TTLCache(ttl_seconds=300)
+
+
+def _analysis(ctx: dict, template: str, work) -> HTMLResponse:
+    """The four analysis pages share one shape: do the (cached) work, show a failure instead of hiding it."""
+    try:
+        ctx["v"] = work()
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render(template, ctx)
+
+
+@app.get("/seasonality", response_class=HTMLResponse)
+def seasonality(ticker: str = "", years: str = "") -> HTMLResponse:
+    """Weekday and calendar-month up/down rates and average return for one stock or the index."""
+    t, y = seasonalmod.clean_ticker(ticker), seasonalmod.clean_years(years)
+
+    def work():
+        res, _w, _h = _ANALYSIS_CACHE.get_or_compute(("season", t, y), lambda: seasonalmod.load(t, y))
+        return seasonalmod.build_view(res, t, y)
+    return _analysis({"active_page": "seasonality", "error": None, "v": None}, "seasonality.html", work)
+
+
+@app.get("/balance", response_class=HTMLResponse)
+def balance(ticker: str = "", months: str = "") -> HTMLResponse:
+    """Who holds a stock, month-end by month-end (KSEI), on a page of its own."""
+    t, m = balancemod.clean_ticker(ticker), balancemod.clean_months(months)
+
+    def work():
+        rows, _w, _h = _ANALYSIS_CACHE.get_or_compute(("balance", t, m), lambda: balancemod.load(t, m))
+        return balancemod.build_view(rows, t, m)
+    return _analysis({"active_page": "balance", "error": None, "v": None}, "balance.html", work)
+
+
+@app.get("/stalker", response_class=HTMLResponse)
+def stalker(broker: str = "", window: str = "", foreign: str = "0") -> HTMLResponse:
+    """One broker's net buys and sells per stock over a window."""
+    b, w = stalkermod.clean_broker(broker), stalkermod.clean_window(window)
+
+    def work():
+        brokers, _w1, _h1 = _ANALYSIS_CACHE.get_or_compute(("brokers",), stalkermod.load_brokers)
+        raw = _ANALYSIS_CACHE.get_or_compute(("stalk", b, w), lambda: stalkermod.load(b, w))[0] if b else {"days": [], "rows": []}
+        return stalkermod.build_view(raw, brokers, b, w, foreign == "1")
+    return _analysis({"active_page": "stalker", "error": None, "v": None}, "stalker.html", work)
+
+
+@app.get("/inventory", response_class=HTMLResponse)
+def inventory(ticker: str = "", range_: str = Query("", alias="range"), unit: str = "", investor: str = "") -> HTMLResponse:
+    """Running net position of a stock's biggest net-buying and net-selling brokers."""
+    t, r = inventorymod.clean_ticker(ticker), inventorymod.clean_range(range_)
+    u, i = inventorymod.clean_unit(unit), inventorymod.clean_investor(investor)
+
+    def work():
+        raw, _w, _h = _ANALYSIS_CACHE.get_or_compute(("inv", t, r), lambda: inventorymod.load(t, r))
+        return inventorymod.build_view(raw, t, r, u, i)
+    return _analysis({"active_page": "inventory", "error": None, "v": None}, "inventory.html", work)
 
 
 def _counts(n_days: int) -> tuple[list, dict]:

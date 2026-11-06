@@ -261,7 +261,8 @@ def ownership_series(rows) -> list[dict]:
         local, foreign = detail.get("local") or {}, detail.get("foreign") or {}
         if not any(v for v in (*local.values(), *foreign.values())):
             continue
-        out.append({"d": month_end, "local": {k: _f(v) for k, v in local.items()}, "foreign": {k: _f(v) for k, v in foreign.items()}})
+        out.append({"d": month_end, "local": {k: _f(v) for k, v in local.items()}, "foreign": {k: _f(v) for k, v in foreign.items()},
+                    "scripless": _f(detail.get("scripless_pct"))})
     return out
 
 
@@ -294,7 +295,8 @@ def ownership_view(rows) -> dict | None:
         shift.append(row)
     return {"chart": chart, "chart_m": chart_m, "legend": legend, "shift": shift, "latest": last["d"].strftime("%b %Y"),
             "since": year_ago["d"].strftime("%b %Y") if year_ago else None, "n_months": len(months),
-            "total_lots": f"{total / charts.SHARES_PER_LOT:,.0f}"}
+            "total_lots": f"{total / charts.SHARES_PER_LOT:,.0f}",
+            "scripless": fmt.pct_plain(last["scripless"], 1) if last.get("scripless") is not None else None}
 
 
 def _vr(x) -> str:

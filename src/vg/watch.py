@@ -190,8 +190,9 @@ def load(now: datetime | None = None) -> WatchInputs:
         last_run = {p: (s, d, e) for p, s, d, e in cur.fetchall()}
         cur.execute("SELECT min(batch_date) FROM run_log WHERE phase = %s", (RECORDER_PHASE,))
         first = cur.fetchone()[0]
+        since = sessions[-1] if sessions else date.today()  # noqa: DTZ011 - local date, as elsewhere
         cur.execute("SELECT batch_date, status, rows_affected, error FROM run_log WHERE phase = %s AND batch_date >= %s "
-                    "ORDER BY started_at", (RECORDER_PHASE, (sessions[-1] if sessions else date.today())))
+                    "ORDER BY started_at", (RECORDER_PHASE, since))
         rec = cur.fetchall()
     return WatchInputs(now=now, session=sessions[0] if sessions else None, sessions=sessions, last_ok=last_ok, last_run=last_run,
                        recorder=rec, recorder_first=first)

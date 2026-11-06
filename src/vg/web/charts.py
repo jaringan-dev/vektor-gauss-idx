@@ -642,3 +642,62 @@ def bpi_gauge(points: float | None, *, uid: str = "gauge", width: int = 240) -> 
     return (f'<svg viewBox="0 0 240 150" width="100%" role="img" aria-labelledby="{uid}-t {uid}-d" '
             f'style="max-width:{width}px;display:block;margin:0 auto;font:11px -apple-system,Segoe UI,Roboto,sans-serif">'
             f'<title id="{uid}-t">Bandar Power Meter</title><desc id="{uid}-d">{escape(desc)}</desc>{"".join(body)}</svg>')
+
+
+# ---- broker inventory: running net position of the biggest net buyers and sellers, with the price underneath ---------------------
+INV_COLORS = ("#2ecc71", "#17bebb", "#4f7cff", "#a66cff", "#f4a259", "#e4572e", "#e86a92", "#c9a227", "#8f6bd9", "#3a6ea5")
+
+
+def _fmt_inv(v: float, unit: str) -> str:
+    sign = "+" if v >= 0 else "-"
+    return f"{sign}{_fmt_b(abs(v)) if unit == 'value' else _fmt_lot(abs(v))}"
+
+
+def inventory_chart(days: list[date], lines: list[dict], closes: list[float | None], *, unit: str = "value", width: int = W,
+                    uid: str = "inv", tips: bool = True) -> str | None:
+    """lines: [{code, kind ('buy' | 'sell'), color, vals}], `vals` the running net (rupiah or lots) per day, starting from 0 at the first day.
+    Net-buy lines are solid, net-sell lines dashed (direction is never colour-only). The price (close) sits in its own panel underneath on
+    its own scale. None with fewer than 5 days or nothing to draw."""
+    if len(days) < 5 or not lines:
+        return None
+    xs, _step = _x_positions(len(days), width)
+    top, mid_bottom = PAD_T, 250
+    p_top, p_bottom = 276, 336
+    lo = min([0.0] + [v for ln in lines for v in ln["vals"]])
+    hi = max([0.0] + [v for ln in lines for v in ln["vals"]])
+    y = _scale(lo, hi, top, mid_bottom)
+    body = [f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{y(0):.1f}" y2="{y(0):.1f}" stroke="var(--muted)"/>',
+            f'<text x="{PAD_L + 2}" y="{top + 9}" fill="var(--muted)">{_fmt_inv(hi, unit)}</text>',
+            f'<text x="{PAD_L + 2}" y="{mid_bottom - 2}" fill="var(--muted)">{_fmt_inv(lo, unit)}</text>',
+            f'<text x="{PAD_L + 2}" y="{y(0) - 3:.1f}" fill="var(--muted)">0</text>']
+    ends = []
+    for ln in lines:
+        pts = " ".join(f"{x:.1f},{y(v):.1f}" for x, v in zip(xs, ln["vals"]))
+        dash = ' stroke-dasharray="5 3"' if ln["kind"] == "sell" else ""
+        what = "net buyer" if ln["kind"] == "buy" else "net seller"
+        tip = f'<title>{escape(ln["code"])} ({what}): {_fmt_inv(ln["vals"][-1], unit)} over the period</title>' if tips else ""
+        body.append(f'<polyline points="{pts}" fill="none" stroke="{ln["color"]}" stroke-width="1.8"{dash}>{tip}</polyline>')
+        ends.append([y(ln["vals"][-1]), ln["code"], ln["color"]])
+    ends.sort(key=lambda e: e[0])                                 # nudge the end labels apart so none sits on another
+    for i in range(1, len(ends)):
+        if ends[i][0] - ends[i - 1][0] < 11:
+            ends[i][0] = ends[i - 1][0] + 11
+    for ey, code, col in ends:
+        body.append(f'<text x="{xs[-1] + 5:.1f}" y="{ey + 4:.1f}" fill="{col}" font-weight="700">{escape(code)}</text>')
+    prices = [c for c in closes if c is not None]
+    if len(prices) >= 2:
+        yp = _scale(min(prices), max(prices), p_top, p_bottom)
+        seg = " ".join(f"{x:.1f},{yp(c):.1f}" for x, c in zip(xs, closes) if c is not None)
+        body.append(f'<polyline points="{seg}" fill="none" stroke="var(--fg)" stroke-width="1.5" opacity=".85">'
+                    f'<title>Close: {_fmt_price(prices[0])} to {_fmt_price(prices[-1])}</title></polyline>')
+        body.append(f'<text x="{PAD_L + 2}" y="{p_top + 9}" fill="var(--muted)">{_fmt_price(max(prices))}</text>'
+                    f'<text x="{PAD_L + 2}" y="{p_bottom - 2}" fill="var(--muted)">{_fmt_price(min(prices))}</text>'
+                    f'<text x="{width - PAD_R + 4}" y="{p_top + 9}" fill="var(--muted)">price</text>')
+    body.append(_axis_x(days, xs, top, p_bottom, width))
+    unit_word = "rupiah" if unit == "value" else "lots"
+    buyers = ", ".join(f'{ln["code"]} {_fmt_inv(ln["vals"][-1], unit)}' for ln in lines if ln["kind"] == "buy")
+    sellers = ", ".join(f'{ln["code"]} {_fmt_inv(ln["vals"][-1], unit)}' for ln in lines if ln["kind"] == "sell")
+    desc = (f"Running net position in {unit_word} of the biggest net-buying brokers (solid lines) and net-selling brokers (dashed lines) over "
+            f"{len(days)} sessions, {days[0].isoformat()} to {days[-1].isoformat()}" + (", with the closing price underneath. " if len(prices) >= 2 else ". ") +
+            f"Net buyers: {buyers or 'none'}. Net sellers: {sellers or 'none'}. The table below the chart lists the same figures.")
+    return _svg(uid, p_bottom + PAD_B, "Broker inventory", desc, "".join(body), width)

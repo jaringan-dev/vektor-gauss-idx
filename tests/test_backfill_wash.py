@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from vg import __main__ as cli      # imported before any test swaps vg.config.CONFIG for a stand-in
+from vg import __main__ as cli  # imported before any test swaps vg.config.CONFIG for a stand-in
 from vg import engine
 
 FWD = date(2026, 9, 4)

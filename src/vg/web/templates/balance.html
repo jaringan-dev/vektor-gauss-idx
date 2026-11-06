@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import db_error, disclaimer %}
+{% block title %}Balance position — Vektor Gauss{% endblock %}
+{% block subtitle %}Balance position{% endblock %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% else %}
+    <div class="answer"><span class="q">Who holds {{ v.ticker }}, and is that changing?</span>
+      Month-end holdings by investor type (local and foreign) from the KSEI report. It describes who owns the stock; it is not a prediction.</div>
+
+    <div class="panel">
+      <form method="get" action="/balance" class="filterbar" aria-label="Choose what to show">
+        <label for="bp-ticker">Stock</label>
+        <input id="bp-ticker" name="ticker" value="{{ v.ticker }}" maxlength="4" size="6" autocomplete="off" spellcheck="false">
+        <label for="bp-months">Months</label>
+        <select id="bp-months" name="months">{% for o in v.months_options %}<option value="{{ o.m }}"{% if o.on %} selected{% endif %}>{{ o.m }}</option>{% endfor %}</select>
+        <button type="submit" class="menu-btn">Show</button>
+      </form>
+    </div>
+
+    <div class="panel" id="ownership">
+      <h2>{{ v.ticker }}: ownership by month</h2>
+      {% if v.own_chart %}
+        {% include "_own_panel.html" %}
+      {% else %}
+        <p class="note">No KSEI ownership detail for {{ v.ticker }}. Check the spelling, or the stock may not be in the monthly report.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>KSEI publishes this monthly, a few days after month-end, so the newest bar is always about a month old.</p>
+  {{ disclaimer() }}
+{% endblock %}

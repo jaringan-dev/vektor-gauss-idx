@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import db_error, disclaimer %}
+{% block title %}Seasonality — Vektor Gauss{% endblock %}
+{% block subtitle %}Seasonality{% endblock %}
+
+{% macro grid(rows, name, kind) %}
+<table class="cards seasonal" role="table" aria-label="{{ name }}">
+  <thead role="rowgroup">
+    <tr role="row"><th scope="col" role="columnheader" style="text-align:left">{{ kind }}</th>
+      {% for c in rows %}<th scope="col" role="columnheader">{{ c.label }}</th>{% endfor %}</tr>
+  </thead>
+  <tbody role="rowgroup">
+    <tr role="row"><th scope="row" role="rowheader" style="text-align:left">Closed up</th>
+      {% for c in rows %}<td role="cell" data-label="{{ c.label }} up" class="{{ c.up_cls }}">{{ c.up }}</td>{% endfor %}</tr>
+    <tr role="row"><th scope="row" role="rowheader" style="text-align:left">Closed down</th>
+      {% for c in rows %}<td role="cell" data-label="{{ c.label }} down">{{ c.down }}</td>{% endfor %}</tr>
+    <tr role="row"><th scope="row" role="rowheader" style="text-align:left">Unchanged</th>
+      {% for c in rows %}<td role="cell" data-label="{{ c.label }} unchanged">{{ c.flat }}</td>{% endfor %}</tr>
+    <tr role="row"><th scope="row" role="rowheader" style="text-align:left">Average return</th>
+      {% for c in rows %}<td role="cell" data-label="{{ c.label }} average" class="hm {{ c.cls }}" style="--i:{{ c.heat }}">{{ c.exp }}</td>{% endfor %}</tr>
+    <tr role="row"><th scope="row" role="rowheader" style="text-align:left">Observations</th>
+      {% for c in rows %}<td role="cell" data-label="{{ c.label }} n"{% if c.thin %} title="Thin: few observations, read with care"{% endif %}>{{ c.n }}{% if c.thin %} <span class="badge probation">thin</span>{% endif %}</td>{% endfor %}</tr>
+  </tbody>
+</table>
+{% endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% else %}
+    <div class="answer"><span class="q">Does this stock tend to rise on certain weekdays or in certain months?</span>
+      How often each weekday and each calendar month closed up, and the average return, for the last {{ v.years }} years of data we hold.
+      It describes the past; it is not a signal and not a forecast.</div>
+
+    <div class="panel">
+      <form method="get" action="/seasonality" class="filterbar" aria-label="Choose what to show">
+        <label for="se-ticker">Stock or index</label>
+        <input id="se-ticker" name="ticker" value="{{ v.ticker }}" maxlength="9" size="10" autocomplete="off" spellcheck="false" aria-describedby="se-hint">
+        <label for="se-years">Years</label>
+        <select id="se-years" name="years">{% for o in v.years_options %}<option value="{{ o.y }}"{% if o.on %} selected{% endif %}>{{ o.y }}</option>{% endfor %}</select>
+        <button type="submit" class="menu-btn">Show</button>
+      </form>
+      <p class="note" id="se-hint">A four-letter stock code (for example BBCA) or COMPOSITE for the index.</p>
+    </div>
+
+    {% if not v.has_data %}
+    <div class="panel"><h2>No price history for {{ v.ticker }}</h2>
+      <p class="note">There are no usable closes for this code. Check the spelling, or pick a stock that trades regularly.</p></div>
+    {% else %}
+    {% if v.short %}<div class="answer notice" role="status"><span class="q">Less history than asked</span>
+      You asked for {{ v.years }} years but the database holds about {{ v.covered }} years ({{ v.span[0] }} to {{ v.span[1] }}), so that is what is shown.</div>{% endif %}
+
+    <div class="panel">
+      <h2>{{ v.ticker }} by weekday <span class="note">({{ v.n_days }} sessions, {{ v.span[0] }} to {{ v.span[1] }})</span></h2>
+      {{ grid(v.dow, "Weekday seasonality of " ~ v.ticker, "Weekday") }}
+    </div>
+    <div class="panel">
+      <h2>{{ v.ticker }} by month</h2>
+      <p class="note">Each month has one observation per year, so the counts are small. Cells with fewer than 5 are marked <b>thin</b>.</p>
+      {{ grid(v.month, "Month seasonality of " ~ v.ticker, "Month") }}
+    </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>Average return is the plain mean of close-to-close returns (stock prices adjusted for splits and bonus issues; days around a share-count change are left out).
+     Shading is relative to the largest average in the same table; the number and its sign are always printed.</p>
+  {{ disclaimer() }}
+{% endblock %}

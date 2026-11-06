@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ticker, db_error, disclaimer %}
+{% block title %}Broker stalker — Vektor Gauss{% endblock %}
+{% block subtitle %}Broker stalker{% endblock %}
+
+{% macro board(rows, name, total, shown) %}
+  {% if rows %}
+  <table class="cards" role="table" aria-label="{{ name }}">
+    <thead role="rowgroup">
+      <tr role="row"><th scope="col" role="columnheader" style="text-align:left">Stock</th><th scope="col" role="columnheader">Net</th>
+        <th scope="col" role="columnheader">Bought</th><th scope="col" role="columnheader">Sold</th>
+        <th scope="col" role="columnheader">Avg buy</th><th scope="col" role="columnheader">Avg sell</th></tr>
+    </thead>
+    <tbody role="rowgroup">
+      {% for r in rows %}
+      <tr role="row">
+        <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker) }}</td>
+        <td role="cell" data-label="Net" class="{{ r.cls }}">{{ r.net }}</td>
+        <td role="cell" data-label="Bought">{{ r.buy }}</td><td role="cell" data-label="Sold">{{ r.sell }}</td>
+        <td role="cell" data-label="Avg buy">{{ r.avg_buy }}</td><td role="cell" data-label="Avg sell">{{ r.avg_sell }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if total > shown %}<p class="note">Top {{ shown }} of {{ total }} stocks.</p>{% endif %}
+  {% else %}<p class="note">None in this window.</p>{% endif %}
+{% endmacro %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% else %}
+    <div class="answer"><span class="q">Which stocks is this broker buying and selling?</span>
+      Pick a broker and a window. The page lists the stocks it bought and sold the most, net, with the average price it paid and received.
+      It shows what one house did, not why, and not what happens next.</div>
+
+    <div class="panel">
+      <form method="get" action="/stalker" class="filterbar" aria-label="Choose a broker and a window">
+        <label for="bs-broker">Broker</label>
+        <select id="bs-broker" name="broker">
+          <option value="">Pick a broker</option>
+          {% for b in v.brokers %}<option value="{{ b.code }}"{% if b.on %} selected{% endif %}>{{ b.label }}</option>{% endfor %}
+        </select>
+        <label for="bs-window">Window</label>
+        <select id="bs-window" name="window">{% for w in v.windows %}<option value="{{ w.n }}"{% if w.on %} selected{% endif %}>{{ w.label }}</option>{% endfor %}</select>
+        <label for="bs-foreign"><input id="bs-foreign" type="checkbox" name="foreign" value="1"{% if v.foreign_only %} checked{% endif %}> Foreign brokers only</label>
+        <button type="submit" class="menu-btn">Show</button>
+      </form>
+      <p class="note">"Foreign brokers only" narrows the list of brokers to the foreign houses; it does not split one broker's flow by investor.</p>
+    </div>
+
+    {% if not v.broker %}
+    <div class="panel"><h2>Pick a broker</h2><p class="note">Choose a broker above to see its stocks.</p></div>
+    {% elif not v.days %}
+    <div class="panel"><h2>No broker data</h2><p class="note">The broker table is empty. Run the nightly collection first.</p></div>
+    {% elif v.incomplete %}
+    <div class="panel"><h2>Not available yet: the stored broker tables are incomplete</h2>
+      <p class="note">So far the database keeps only the 20 biggest <b>net buyers</b> of each stock each day. No net seller is in it, and a broker's days outside that top 20 are missing,
+        so a per-broker net buy or sell computed from it would be wrong (too high). This page only uses a stock-day whose table is complete (bought and sold value agree within 1%),
+        and only {{ v.n_complete }} of the {{ v.n_pairs }} stock-days in this window qualify, almost all of them thinly traded stocks, which would misrepresent the broker.
+        It fills in by itself once complete tables are collected.</p></div>
+    {% else %}
+    {% if v.partial %}<div class="answer notice" role="status"><span class="q">Partly covered</span>
+      Only {{ v.n_complete }} of {{ v.n_pairs }} stock-days in this window have a complete broker table; the others are left out.</div>{% endif %}
+    <div class="answer"><span class="q">{{ v.broker }}{% if v.broker_name %} · {{ v.broker_name }}{% endif %}</span>
+      {{ v.first }} to {{ v.last }} ({{ v.days|length }} session{{ 's' if v.days|length != 1 else '' }}): {{ v.n_stocks }} stocks traded, total net {{ v.total_net or 'n/a' }}.
+      {% if v.short %}Only {{ v.days|length }} sessions of broker data exist, fewer than the {{ v.window }} asked for.{% endif %}</div>
+    <div class="grid">
+      <div class="panel"><h2>Net buy</h2>{{ board(v.buys, "Stocks " ~ v.broker ~ " bought, net", v.n_buys, 20) }}</div>
+      <div class="panel"><h2>Net sell</h2>{{ board(v.sells, "Stocks " ~ v.broker ~ " sold, net", v.n_sells, 20) }}</div>
+    </div>
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>Summed from the stored broker table. Coverage was about 250 liquid stocks a day until mid-October 2026 and is nearly the whole market since, so a long window
+     covers fewer small stocks in its early days. Average price is value divided by shares, so it can differ a little from the exchange's own figure.</p>
+  {{ disclaimer() }}
+{% endblock %}

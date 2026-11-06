@@ -26,6 +26,11 @@ def _stats(rets: list[float]) -> tuple[int, float | None, float | None]:
     return n, sum(1 for r in rets if r > 0) / n, sum(rets) / n
 
 
+def _down(rets: list[float]) -> float | None:
+    """Share of observations that closed lower; the rest of `1 - pct_up - pct_down` is unchanged (common on low-priced stocks)."""
+    return sum(1 for r in rets if r < 0) / len(rets) if rets else None
+
+
 def day_of_week(daily: list[tuple[date, float]]) -> list[dict]:
     """daily = [(session_date, close-to-close return), ...]."""
     buckets: dict[int, list[float]] = {i: [] for i in range(5)}
@@ -35,7 +40,7 @@ def day_of_week(daily: list[tuple[date, float]]) -> list[dict]:
     out = []
     for wd in range(5):
         n, pct_up, mean_ret = _stats(buckets[wd])
-        out.append({"label": _DOW[wd], "n": n, "pct_up": pct_up, "mean_ret": mean_ret})
+        out.append({"label": _DOW[wd], "n": n, "pct_up": pct_up, "pct_down": _down(buckets[wd]), "mean_ret": mean_ret})
     return out
 
 
@@ -47,7 +52,7 @@ def month_of_year(monthly: list[tuple[date, float]]) -> list[dict]:
     out = []
     for mo in range(1, 13):
         n, pct_up, mean_ret = _stats(buckets[mo])
-        out.append({"label": _MONTHS[mo - 1], "n": n, "pct_up": pct_up, "mean_ret": mean_ret})
+        out.append({"label": _MONTHS[mo - 1], "n": n, "pct_up": pct_up, "pct_down": _down(buckets[mo]), "mean_ret": mean_ret})
     return out
 
 

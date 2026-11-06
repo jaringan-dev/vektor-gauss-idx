@@ -39,3 +39,14 @@ def test_month_of_year_shape():
     jul = next(r for r in out if r["label"] == "Jul")
     assert jul["n"] == 2
     assert abs(jul["pct_up"] - 0.5) < 1e-9
+
+
+def test_down_and_unchanged_days_are_not_lumped_together():
+    from datetime import date
+
+    from vg import season
+
+    daily = [(date(2026, 11, 2), 0.01), (date(2026, 11, 9), 0.0), (date(2026, 11, 16), -0.01), (date(2026, 11, 23), 0.0)]   # four Mondays
+    mon = season.day_of_week(daily)[0]
+    assert (mon["pct_up"], mon["pct_down"]) == (0.25, 0.25) and mon["n"] == 4        # half the days were unchanged
+    assert season.day_of_week([])[0]["pct_down"] is None
