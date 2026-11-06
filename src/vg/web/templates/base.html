@@ -3,56 +3,72 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap">
   <title>{% block title %}Vektor Gauss — Superadmin{% endblock %}</title>
   <script>try { if (localStorage.getItem("vg-side") === "collapsed") document.documentElement.setAttribute("data-side", "collapsed"); } catch (e) {}</script>
   <script>try { var t = localStorage.getItem("vg-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}</script>
   <style>
     :root {
       color-scheme: light dark;
-      --bg:#f7f7f8; --panel:#fff; --fg:#1a1a1a; --muted:#5b6472; --border:#e5e7eb;
+      --bg:#f4f6fb; --panel:#ffffff; --fg:#0f172a; --muted:#55607a; --border:#dde3f0;
       --ready-bg:#dcfce7; --ready-fg:#166534;
       --fail-bg:#fee2e2; --fail-fg:#991b1b;
-      --prob-bg:#f3f4f6; --prob-fg:#5b6472;
+      --prob-bg:#eef1f8; --prob-fg:#55607a;
       --warn-bg:#fef3c7; --warn-fg:#92400e;
-      --pos:#15803d; --neg:#b91c1c; --side:#fff; --link:#1d4ed8;
+      --pos:#15803d; --neg:#b91c1c; --side:#ffffff; --link:#0b5ed7;
       --wash-bg:#ffedd5; --wash-fg:#9a3412;
-      --accent:#1d56d6; --accent-fg:#fff; --glass:rgba(255,255,255,.78); --glass-edge:rgba(15,23,42,.10);
-      --shadow:0 1px 2px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.06); --r:18px; --r-sm:12px;
-      --halo:radial-gradient(1100px 520px at 12% -8%, rgba(29,86,214,.08), transparent 60%);
+      --accent:#39ff14; --accent-fg:#0a0e27; --accent-text:#0a7a28; --accent-soft:rgba(10,122,40,.10);
+      --glass:rgba(255,255,255,.86); --glass-edge:rgba(15,23,42,.10); --navbg:rgba(255,255,255,.84);
+      --shadow:0 1px 2px rgba(15,23,42,.05), 0 8px 24px rgba(15,23,42,.06); --r:16px; --r-sm:12px;
+      --heat:34%;
+      --grad:linear-gradient(135deg,#0a58ca,#0a7a28);
+      --halo:radial-gradient(900px 480px at 8% -6%, rgba(0,128,255,.07), transparent 60%), radial-gradient(800px 420px at 100% 100%, rgba(57,255,20,.06), transparent 60%);
+      --grid:linear-gradient(rgba(15,23,42,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.035) 1px, transparent 1px);
     }
     /* Theme: follows the system (Auto) unless the reader picked Light or Dark with the button; the choice is kept in localStorage.
-       The dark palette appears twice (system dark, and an explicit pick) — tests/test_web_a11y.py pins that the two copies are identical. */
+       The dark palette (navy + neon green, after uupm.cc/demo/fintech-crypto) appears twice (system dark, and an explicit pick) - tests/test_web_a11y.py
+       pins that the two copies are identical. */
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme="light"]) {
-        --bg:#0e0f12; --panel:#17181c; --fg:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
-        --ready-bg:#14341f; --ready-fg:#4ade80;
-        --fail-bg:#3a1618; --fail-fg:#f87171;
-        --prob-bg:#1f2227; --prob-fg:#9ca3af;
-        --warn-bg:#3b2f10; --warn-fg:#fbbf24;
-        --pos:#4ade80; --neg:#f87171; --side:#12131a; --link:#8ab4f8;
-        --wash-bg:#3a2210; --wash-fg:#fb923c;
-        --accent:#1d56d6; --accent-fg:#fff; --glass:rgba(28,29,35,.72); --glass-edge:rgba(255,255,255,.10);
-        --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.28); --r:18px; --r-sm:12px;
-        --halo:radial-gradient(1100px 520px at 12% -8%, rgba(60,110,240,.16), transparent 60%);
+      --bg:#0a0e27; --panel:#0f1635; --fg:#e2e8f0; --muted:#8b92b3; --border:#1e2650;
+      --ready-bg:#0d2e24; --ready-fg:#39ff14;
+      --fail-bg:#3a1220; --fail-fg:#ff7b7b;
+      --prob-bg:#151d45; --prob-fg:#8b92b3;
+      --warn-bg:#33290f; --warn-fg:#fbbf24;
+      --pos:#39ff14; --neg:#ff5c5c; --side:#0b1030; --link:#4da3ff;
+      --wash-bg:#3a2210; --wash-fg:#fb923c;
+      --accent:#39ff14; --accent-fg:#0a0e27; --accent-text:#39ff14; --accent-soft:rgba(57,255,20,.12);
+      --glass:rgba(15,22,53,.8); --glass-edge:rgba(30,38,80,.7); --navbg:rgba(10,14,39,.8);
+      --shadow:0 4px 6px -1px rgba(0,0,0,.4), 0 2px 4px -2px rgba(0,0,0,.3); --r:16px; --r-sm:12px;
+      --heat:15%;
+      --grad:linear-gradient(135deg,#0080ff,#39ff14);
+      --halo:radial-gradient(900px 480px at 8% -6%, rgba(0,128,255,.14), transparent 60%), radial-gradient(800px 420px at 100% 100%, rgba(57,255,20,.07), transparent 60%);
+      --grid:linear-gradient(rgba(57,255,20,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(57,255,20,.035) 1px, transparent 1px);
       }
     }
     :root[data-theme="light"] { color-scheme: light; }
     :root[data-theme="dark"] {
       color-scheme: dark;
-      --bg:#0e0f12; --panel:#17181c; --fg:#e5e7eb; --muted:#9ca3af; --border:#2a2d34;
-        --ready-bg:#14341f; --ready-fg:#4ade80;
-        --fail-bg:#3a1618; --fail-fg:#f87171;
-        --prob-bg:#1f2227; --prob-fg:#9ca3af;
-        --warn-bg:#3b2f10; --warn-fg:#fbbf24;
-        --pos:#4ade80; --neg:#f87171; --side:#12131a; --link:#8ab4f8;
-        --wash-bg:#3a2210; --wash-fg:#fb923c;
-        --accent:#1d56d6; --accent-fg:#fff; --glass:rgba(28,29,35,.72); --glass-edge:rgba(255,255,255,.10);
-        --shadow:0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.28); --r:18px; --r-sm:12px;
-        --halo:radial-gradient(1100px 520px at 12% -8%, rgba(60,110,240,.16), transparent 60%);
+      --bg:#0a0e27; --panel:#0f1635; --fg:#e2e8f0; --muted:#8b92b3; --border:#1e2650;
+      --ready-bg:#0d2e24; --ready-fg:#39ff14;
+      --fail-bg:#3a1220; --fail-fg:#ff7b7b;
+      --prob-bg:#151d45; --prob-fg:#8b92b3;
+      --warn-bg:#33290f; --warn-fg:#fbbf24;
+      --pos:#39ff14; --neg:#ff5c5c; --side:#0b1030; --link:#4da3ff;
+      --wash-bg:#3a2210; --wash-fg:#fb923c;
+      --accent:#39ff14; --accent-fg:#0a0e27; --accent-text:#39ff14; --accent-soft:rgba(57,255,20,.12);
+      --glass:rgba(15,22,53,.8); --glass-edge:rgba(30,38,80,.7); --navbg:rgba(10,14,39,.8);
+      --shadow:0 4px 6px -1px rgba(0,0,0,.4), 0 2px 4px -2px rgba(0,0,0,.3); --r:16px; --r-sm:12px;
+      --heat:15%;
+      --grad:linear-gradient(135deg,#0080ff,#39ff14);
+      --halo:radial-gradient(900px 480px at 8% -6%, rgba(0,128,255,.14), transparent 60%), radial-gradient(800px 420px at 100% 100%, rgba(57,255,20,.07), transparent 60%);
+      --grid:linear-gradient(rgba(57,255,20,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(57,255,20,.035) 1px, transparent 1px);
     }
     * { box-sizing:border-box; }
-    body { margin:0; background:var(--halo), var(--bg); background-attachment:fixed; color:var(--fg);
-           font:14px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","Segoe UI",Roboto,sans-serif; letter-spacing:-.006em;
+    body { margin:0; background:var(--halo), var(--grid), var(--bg); background-size:auto, auto, 50px 50px, 50px 50px; background-attachment:fixed;
+           color:var(--fg); font:14px/1.55 "DM Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; letter-spacing:0;
            -webkit-font-smoothing:antialiased; }
 
     /* ---- shell (A1): sidebar on wide screens, collapsible menu on narrow ones ---- */
@@ -153,8 +169,8 @@
     .kpi.wash .v { color:var(--wash-fg); }
     tr.is-wash td:first-child { box-shadow:inset 3px 0 0 var(--wash-fg); }
     td.na { color:var(--muted); }
-    td.bpi.heat.pos { background:color-mix(in srgb, var(--pos) calc(var(--i,0) * 34%), transparent); }
-    td.bpi.heat.neg { background:color-mix(in srgb, var(--neg) calc(var(--i,0) * 34%), transparent); }
+    td.bpi.heat.pos { background:color-mix(in srgb, var(--pos) calc(var(--i,0) * var(--heat,34%)), transparent); }
+    td.bpi.heat.neg { background:color-mix(in srgb, var(--neg) calc(var(--i,0) * var(--heat,34%)), transparent); }
     td.aggr { white-space:nowrap; }
     .computed { display:inline-block; padding:0 6px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
             background:var(--warn-bg); color:var(--warn-fg); vertical-align:middle; }
@@ -305,6 +321,55 @@
                 font-size:12px; color:var(--muted); }
     ul.legend .sw { display:inline-block; min-width:22px; text-align:center; padding:1px 6px; border-radius:4px;
                     margin-right:5px; border:1px solid var(--border); }
+
+    /* ---- fintech theme layer (after uupm.cc/demo/fintech-crypto): Space Grotesk headings, gradient page titles, glass cards, neon accent ---- */
+    h1, h2, h3, .brand, .kpi .v, .kpi .k { font-family:"Space Grotesk","DM Sans",-apple-system,"Segoe UI",sans-serif; }
+    .pagehead h1 { display:inline-block; margin:6px 0 18px; font-size:28px; font-weight:700; line-height:1.2; letter-spacing:-.02em;
+                   background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent; -webkit-text-fill-color:transparent; }
+    .panel h2 { font-size:16px; font-weight:600; letter-spacing:-.01em; }
+    body.has-topnav { --topnav-h:64px; }
+    .topnav { background:var(--navbg); border-bottom:1px solid var(--border); gap:24px; padding:0 24px; }
+    .topnav .brand { display:inline-flex; align-items:center; font-size:18px; font-weight:700; letter-spacing:-.01em; }
+    .topnav .brand::before { content:"\2197"; display:inline-grid; place-items:center; width:32px; height:32px; margin-right:10px; border-radius:10px;
+                             background:linear-gradient(135deg,#0080ff,#39ff14); color:#0a0e27; font-size:17px; font-weight:700; }
+    .topnav nav a, .sidebar a, .side-toggle { border-radius:12px; }
+    .topnav nav a { min-height:36px; }
+    .topnav nav a[aria-current="true"] { background:var(--accent-soft); color:var(--accent-text); }
+    .sidebar { background:var(--navbg); border-right:1px solid var(--border); }
+    .sidebar nav a { color:var(--fg); text-decoration:none; }
+    .sidebar nav a:hover { background:var(--accent-soft); }
+    .sidebar nav a[aria-current="page"] { color:var(--accent-text); }
+    .sidebar a[aria-current="page"] { background:var(--accent-soft); color:var(--accent-text); font-weight:600;
+                                      box-shadow:inset 3px 0 0 var(--accent), 0 0 24px rgba(57,255,20,.08); }
+    .topbar { background:var(--navbg); border-bottom:1px solid var(--border); }
+    .strip { background:var(--glass); border-bottom:1px solid var(--border); }
+    .panel, .kpi, .widget, .answer { border-color:var(--glass-edge); }
+    .kpi { transition:border-color .18s ease, transform .18s ease; }
+    .kpi:hover { border-color:rgba(57,255,20,.38); transform:translateY(-1px); }
+    .kpi .k { font-size:12px; font-weight:500; letter-spacing:.02em; }
+    .kpi .v { font-weight:700; }
+    .answer { border-left-color:var(--accent); }
+    thead th { text-transform:uppercase; font-size:11px; letter-spacing:.06em; }
+    tbody tr:hover td { background:rgba(0,128,255,.07); }
+    .menu-btn, .topsearch button, .topsearch input, .filter, nav.nav a { border-radius:12px; border-color:var(--glass-edge); }
+    .menu-btn, .topsearch button, nav.nav a { background:var(--panel); transition:border-color .15s ease, box-shadow .15s ease; }
+    .menu-btn:hover, .topsearch button:hover, nav.nav a:hover { border-color:rgba(57,255,20,.45); }
+    .topsearch button[type="submit"] { background:var(--accent); color:var(--accent-fg); border-color:transparent; font-weight:600; padding:8px 20px; }
+    .topsearch button[type="submit"]:hover { box-shadow:0 0 24px rgba(57,255,20,.35); }
+    .topsearch input, .filter { background:var(--prob-bg); }
+    .topsearch input:focus, .filter:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(57,255,20,.18); }   /* the focus outline itself stays (a11y) */
+    a.fchip, span.fchip, nav.nav a { border-radius:10px; }
+    select, input[type=number], input[type=date] { background:var(--prob-bg); color:var(--fg); border:1px solid var(--glass-edge); border-radius:10px;
+                                                   padding:6px 10px; font:inherit; font-size:13px; }
+    select:focus, input[type=number]:focus, input[type=date]:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(57,255,20,.18); }
+    a.fchip.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+    nav.nav a.active { background:var(--accent-soft); color:var(--accent-text); border-color:var(--accent); }
+    .badge, .strip li { border-radius:8px; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    ::selection { background:rgba(57,255,20,.28); }
+    html { scrollbar-color:var(--border) transparent; }
+    @media (max-width:859px) { .topnav .brand { display:none; } .topnav { padding:0 10px; } }   /* the menu bar below carries the name on narrow screens */
+    @media (forced-colors: active) { .pagehead h1 { -webkit-text-fill-color:currentColor; background:none; color:CanvasText; } }
   </style>
   <noscript><style>.sidebar { display:block !important; } .menu-btn { display:none; }</style></noscript>
 </head>

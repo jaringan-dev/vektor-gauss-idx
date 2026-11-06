@@ -73,7 +73,7 @@ def test_surfaces_are_frosted_with_an_opaque_fallback(client):  # noqa: F811
     css = client.get("/").text
     assert css.count("backdrop-filter:saturate(180%) blur(18px)") >= 4
     assert "@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)))" in css
-    assert "--r:18px" in css and "border-radius:var(--r)" in css
+    assert "--r:16px" in css and "border-radius:var(--r)" in css                         # 16px: the fintech template's card radius
 
 
 # ---- Bandar Power Meter ------------------------------------------------------------------------------------------------------------
