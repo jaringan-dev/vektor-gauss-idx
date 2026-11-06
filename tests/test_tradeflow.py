@@ -346,6 +346,59 @@ def test_a_smoke_test_stops_after_its_time_even_at_the_weekend():
     assert rec.run() == 0 and rec.stats.stopped == "max_seconds" and rec.stats.connections == 1
 
 
+# ---- the exchange calendar --------------------------------------------------------------------------------------------------------
+
+def test_the_holiday_list_is_the_22_announced_weekdays_of_2026():
+    days = tradeflow.NON_TRADING_DAYS
+    assert len(days) == 22 and all(d.year == 2026 and d.weekday() < 5 for d in days)       # a weekend needs no entry
+    assert {date(2026, 12, 24), date(2026, 12, 25), date(2026, 12, 31)} <= days             # Christmas leave, Christmas, the exchange's own day
+    assert {date(2026, 1, 1), date(2026, 3, 19), date(2026, 8, 17), date(2026, 8, 25)} <= days
+    assert 2026 in tradeflow.CALENDAR_YEARS
+
+
+def test_an_exchange_holiday_connects_to_nothing(monkeypatch):
+    monkeypatch.delenv("VG_EXTRA_NON_TRADING_DAYS", raising=False)
+    w = World(day=date(2026, 12, 25))                            # a Friday, but Christmas
+    w.sockets = [Socket(w, msg())]
+    rec = w.recorder()
+    assert rec.run() == 0 and rec.stats.stopped == "exchange holiday" and rec.stats.connections == 0 and len(w.sockets) == 1
+
+
+def test_the_trading_days_around_a_holiday_do_record(monkeypatch):
+    monkeypatch.delenv("VG_EXTRA_NON_TRADING_DAYS", raising=False)
+    for day in (date(2026, 12, 23), date(2026, 12, 28), date(2026, 11, 9)):
+        w = World(day=day)
+        w.sockets = [Socket(w, msg(tn=n(1)), ("tick", 30000))]
+        rec = w.recorder()
+        assert rec.run() == 0 and rec.stats.connections == 1 and rec.stats.stopped == "market_closed", day
+
+
+def test_a_holiday_the_government_adds_later_can_be_put_in_the_environment(monkeypatch):
+    monkeypatch.setenv("VG_EXTRA_NON_TRADING_DAYS", "2026-11-09, not-a-date, ,2026-11-10")
+    assert {date(2026, 11, 9), date(2026, 11, 10)} <= tradeflow.non_trading_days() and tradeflow.NON_TRADING_DAYS <= tradeflow.non_trading_days()
+    w = World(day=date(2026, 11, 9))                             # a Monday
+    w.sockets = [Socket(w, msg())]
+    rec = w.recorder()
+    assert rec.run() == 0 and rec.stats.stopped == "exchange holiday" and rec.stats.connections == 0
+
+
+def test_a_year_without_a_calendar_records_on_weekdays_and_says_so(monkeypatch):
+    monkeypatch.delenv("VG_EXTRA_NON_TRADING_DAYS", raising=False)
+    w = World(day=date(2027, 1, 5))                              # a Tuesday in a year the list does not cover
+    w.sockets = [Socket(w, msg(tn=n(1)), ("tick", 30000))]
+    rec = w.recorder()
+    assert rec.run() == 0 and rec.stats.connections == 1
+    assert "no holiday calendar loaded for 2027" in rec.stats.note and "note: no holiday calendar" in rec.summary()
+
+
+def test_a_smoke_test_runs_even_on_a_holiday(monkeypatch):
+    monkeypatch.delenv("VG_EXTRA_NON_TRADING_DAYS", raising=False)
+    w = World(day=date(2026, 12, 25))
+    w.sockets = [Socket(w, msg(tn=n(1)), ("tick", 100))]
+    rec = w.recorder(max_seconds=60)
+    assert rec.run() == 0 and rec.stats.connections == 1 and rec.stats.stopped == "max_seconds"
+
+
 # ---- helpers and the command ------------------------------------------------------------------------------------------------------
 
 def test_the_socket_address_is_the_feed_address_with_a_secure_scheme():

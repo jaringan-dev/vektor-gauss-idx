@@ -113,6 +113,11 @@ $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-T
 Register-ScheduledTask -TaskName "VektorGauss-TradeRecorder" -Action $a -Trigger $t -Settings $s
 ```
 
+Exchange days: the task fires Monday to Friday and the recorder itself skips the 22 IDX holidays of 2026 (list in `tradeflow.NON_TRADING_DAYS`,
+checked against our `trading_calendar`: 19 closed weekdays so far + 24, 25 and 31 Dec). A holiday the government adds later goes into `.env` as
+`VG_EXTRA_NON_TRADING_DAYS=2026-11-09,...`. **The 2027 calendar is not loaded**: until the list is extended (BEI publishes it around September) the
+recorder runs every weekday of 2027 and simply idles on a holiday; the run summary says so.
+
 Smoke test any time the market is open (writes real rows): `vg record-trades --max-seconds 120`; add `--dry-run` to count without writing.
 What is NOT proven yet: that the feed's buy/sell label is the aggressive side (compare a recorded day with `done-details`), and that
 big single prints (one ENRG print was Rp149B) are regular-board trades rather than crossings.

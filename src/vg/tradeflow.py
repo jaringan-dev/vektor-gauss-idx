@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import json
 import math
+import os
 import re
 import time as _time
 from collections import deque
@@ -42,6 +43,27 @@ from .db import connect
 WIB = ZoneInfo("Asia/Jakarta")
 PATH = "/ws/running-trade"
 PHASE = "trade_record"
+
+# Weekdays the exchange is closed in 2026: the 22 holidays of the IDX calendar (announcement Peng-00171/BEI.POP/09-2025: national
+# holidays and joint leave per the three-minister decree, plus the exchange's own closed day on 31 December). Cross-checked on
+# 2026-11-06 against our own `trading_calendar`: it has no session on exactly the 19 listed days up to 5 Nov, and 19 + the three
+# December days = the 22 the exchange announced. A holiday the government adds later is not here: add it with VG_EXTRA_NON_TRADING_DAYS
+# (comma-separated ISO dates). A year that is not listed here is treated as weekdays only (the recorder then just idles on a holiday).
+NON_TRADING_DAYS = frozenset(date.fromisoformat(d) for d in (
+    "2026-01-01", "2026-01-16", "2026-02-16", "2026-02-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24",
+    "2026-04-03", "2026-05-01", "2026-05-14", "2026-05-15", "2026-05-27", "2026-05-28", "2026-06-01", "2026-06-16", "2026-08-17",
+    "2026-08-25", "2026-12-24", "2026-12-25", "2026-12-31"))
+CALENDAR_YEARS = frozenset({2026})
+
+
+def non_trading_days() -> frozenset[date]:
+    """The listed holidays plus VG_EXTRA_NON_TRADING_DAYS; an entry that is not an ISO date is ignored."""
+    extra = set()
+    for part in os.environ.get("VG_EXTRA_NON_TRADING_DAYS", "").split(","):
+        with contextlib.suppress(ValueError):
+            if part.strip():
+                extra.add(date.fromisoformat(part.strip()))
+    return NON_TRADING_DAYS | extra
 
 OPEN_AT = time(8, 50)             # the recorder may start this early and waits for the market
 CLOSE_AT = time(16, 5)            # pre-closing runs to 16:00; nothing is reported after that
@@ -235,6 +257,7 @@ class Stats:
     write_errors: int = 0
     last_error: str = ""
     stopped: str = ""           # why the run ended
+    note: str = ""              # something worth saying about the run that is not an error (e.g. no holiday calendar for this year)
 
 
 @dataclass
@@ -308,9 +331,16 @@ class Recorder:
     # -- the loop --
     def run(self) -> int:
         """0 = recorded until the end of the day (or `max_seconds`); 2 = the feed refused us; 1 = gave up on the connection."""
-        if self.clock().weekday() >= 5 and self.max_seconds is None:
-            self.stats.stopped = "weekend"
-            return 0
+        today = self.clock().date()
+        if self.max_seconds is None:                 # a smoke test (max_seconds) may run on any day
+            if today.weekday() >= 5:
+                self.stats.stopped = "weekend"
+                return 0
+            if today in non_trading_days():
+                self.stats.stopped = "exchange holiday"
+                return 0
+            if today.year not in CALENDAR_YEARS:
+                self.stats.note = f"no holiday calendar loaded for {today.year}: weekday rule only"
         self._wait_for_open()
         attempt, takeovers = 0, 0
         try:
@@ -368,7 +398,8 @@ class Recorder:
         out = (f"trades {c.accepted:,} (duplicates {c.duplicates:,}, rejected {c.rejected:,}); connections {s.connections}; "
                f"rows written {s.rows_written:,} in {s.flushes} flushes; stopped: {s.stopped or 'end of run'}")
         return out + (f"; write errors {s.write_errors} (last: {s.last_error})" if s.write_errors else "") + \
-            (f"; last connection error: {s.last_error}" if s.last_error and not s.write_errors else "")
+            (f"; last connection error: {s.last_error}" if s.last_error and not s.write_errors else "") + \
+            (f"; note: {s.note}" if s.note else "")
 
 
 def record(*, max_seconds: float | None = None, flush_seconds: float = FLUSH_SECONDS, dry_run: bool = False,
