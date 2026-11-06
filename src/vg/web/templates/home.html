@@ -3,6 +3,52 @@
 {% block title %}Screener — Vektor Gauss{% endblock %}
 {% block subtitle %}Screener{% endblock %}
 
+{% block head_extra %}
+<style>
+  /* Compact screener. One row of KPI tiles, a tight toolbar, and a table that scrolls inside its own box under a sticky header, so the page itself
+     does not need scrolling. Colours, blur and radii come from the shared tokens (glass look unchanged); no rule here removes a focus outline. */
+  .grid.kpis[data-density="compact"] { grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-bottom:10px; }
+  [data-density="compact"] .kpi { padding:6px 10px; display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:baseline; column-gap:8px; }
+  [data-density="compact"] .kpi:hover { transform:none; }
+  [data-density="compact"] .kpi .k { font-size:11px; letter-spacing:.01em; line-height:1.25; grid-column:1; }
+  [data-density="compact"] .kpi .v { font-size:18px; line-height:1.2; grid-column:2; grid-row:1; text-align:right; }
+  [data-density="compact"] .kpi .s { font-size:11px; line-height:1.3; margin-top:1px; grid-column:1 / -1;
+                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }          /* one line; the full text is in the tooltip */
+  [data-density="compact"] .kpi .badge { padding:0 6px; font-size:10px; }
+  @media (max-width:760px) {
+    .grid.kpis[data-density="compact"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    [data-density="compact"] .kpi { display:block; }                                  /* two tiles per row: label above value, as before */
+    [data-density="compact"] .kpi .v { text-align:left; }
+  }
+
+  .pagehead h1 { font-size:17px; margin:0 0 8px; }
+  .home-panel { padding:10px 12px; margin-bottom:12px; }
+  .home-panel h2 { font-size:14px; margin:0 0 6px; }
+  .home-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin:0 0 6px; }
+  .home-toolbar .filterbar { margin:0; flex:0 1 330px; max-width:none; gap:6px; }
+  .home-toolbar .filter { padding:5px 10px; font-size:13px; }
+  .home-toolbar .menu-btn { padding:5px 10px; font-size:13px; }
+  .home-toolbar p.chips { margin:0; gap:4px; flex:1 1 auto; }
+  .home-toolbar a.fchip { padding:2px 9px; font-size:12px; }
+  .home-panel > .note { margin:0 0 6px; font-size:11px; line-height:1.35; }
+  .home-panel .wide-note { margin-top:4px; font-size:11px; }
+  .home-panel .pager { margin:6px 0 0; }
+
+  .table-scroll { overflow-x:auto; }
+  @media (min-width:641px) {
+    /* 65% of the window, but never so tall that the header, tiles and toolbar above push the table's end off the screen */
+    .table-scroll { max-height:max(320px, min(65vh, calc(100vh - 360px))); overflow:auto; }
+    #screener th, #screener td { padding:3px 8px; font-size:13px; white-space:nowrap; }
+    #screener .badge, #screener .chip { padding:0 6px; line-height:20px; font-size:11px; margin-top:0; margin-bottom:0; }   /* the 24px tap-target height stays */
+    #screener td.wrap, #screener th.wrap { white-space:nowrap; min-width:0; }
+    #screener thead th { position:sticky; top:0; z-index:2; font-size:10.5px;
+                         background:color-mix(in srgb, var(--panel) 86%, transparent);
+                         -webkit-backdrop-filter:saturate(180%) blur(10px); backdrop-filter:saturate(180%) blur(10px);
+                         box-shadow:inset 0 -1px 0 var(--border); border-bottom:0; }
+  }
+</style>
+{% endblock %}
+
 {% macro sh(key, label, term_key=none, left=false) -%}
 {%- set s = sorts[key] if sorts else none -%}
 <th scope="col" role="columnheader"{% if left %} style="text-align:left"{% endif %}{% if s and s.active %} aria-sort="{{ 'descending' if p.dir == 'desc' else 'ascending' }}"{% endif %}>
@@ -20,34 +66,35 @@
       <p class="note">There are no rows in <code>signal_log</code>. Run <code>vg compute</code> first.</p>
     </div>
   {% else %}
-    <section class="grid kpis" aria-label="Session summary">
+    <section class="grid kpis" data-density="compact" aria-label="Session summary">
       <div class="kpi">
         <div class="k">Total accumulation</div>
         <div class="v"><a class="kpi-link" href="?view=acc">{{ v.cards.acc.n }}</a></div>
-        <div class="s">stocks with an accumulation pattern, of {{ v.cards.acc.of }} listed</div>
+        <div class="s" title="stocks with an accumulation pattern, of {{ v.cards.acc.of }} listed">stocks with an accumulation pattern, of {{ v.cards.acc.of }} listed</div>
       </div>
       <div class="kpi wash">
         <div class="k">Wash trading alert</div>
         <div class="v">{{ v.cards.wash.n }}</div>
-        <div class="s">concentrated buying, but the same houses also sell</div>
+        <div class="s" title="concentrated buying, but the same houses also sell">concentrated buying, but the same houses also sell</div>
       </div>
       <div class="kpi">
         <div class="k">Average BPI, watchlist</div>
         <div class="v {{ v.cards.avg.c }}">{{ v.cards.avg.t }}</div>
-        <div class="s">{{ v.cards.avg.sub }}</div>
+        <div class="s" title="{{ v.cards.avg.sub }}">{{ v.cards.avg.sub }}</div>
       </div>
       {% set eod = v.cards.eod %}
       <div class="kpi eod-{{ eod.state }}">
         <div class="k">Last scored session</div>
         <div class="v {{ eod.c }}">{{ eod.t }}</div>
-        <div class="s"><span class="badge {{ 'ready' if eod.state == 'scored' else ('warn-pill' if eod.state in ('behind', 'computed') else 'probation') }}">{{ eod.word }}</span> {{ eod.sub }}</div>
+        <div class="s" title="{{ eod.sub }}"><span class="badge {{ 'ready' if eod.state == 'scored' else ('warn-pill' if eod.state in ('behind', 'computed') else 'probation') }}">{{ eod.word }}</span> {{ eod.sub }}</div>
       </div>
     </section>
 
     {% if v.notice %}<div class="answer notice" role="status"><span class="q">Scores for this session</span>{{ v.notice }}</div>{% endif %}
 
-    <div class="panel">
+    <div class="panel home-panel">
       <h2>Stocks — session {{ session_date }}</h2>
+      <div class="home-toolbar">
       <form method="get" action="/" class="filterbar" role="search">
         <label class="sr-only" for="q">Search the screener</label>
         <input id="q" class="filter" name="q" type="search" autocomplete="off" value="{{ q_text }}" placeholder="Search a stock or pattern… (e.g. BBRI, accumulation)">
@@ -61,11 +108,13 @@
         {% for c in chips %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}" title="{{ c.title }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
         {% if filtered %}<a class="fchip clear" href="{{ clear }}">Clear filters</a>{% endif %}
       </p>
+      </div>
       <p class="note">
         {% if pg.total %}Showing {{ pg.start + 1 }}–{{ pg.end }} of {{ pg.total }}{% if filtered %} (filtered from {{ v.n_rows }}){% endif %}.{% else %}No stock matches these filters.{% endif %}
         <span aria-hidden="true">★</span> = on your watchlist · <span aria-hidden="true">📌</span> = currently held.
         Default order: {{ term('bpi', 'BPI') }}, highest first; stocks without a score come last.
       </p>
+      <div class="table-scroll" role="region" aria-label="Stock screener table, scrolls inside this box" tabindex="0">
       <table id="screener" class="cards" role="table" aria-label="Stock screener">
         <thead role="rowgroup">
           <tr role="row">
@@ -99,6 +148,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
       {% if pg and pg.pages > 1 %}
       <nav class="pager" aria-label="Pages">
         {% if pg_prev %}<a class="fchip" href="{{ pg_prev }}" rel="prev">← Previous</a>{% else %}<span class="fchip off">← Previous</span>{% endif %}

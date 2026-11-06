@@ -384,6 +384,7 @@
     @media (forced-colors: active) { .pagehead h1 { -webkit-text-fill-color:currentColor; background:none; color:CanvasText; } }
   </style>
   <noscript><style>.sidebar { display:block !important; } .menu-btn { display:none; }</style></noscript>
+  {% block head_extra %}{% endblock %}
 </head>
 <body{% if top_nav %} class="has-topnav"{% endif %}>
   <a class="skip" href="#main">Skip to content</a>
