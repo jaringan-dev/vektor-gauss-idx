@@ -116,8 +116,8 @@ def _live_raw(stored=0, live=2, last=date(2026, 9, 3)):
 def test_the_card_and_notice_say_the_scores_are_live_not_missing_and_not_stored():
     v = home.build_view(_live_raw())
     card = v["cards"]["eod"]
-    assert (card["state"], card["word"], card["t"]) == ("live", "Live", "2026-11-05") and "last stored: 2026-09-03" in card["sub"]
-    assert "computed live" in v["notice"] and "nothing is written" in v["notice"] and "wash flag only appears once the engine has run" in v["notice"]
+    assert (card["state"], card["word"], card["t"]) == ("computed", "Computed", "2026-11-05") and "last stored: 2026-09-03" in card["sub"]
+    assert "computed on the fly" in v["notice"] and "nothing is written" in v["notice"] and "wash flag only appears once the engine has run" in v["notice"]
     assert next(r for r in v["rows"] if r["ticker"] == "AAAA")["bpi_live"] is True
     assert next(r for r in v["rows"] if r["ticker"] == "CCCC")["bpi_live"] is False and next(r for r in v["rows"] if r["ticker"] == "CCCC")["bpi"]["t"] == "N/A"
 
@@ -136,11 +136,11 @@ def test_the_screener_marks_live_numbers_and_leaves_stored_ones_unmarked(client,
     monkeypatch.setattr(home, "load", lambda sd: _live_raw())
     t = client.get("/").text
     body = re.search(r"<tbody.*?</tbody>", t, re.DOTALL).group(0)
-    assert body.count('<span class="live"') == 2 and "+33.0 pts" in body and "-10.0 pts" in body
-    assert "computed live from today" in t and ">Live<" in t
+    assert body.count('<span class="computed"') == 2 and "+33.0 pts" in body and "-10.0 pts" in body
+    assert "computed on the fly from today" in t and ">Computed<" in t
     monkeypatch.setattr(home, "load", lambda sd: _raw())
     webapp._HOME_CACHE.clear()                                                            # the page keeps a built view for 5 minutes
-    assert '<span class="live"' not in re.search(r"<tbody.*?</tbody>", client.get("/").text, re.DOTALL).group(0)
+    assert '<span class="computed"' not in re.search(r"<tbody.*?</tbody>", client.get("/").text, re.DOTALL).group(0)
 
 
 def test_loading_the_home_screen_only_reads(monkeypatch):
@@ -207,6 +207,6 @@ def test_the_stock_page_shows_the_live_marker_in_the_note_and_the_history(client
     raw["scoring_live"] = {raw["scoring"][0][0]}
     monkeypatch.setattr(stockmod, "load", lambda t: raw)
     t = client.get("/stock/BBCA").text
-    assert t.count('<span class="live"') == 2 and "the same numbers the engine would store; nothing is written" in t
+    assert t.count('<span class="computed"') == 2 and "the same numbers the engine would store; nothing is written" in t
     raw["scoring_live"] = set()
-    assert '<span class="live"' not in client.get("/stock/BBCA").text
+    assert '<span class="computed"' not in client.get("/stock/BBCA").text

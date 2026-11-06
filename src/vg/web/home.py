@@ -83,7 +83,7 @@ def load(session_date: date) -> dict:
                 cur.execute("SELECT max(session_date) FROM signal_components WHERE bpi3 IS NOT NULL")
                 last_scored = cur.fetchone()[0]
             # Sessions the engine has not scored (the forward-test window) get the same numbers computed on the fly from the stored
-            # broker ladders. Read-only; marked live on the page. See live_scores.py for why they are not stored.
+            # broker ladders. Read-only; marked computed on the page. See live_scores.py for why they are not stored.
             live_n = live_scores.fill_rows(rows, live_scores.load_ladders(cur, session_date))
     return {"session_date": session_date, "rows": rows, "columns_present": "bpi3" in have, "last_scored": last_scored,
             "stored_n": stored_n, "live_n": live_n}
@@ -140,8 +140,8 @@ def eod_card(raw: dict, scored_today: bool) -> dict:
         return {"state": "none", "t": NA, "word": "Not set up", "c": "", "sub": f"EOD session {sd}; the scoring columns are not in the database yet."}
     if scored_today and raw.get("live_n", 0) and not raw.get("stored_n", 0):
         last = raw.get("last_scored")
-        return {"state": "live", "t": sd.isoformat(), "word": "Live", "c": "warnfg",
-                "sub": f"EOD session {sd}: scores computed live, not stored yet" + (f" (last stored: {last})." if last else ".")}
+        return {"state": "computed", "t": sd.isoformat(), "word": "Computed", "c": "warnfg",
+                "sub": f"EOD session {sd}: scores computed on the fly, not stored yet" + (f" (last stored: {last})." if last else ".")}
     if scored_today:
         return {"state": "scored", "t": sd.isoformat(), "word": "Scored", "c": "pos", "sub": f"EOD session {sd}: broker scores are in."}
     last = raw.get("last_scored")
@@ -170,8 +170,8 @@ def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
     if not raw.get("columns_present", True):
         notice = "The scoring columns are not in the database yet (they are created by vg init-db), so BPI and Aggressor Ratio show N/A."
     elif live_n and not stored_n:
-        notice = (f"The engine has not stored scores for {raw['session_date']} yet, so BPI and the shared-houses count are computed live from today's "
-                  "broker table (marked live). They are the same numbers the engine would store; nothing is written. The wash flag only appears once the engine has run.")
+        notice = (f"The engine has not stored scores for {raw['session_date']} yet, so BPI and the shared-houses count are computed on the fly from today's "
+                  "broker table (marked computed). They are the same numbers the engine would store; nothing is written. The wash flag only appears once the engine has run.")
     elif not scored:
         last = raw.get("last_scored")
         notice = (f"BPI has not been computed for {raw['session_date']}; the newest scored session is {last}. "

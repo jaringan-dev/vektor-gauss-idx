@@ -40,7 +40,7 @@
       <div class="kpi eod-{{ eod.state }}">
         <div class="k">Last scored session</div>
         <div class="v {{ eod.c }}">{{ eod.t }}</div>
-        <div class="s"><span class="badge {{ 'ready' if eod.state == 'scored' else ('warn-pill' if eod.state in ('behind', 'live') else 'probation') }}">{{ eod.word }}</span> {{ eod.sub }}</div>
+        <div class="s"><span class="badge {{ 'ready' if eod.state == 'scored' else ('warn-pill' if eod.state in ('behind', 'computed') else 'probation') }}">{{ eod.word }}</span> {{ eod.sub }}</div>
       </div>
     </section>
 
@@ -84,7 +84,7 @@
             <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
             <td role="cell" data-label="Price">{{ r.price }}</td>
             <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-            <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}{{ ' heat' if r.bpi.c else '' }}"{% if r.bpi.c %} style="--i:{{ r.bpi_heat }}"{% endif %}>{{ r.bpi.t }}{% if r.bpi_live %} <span class="live" title="Computed on the fly from the broker table; the engine has not stored it yet">live</span>{% endif %}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
+            <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}{{ ' heat' if r.bpi.c else '' }}"{% if r.bpi.c %} style="--i:{{ r.bpi_heat }}"{% endif %}>{{ r.bpi.t }}{% if r.bpi_live %} <span class="computed" title="Computed from the stored broker table when this page is opened; the engine has not stored it yet">computed</span>{% endif %}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
             <td role="cell" data-label="Same houses" class="{{ 'warnfg' if r.overlap_raw and r.overlap_raw >= 2 else '' }}">{{ r.overlap }}</td>
             <td role="cell" data-label="Aggressor ratio" class="aggr{{ ' na' if not r.haka else '' }}"{% if r.aggr_note %} title="{{ r.aggr_note }}; HAKA/HAKI = {{ r.aggr }}"{% endif %}>
               {%- if r.haka %}<span class="split" role="img" aria-label="HAKA {{ r.haka.haka }} percent, HAKI {{ r.haka.haki }} percent"><i class="haka" style="width:{{ r.haka.haka }}%"></i><i class="haki"></i></span>
