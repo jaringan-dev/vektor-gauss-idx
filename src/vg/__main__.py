@@ -59,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     go = co.add_mutually_exclusive_group(required=True)
     go.add_argument("--month", metavar="YYYY-MM", help="one month-end snapshot")
     go.add_argument("--latest", action="store_true", help="this month + last month")
+    go.add_argument("--pending", action="store_true",
+                    help="the daily check: try last month's file only while it is not stored yet (no download once it is)")
     go.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive YYYY-MM range")
 
     ci = sub.add_parser("collect-index", help="IDX Index Summary -> index_bars (COMPOSITE = IHSG)")
@@ -294,7 +296,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "collect-ownership":
-        if args.latest:
+        if args.pending:
+            for o in collect.collect_ownership_pending():
+                _print(o)
+        elif args.latest:
             for o in collect.collect_ownership_latest():
                 _print(o)
         elif args.month:

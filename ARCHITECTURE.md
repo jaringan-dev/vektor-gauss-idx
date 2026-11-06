@@ -100,6 +100,7 @@ flowchart LR
 | Pekerjaan | Kapan | Perintah / skrip | Catatan |
 |---|---|---|---|
 | EOD | 19:15 WIB, hari kerja | `scripts/eod.sh` | Task `VektorGauss-EOD`; kunci `flock` mencegah tumpang tindih |
+| Kepemilikan KSEI | tiap hari, sampai file bulan lalu masuk | `vg collect-ownership --pending` (di dalam EOD) | tidak mengunduh apa pun setelah file bulan lalu tersimpan |
 | Backfill broker dalam (K7) | 00:10 tiap malam | `scripts/deep_backfill.sh` → `vg broker-deep` | Task `VektorGauss-DeepBackfill`; terbatas budget panggilan |
 | Recorder trade | 08:55, Sen-Jum | `scripts/record_trades.sh` → `vg record-trades` | Task `VektorGauss-TradeRecorder`; melewati hari libur bursa |
 | Status pagi/malam | harian | `scripts/status.sh` → `vg status` | Bisa memberi tahu bila EOD tidak jalan |
@@ -117,7 +118,7 @@ Windows Task Scheduler. `ci.yml` menjalankan tes dan lint.
 | IDX Index Summary | `sources/idx.py` | `collect-index` | `index_bars` |
 | IDX pengumuman (halts, filing) | `sources/trading_halt.py`, `sources/disclosure.py` | `collect-halts`, `collect-disclosure` | `trading_halts`, `disclosure_filings` |
 | PDF formulir KSEI | `sources/disclosure_pdf.py` | `parse-disclosure` | `disclosure_holdings` |
-| KSEI kepemilikan bulanan | `sources/ksei.py` | `collect-ownership`, `ownership` | `ownership_monthly` |
+| KSEI kepemilikan bulanan | `sources/ksei.py` | `collect-ownership` (`--pending` tiap hari), `ownership` | `ownership_monthly` |
 | KSEI jadwal aksi korporasi | `sources/ksei.py` | `collect-corpactions`, `detect-ca` | `corp_actions` |
 | Feed: riwayat harga (cadangan) | `sources/vektorgauss.py` | `collect-price-history` | `price_bars` (tidak menimpa IDX) |
 | Feed: broker summary (top-20 net beli) | `sources/vektorgauss.py`, `collect.py` | `collect-broker-summary`, `broker-deep` | `broker_flows`, `broker_levels` |

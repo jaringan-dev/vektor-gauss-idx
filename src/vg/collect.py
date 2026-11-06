@@ -315,6 +315,28 @@ def collect_ownership_range(start_month: date, end_month: date) -> list[CollectO
     return out
 
 
+def ownership_pending(today: date | None = None) -> tuple[bool, date | None]:
+    """(is last calendar month's KSEI file still missing, the newest month-end we hold). KSEI publishes a month's file a few days after the
+    month ends, on a day we cannot predict, so the EOD asks every day until it is in: pending means the newest stored month-end falls in
+    an earlier month than the one that just ended."""
+    today = today or date.today()  # noqa: DTZ011 - local date, as elsewhere
+    last = today.replace(day=1) - timedelta(days=1)                      # a day in the month that just ended
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT max(month_end) FROM ownership_monthly")
+        newest = cur.fetchone()[0]
+    return (newest is None or (newest.year, newest.month) < (last.year, last.month)), newest
+
+
+def collect_ownership_pending(today: date | None = None) -> list[CollectOutcome]:
+    """The daily KSEI check: nothing at all (no download) while last month's file is already stored, otherwise one try for it."""
+    today = today or date.today()  # noqa: DTZ011 - local date, as elsewhere
+    missing, newest = ownership_pending(today)
+    last = today.replace(day=1) - timedelta(days=1)
+    if not missing:
+        return [CollectOutcome(newest, "ok", 0, f"already have {newest:%Y-%m-%d}: last month's file is in, nothing to fetch")]
+    return [collect_ownership_month(last)]
+
+
 def collect_ownership_latest() -> list[CollectOutcome]:
     """This month + last month (this month's file may not be published yet)."""
     today = date.today()

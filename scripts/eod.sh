@@ -73,9 +73,11 @@ vg collect-broker-inventory --universe || true
 vg backfill-outcomes
 vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 
+# KSEI's monthly ownership file appears a few days after month-end, on a day we cannot predict. Ask every day until last month's
+# file is stored; once it is, this is a no-op (no download). Best-effort and idempotent.
+vg collect-ownership --pending || true
 if [ "$(date +%-d)" -le 5 ]; then
-  echo "-- monthly: ownership + corp actions --"
-  vg collect-ownership --latest
+  echo "-- monthly: corp actions --"
   vg collect-corpactions --year "$(date +%Y)"
   vg detect-ca
 fi
