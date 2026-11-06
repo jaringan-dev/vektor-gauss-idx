@@ -12,6 +12,7 @@
         {{ th('hit', 'hit rate') }}{{ th('uhit', 'market hit rate') }}
         {{ th('n_liquid', 'n liquid') }}{{ th('edge_h5_liquid', 'edge 5d (liquid)') }}
         <th scope="col" title="The same signals measured the old way (entry at the signal-day close, split-only adjustment), for comparison. It does not count toward the verdict.">edge 5d<br><span class="note">old method</span></th>
+        <th scope="col" title="Edge 5d leaving out signals whose input was known to be broken at the time (KSEI block deposit, KSEI month not yet published, corporate action changing the share count, copied broker table, fallback price bar). For comparison; it does not count toward the verdict.">edge 5d<br><span class="note">excl. data errors</span></th>
         {% if show_status %}{{ th('edge_after_cost', 'edge after costs') }}<th scope="col">verdict</th>{% endif %}
       </tr>
     </thead>
@@ -30,6 +31,7 @@
         <td>{{ r.n_liquid }}</td>
         <td class="{{ r.edge_h5_liquid.c }}">{{ r.edge_h5_liquid.t }}</td>
         <td class="note">{{ r.edge_h5_v1.t if r.edge_h5_v1 else '—' }}</td>
+        <td class="note"{% if r.n_flagged %} title="{{ r.n_flagged }} of {{ r.n }} signals left out"{% endif %}>{{ r.edge_h5_clean.t if r.edge_h5_clean else '—' }}{% if r.n_flagged %} <span class="badge warn">{{ r.n_flagged }}</span>{% endif %}</td>
         {% if show_status %}
         <td class="{{ r.edge_after_cost.c }}">{{ r.edge_after_cost.t }}</td>
         <td>{{ verdict(r.status.code, r.status.label) }}</td>

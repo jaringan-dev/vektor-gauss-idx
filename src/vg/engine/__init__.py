@@ -1322,10 +1322,15 @@ def eval_tags(since: date | None = None) -> list[dict]:
                        FILTER (WHERE p.value > %(liq)s)            AS edge_h5_liquid,
                    (avg((s.ret2_h5 > 0)::int)
                        FILTER (WHERE p.value > %(liq)s))::float    AS hit_rate_liquid,
-                   avg(s.ret_h5 - m.ret_h5_all)                    AS edge_h5_v1
+                   avg(s.ret_h5 - m.ret_h5_all)                    AS edge_h5_v1,
+                   -- signal_flags (flags.py): rows whose input was known broken at the time; shown, never silently dropped
+                   count(*) FILTER (WHERE f.flags IS NOT NULL)     AS n_flagged,
+                   avg(s.ret2_h5 - m2.ret2_h5_all)
+                       FILTER (WHERE f.flags IS NULL)              AS edge_h5_clean
             FROM {EVAL_SOURCE} s
             JOIN market_breadth2 m2 USING (session_date)
             LEFT JOIN market_breadth m USING (session_date)
+            LEFT JOIN signal_flags f USING (session_date, ticker, tag)
             JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
             WHERE s.ret2_h5 IS NOT NULL{since_clause}
             GROUP BY s.tag

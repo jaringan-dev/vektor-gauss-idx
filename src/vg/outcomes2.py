@@ -162,18 +162,26 @@ def backfill(*, full: bool = False) -> dict:
             """,
             params,
         )
-        # Equal-weight benchmark, same formula: every stock that traded on the signal day. Rebuilt whole (cheap, and it keeps
-        # the benchmark consistent with the factors as they stand today).
-        cur.execute("TRUNCATE market_breadth2")
+        # Every stock-day that traded, same formula: the universe the benchmark AND research.py ("Is the edge real?") use.
+        # Rebuilt whole (cheap, and it keeps everything consistent with the factors as they stand today).
+        cur.execute("TRUNCATE ret2_daily")
         cur.execute(
             f"""
-            WITH r AS ({_RETURNS} AND t0.volume > 0 AND t0.close > 0)
+            INSERT INTO ret2_daily (session_date, ticker, value, r1, r3, r5, r10, rc5)
+            SELECT session_date, ticker, value0, r1, r3, r5, r10, rc5
+            FROM ({_RETURNS} AND t0.volume > 0 AND t0.close > 0) r
+            """
+        )
+        # Equal-weight benchmark from those rows.
+        cur.execute("TRUNCATE market_breadth2")
+        cur.execute(
+            """
             INSERT INTO market_breadth2 (session_date, n_all, ret2_h1_all, ret2_h3_all, ret2_h5_all, ret2_h10_all, hit2_h5_all,
                                          ret2c_h5_all, n_liquid, ret2_h5_liquid, hit2_h5_liquid)
             SELECT session_date, count(r5), avg(r1), avg(r3), avg(r5), avg(r10), avg((r5 > 0)::int)::float8, avg(rc5),
-                   count(r5) FILTER (WHERE value0 > %(liq)s), avg(r5) FILTER (WHERE value0 > %(liq)s),
-                   (avg((r5 > 0)::int) FILTER (WHERE value0 > %(liq)s))::float8
-            FROM r GROUP BY session_date
+                   count(r5) FILTER (WHERE value > %(liq)s), avg(r5) FILTER (WHERE value > %(liq)s),
+                   (avg((r5 > 0)::int) FILTER (WHERE value > %(liq)s))::float8
+            FROM ret2_daily GROUP BY session_date
             """,
             params,
         )

@@ -171,6 +171,8 @@ def build_parser() -> argparse.ArgumentParser:
     b2 = sub.add_parser("backfill-outcomes2",
                         help="outcome v2: VWAP(t+1) entry, IDX-reference-price + dividend adjusted returns -> signal_log.ret2_*, market_breadth2")
     b2.add_argument("--all", action="store_true", help="recompute every resolved row (default: only rows not done yet)")
+    sub.add_parser("flag-signals", help="rebuild signal_flags: signals whose input was known broken at the time (KSEI scripless jump, "
+                                        "unpublished KSEI month, corporate-action window, broker-table copy, fallback price bar)")
     ec = sub.add_parser("eval-compare", help="per tag, v1 vs v2 edge at 5 sessions (same signals in both columns)")
     ec.add_argument("--since", type=date.fromisoformat, default=None, help="only signals on/after this date (e.g. VG_FORWARD_SINCE)")
     bw = sub.add_parser(
@@ -610,6 +612,13 @@ def main(argv: list[str] | None = None) -> int:
         r = outcomes2.backfill(full=args.all)
         print(f"ret2 rows written: {r['updated']}  benchmark days: {r['breadth_days']}  "
               f"resolved: {r['done']} (with an entry: {r['with_entry']})")
+        return 0
+
+    if args.cmd == "flag-signals":
+        from . import flags as _flags
+
+        r = _flags.rebuild()
+        print(f"flagged signals: {r['flagged_rows']}  {r['by_flag']}")
         return 0
 
     if args.cmd == "eval-compare":

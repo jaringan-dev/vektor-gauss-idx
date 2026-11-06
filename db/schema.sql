@@ -416,6 +416,20 @@ CREATE TABLE IF NOT EXISTS market_breadth2 (
     computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Outcome v2 for EVERY stock-day that traded (not only signalled ones), same formula as signal_log.ret2_*. Rebuilt whole by
+-- `vg backfill-outcomes2`; market_breadth2 is its daily average and research.py's size x liquidity buckets read it.
+CREATE TABLE IF NOT EXISTS ret2_daily (
+    session_date    DATE NOT NULL,
+    ticker          TEXT NOT NULL,
+    value           NUMERIC,
+    r1              NUMERIC,
+    r3              NUMERIC,
+    r5              NUMERIC,
+    r10             NUMERIC,
+    rc5             NUMERIC,
+    PRIMARY KEY (session_date, ticker)
+);
+
 -- Every tag as FIRST computed (audit 2026-11-07, B13). `compute` re-runs the last ~5 days every night and rewrites the
 -- unresolved signal_log rows with data that arrived later (e.g. a KSEI month published days after the session), so
 -- signal_log cannot tell what was known at the time. This table only ever gains rows (INSERT ... ON CONFLICT DO NOTHING,
@@ -457,6 +471,16 @@ CREATE TABLE IF NOT EXISTS free_float_monthly (
     pdf_url                 TEXT,
     fetched_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (ticker, month_end)
+);
+
+-- Data-quality flags on signals whose INPUT was known to be broken at the time (src/vg/flags.py, `vg flag-signals`; rebuilt
+-- whole). signal_log is never changed: evaluations show the edge with and without the flagged rows.
+CREATE TABLE IF NOT EXISTS signal_flags (
+    session_date    DATE NOT NULL,
+    ticker          TEXT NOT NULL,
+    tag             TEXT NOT NULL,
+    flags           TEXT[] NOT NULL,
+    PRIMARY KEY (session_date, ticker, tag)
 );
 
 -- ---------------------------------------------------------------------------

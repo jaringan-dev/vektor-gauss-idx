@@ -209,6 +209,8 @@ def _view_rows(since) -> list[dict]:
                 "edge_h10": _cell(r.get("edge_h10")),
                 "edge_h5_liquid": _cell(r.get("edge_h5_liquid")),
                 "edge_h5_v1": _cell(r.get("edge_h5_v1")),
+                "edge_h5_clean": _cell(r.get("edge_h5_clean")),
+                "n_flagged": r.get("n_flagged") or 0,
                 "hit": _hit(r.get("hit_rate")),
                 "univ_hit": _hit(r.get("univ_hit_rate")),
                 "status": st,

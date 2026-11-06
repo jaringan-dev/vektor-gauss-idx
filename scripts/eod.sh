@@ -78,8 +78,10 @@ vg collect-broker-inventory --universe || true
 vg compute-adj || true
 vg backfill-outcomes
 # Outcome v2 (audit 2026-11-07): VWAP(t+1) entry, IDX-reference-price + dividend adjusted -> signal_log.ret2_*, market_breadth2.
-# Writes only v2 columns (~2 min: builds a price grid). Best-effort: v1 above is what the running gate still reads.
+# Writes only v2 columns (~2 min: builds a price grid). The forward-test gate reads these (engine.eval_tags). Best-effort.
 vg backfill-outcomes2 || true
+# Data-quality flags (signals whose input was known broken at the time), rebuilt whole (~1 min). Shown beside the edge.
+vg flag-signals || true
 vg paper-update        # open/resolve FLOAT-ASING-PADAT / TIKET-BESAR-AKUM paper trades
 
 # KSEI's monthly ownership file appears a few days after month-end, on a day we cannot predict. Ask every day until last month's
