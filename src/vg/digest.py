@@ -171,8 +171,19 @@ def _hr(label: str) -> str:
     return f"<b>━━━━━  {label}  ━━━━━</b>"
 
 
+def manual_watchlist() -> list[str]:
+    """The stocks the user keeps on the dashboard's /today page (table user_watchlist). Nothing is filled in for them: an empty
+    list means the digest has no WATCHLIST section. Unreadable (table not created yet) counts as empty, never as a crash."""
+    from .web import watchlist as _wl  # stdlib + db only; does not need the `web` extra
+
+    try:
+        return _wl.load()
+    except Exception:  # noqa: BLE001 - a digest without the section beats no digest
+        return []
+
+
 def build_daily(session_date: date | None = None) -> str:
-    wl = list(CONFIG.watchlist)
+    wl = manual_watchlist()
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT max(session_date) FROM price_bars")
         latest_price = cur.fetchone()[0]
