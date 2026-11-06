@@ -140,9 +140,9 @@ stock-day disimpan di sana hanya bila lengkap (beli dan jual cocok dalam 1%).
 | Tahap | Modul | Perintah | Hasil |
 |---|---|---|---|
 | Quality gate | `quality.py` | `quality-gate` | memblokir `compute` bila input hari itu rusak |
-| Komponen, tag, skor | `engine/__init__.py`, `engine/scoring.py`, `broker_bounds.py` | `compute`, `backfill-wash` | `signal_components`, `signal_log`, `signal_snapshot` (tag saat PERTAMA dihitung, tidak pernah ditimpa; evaluasi forward sejak `FREEZE_SINCE` hanya menghitung tag yang tercatat sebelum 08:00 WIB hari berikutnya, lewat `engine.EVAL_SOURCE`) |
+| Komponen, tag, skor | `engine/__init__.py`, `engine/scoring.py`, `broker_bounds.py` | `compute`, `backfill-wash`, `backfill-tags-v2` | `signal_components`, `signal_log`, `signal_snapshot` (tag saat PERTAMA dihitung, tidak pernah ditimpa; evaluasi forward sejak `FREEZE_SINCE` hanya menghitung tag yang tercatat sebelum 08:00 WIB hari berikutnya, lewat `engine.EVAL_SOURCE`). Tag v2 (`V2_TAGS`: KSEI2-*, FOREIGN-INST2, DOM-RETAIL2, BROKER2-DOMISILI-*, FLOAT2) jam baru: `compute` hanya memancarkannya untuk sesi ≥ `V2_TAGS_SINCE`; riwayat in-sample sebelum `VG_FORWARD_SINCE` hanya lewat `backfill-tags-v2` (INSERT saja, tidak pernah update); rentang di antaranya sengaja kosong |
 | Outcome forward | `engine/__init__.py` | `backfill-outcomes` | return 1/3/5/10 hari, `market_breadth` |
-| Outcome v2 | `outcomes2.py` | `backfill-outcomes2`, `eval-compare` | masuk di VWAP t+1, total return dari harga acuan `prev` IDX (split/bonus/rights, hanya bar tier 0) + dividen; `signal_log.ret2_*`, `market_breadth2` (rumus sama). v1 tidak disentuh |
+| Outcome v2 | `outcomes2.py` | `backfill-outcomes2`, `eval-compare` | masuk di VWAP t+1, total return dari harga acuan `prev` IDX (split/bonus/rights, hanya bar tier 0) + dividen; `signal_log.ret2_*`, `ret2_daily` (setiap saham-hari yang tertransaksi; dipakai `market_breadth2` dan riset "Is the edge real?"), `market_breadth2` (rumus sama). v1 tidak disentuh |
 | Penanda data rusak | `flags.py` | `flag-signals` (EOD) | `signal_flags`: sinyal yang input-nya diketahui rusak SAAT ITU (lompatan scripless KSEI, bulan KSEI belum terbit, jendela aksi korporasi, salinan tabel broker, bar fallback). Track record menampilkan edge dengan dan tanpa baris ini |
 | Evaluasi per tag | `engine/__init__.py`, `web/edge.py` | `eval` | edge terhadap universe, hit rate |
 | Paper trading | `paper.py` | `paper-update`, `paper-report` | `paper_trades` |
@@ -169,7 +169,7 @@ flowchart LR
 | Kelompok | Tabel |
 |---|---|
 | Kalender dan daftar | `trading_calendar`, `tickers` |
-| Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth`, `market_breadth2` |
+| Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth`, `market_breadth2`, `ret2_daily` |
 | Kepemilikan dan filing | `ownership_monthly`, `free_float_monthly`, `corp_actions`, `disclosure_filings`, `disclosure_holdings`, `trading_halts` |
 | Broker | `broker_flows`, `broker_levels`, `broker_flows_full`, `broker_inventory`, `done_by_price`, `broker_affiliation_groups` |
 | Aliran trade | `trade_flow_1m` |

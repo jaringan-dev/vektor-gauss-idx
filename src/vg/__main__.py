@@ -182,6 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
     bw.add_argument("--from", dest="start", metavar="YYYY-MM-DD", help="first session (default: the first one with a broker score)")
     bw.add_argument("--to", dest="end", metavar="YYYY-MM-DD", help="last session (default and maximum: the day before VG_FORWARD_SINCE)")
     bw.add_argument("--dry-run", action="store_true", help="count what would be written, write nothing")
+    bv2 = sub.add_parser(
+        "backfill-tags-v2",
+        help="IN-SAMPLE history of the v2 tags (KSEI2-*, FOREIGN-INST2, DOM-RETAIL2, BROKER2-DOMISILI-*, FLOAT2) from the stored "
+             "components; only sessions before VG_FORWARD_SINCE; inserts only (never updates a row)",
+    )
+    bv2.add_argument("--from", dest="start", metavar="YYYY-MM-DD", help="first session (default: the first stored one)")
+    bv2.add_argument("--to", dest="end", metavar="YYYY-MM-DD", help="last session (default and maximum: the day before VG_FORWARD_SINCE)")
+    bv2.add_argument("--dry-run", action="store_true", help="count what would be written, write nothing")
     sub.add_parser(
         "paper-update",
         help="open new paper trades for FLOAT-ASING-PADAT/TIKET-BESAR-AKUM, resolve open ones",
@@ -600,6 +608,21 @@ def main(argv: list[str] | None = None) -> int:
         print("IN-SAMPLE: the threshold was chosen looking at 5 Nov 2026 data, so this is what the tag WOULD have said, not proof it works.")
         if not args.dry_run:
             print(f"signal_log rows updated with forward returns: {engine.backfill_outcomes()}")
+        return 0
+
+    if args.cmd == "backfill-tags-v2":
+        try:
+            res = engine.backfill_tags_v2(_d(args.start) if args.start else None, _d(args.end) if args.end else None,
+                                          dry_run=args.dry_run)
+        except engine.WashBackfillRefused as exc:
+            print(f"refused: {exc}")
+            return 2
+        verb = "would write" if args.dry_run else "wrote"
+        print(f"v2 tags: {verb} {res['rows'] if args.dry_run else res['written']} rows on {res['days']} sessions, "
+              f"{res['start']} .. {res['end']}")
+        for tag, n in sorted(res["by_tag"].items()):
+            print(f"  {tag}: {n}")
+        print("IN-SAMPLE: what the v2 tags WOULD have said; not forward-test evidence. Run backfill-outcomes2 to fill their returns.")
         return 0
 
     if args.cmd == "backfill-outcomes":

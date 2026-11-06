@@ -51,6 +51,12 @@ LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval 
 # if that happened before 08:00 WIB of the next calendar day. Earlier sessions can only be read from signal_log, whose
 # unresolved rows were rewritten by the nightly recompute; their first-seen time is lost, and the pages say so.
 FREEZE_SINCE = date(2026, 11, 9)
+# The v2 tags (audit 2026-11-07) start a NEW forward clock: `compute` emits them only for sessions on/after V2_TAGS_SINCE, so a
+# nightly recompute of the days before cannot slip them into the forward window with data that arrived later. Their history
+# before VG_FORWARD_SINCE comes only from `vg backfill-tags-v2` (in-sample); the sessions in between stay empty on purpose.
+V2_TAGS = frozenset({"KSEI2-INST-AKUM", "KSEI2-RITEL-EXIT", "KSEI2-KONFIRM", "KSEI2-DIVERGEN", "FOREIGN-INST2", "DOM-RETAIL2",
+                     "BROKER2-DOMISILI-KONFIRM", "BROKER2-DOMISILI-DIVERGEN", "FLOAT2-ASING-PADAT"})
+V2_TAGS_SINCE = FREEZE_SINCE
 # The rows every evaluation reads (eval_tags, tag_monthly_edge, the pattern page, the expectancy panel): one definition, so
 # the numbers cannot disagree. Columns: session_date, ticker, tag, ret2_h1/h3/h5/h10 (outcome v2), ret_h5 (v1, comparison).
 # The date literal comes from the constant above, never from input.
@@ -999,6 +1005,8 @@ def compute_day(session_date: date) -> ComputeSummary:
             c.substantial_akum = dflags.get("substantial_akum")
             c.substantial_dist = dflags.get("substantial_dist")
             tags = _classify(c)
+            if session_date < V2_TAGS_SINCE:          # new clock: no v2 tag for a session computed (or recomputed) before it
+                tags = [tg for tg in tags if tg not in V2_TAGS]
             comp_rows.append(_comp_row(session_date, c))
             for tag in tags:
                 log_rows.append((session_date, t, tag, "probation", c.close))
@@ -1084,6 +1092,91 @@ def backfill_wash(start: date | None = None, end: date | None = None, *, dry_run
             _log(cur, "backfill_wash", end, "ok", written, f"{start}..{end}: in-sample history of {WASH_TAG}, nothing at or after {fwd}")
     return {"start": start, "end": end, "days": len({h[0] for h in hits}), "rows": len(hits), "by_month": dict(sorted(by_month.items())),
             "written": written}
+
+
+def _fns5_by_ticker(cur: psycopg.Cursor, session_date: date) -> dict[str, float]:
+    """5-session foreign net shares per ticker up to `session_date`, exactly as `_components` computes it (the 5 latest
+    trading-calendar sessions, every one with a bar; a bar missing either foreign side counts 0)."""
+    cur.execute(
+        """
+        WITH cal5 AS (SELECT session_date FROM trading_calendar WHERE session_date <= %(d)s ORDER BY session_date DESC LIMIT 5)
+        SELECT ticker, sum(CASE WHEN foreign_buy_vol IS NULL OR foreign_sell_vol IS NULL THEN 0
+                                ELSE foreign_buy_vol - foreign_sell_vol END)::float8
+        FROM price_bars WHERE session_date IN (SELECT session_date FROM cal5)
+        GROUP BY ticker HAVING count(*) = 5
+        """,
+        {"d": session_date},
+    )
+    return dict(cur.fetchall())
+
+
+def backfill_tags_v2(start: date | None = None, end: date | None = None, *, dry_run: bool = False) -> dict:
+    """Write the IN-SAMPLE history of the v2 tags (V2_TAGS) for sessions BEFORE the forward-test window.
+
+    Same contract as `backfill_wash`: nothing on or after VG_FORWARD_SINCE (a range reaching it is refused; unset = refused),
+    and nothing else changes - rows are INSERTed with ON CONFLICT DO NOTHING, so no existing row (v1 or v2) is updated, no
+    component is recomputed or rewritten. Each session's stored `signal_components` row is loaded into `Components`, the v2
+    inputs that are not stored are computed the way `compute_day` computes them (`_ksei_metrics2`, `_free_float`, the 5-session
+    foreign net shares), and the ONE `_classify` decides; only V2_TAGS are kept. In-sample: shows what the tag would have said,
+    not evidence that it works. The forward window between VG_FORWARD_SINCE and V2_TAGS_SINCE stays empty for these tags on
+    purpose: no v2 tag there was computed at the time.
+    """
+    from dataclasses import fields as _fields
+
+    from ..config import CONFIG
+
+    fwd = CONFIG.forward_since
+    if fwd is None:
+        raise WashBackfillRefused("VG_FORWARD_SINCE is not set, so I cannot tell where the forward test starts; nothing written")
+    last_allowed = date.fromordinal(fwd.toordinal() - 1)
+    end = end or last_allowed
+    if end > last_allowed:
+        raise WashBackfillRefused(f"{end} is inside the forward-test window (from {fwd}); the last date allowed is {last_allowed}")
+    names = {f.name for f in _fields(Components)}
+    cols = [c for c in _COMP_COLS if c in names]
+    stats: dict = {"days": 0, "rows": 0, "written": 0, "by_tag": {}}
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT min(session_date), max(session_date) FROM signal_components WHERE session_date <= %s", (end,))
+        first, last = cur.fetchone()
+        if first is None:
+            return {**stats, "start": None, "end": end}
+        start = max(start, first) if start is not None else first
+        cur.execute("SELECT min(month_end) FROM free_float_monthly")
+        ff_first = cur.fetchone()[0]
+        cur.execute("SELECT DISTINCT session_date FROM signal_components WHERE session_date BETWEEN %s AND %s ORDER BY 1", (start, end))
+        days = [r[0] for r in cur.fetchall()]
+        for d in days:
+            cur.execute(
+                f"SELECT {', '.join('sc.' + c for c in cols)}, p.value FROM signal_components sc "
+                "JOIN price_bars p ON p.session_date = sc.session_date AND p.ticker = sc.ticker WHERE sc.session_date = %s",
+                (d,),
+            )
+            comp_rows = cur.fetchall()
+            fns5 = _fns5_by_ticker(cur, d) if ff_first is not None and ff_first < d else {}
+            hits = []
+            for row in comp_rows:
+                kw = {c: (float(v) if isinstance(v, Decimal) else v) for c, v in zip(cols, row[:-1], strict=True)}
+                kw["data_flags"] = list(kw.get("data_flags") or [])
+                c = Components(**kw)
+                c.day_value = float(row[-1]) if row[-1] else None
+                c.ksei2_foreign_trend, c.ksei2_inst_d3m, c.ksei2_indiv_d3m = _ksei_metrics2(cur, c.ticker, d)
+                if c.ticker in fns5:
+                    c.foreign_net_shares_5d = fns5[c.ticker]
+                    ffs = _free_float(cur, c.ticker, d)
+                    c.foreign_float2_5d = None if ffs is None else c.foreign_net_shares_5d / ffs
+                for tag in _classify(c):
+                    if tag in V2_TAGS:
+                        hits.append((d, c.ticker, tag, "probation", c.close))
+                        stats["by_tag"][tag] = stats["by_tag"].get(tag, 0) + 1
+            stats["days"] += 1
+            stats["rows"] += len(hits)
+            if hits and not dry_run:
+                stats["written"] += upsert_many(cur, "signal_log", ("session_date", "ticker", "tag", "layer", "close"), hits,
+                                                conflict=("session_date", "ticker", "tag"))   # DO NOTHING: never touch a row
+                conn.commit()                                                            # an interrupted run keeps its days
+        if not dry_run:
+            _log(cur, "backfill_tags_v2", end, "ok", stats["written"], f"{start}..{end}: in-sample v2 tags, nothing at or after {fwd}")
+    return {**stats, "start": start, "end": end}
 
 
 def _log(cur, phase, sd, status, rows, err):
