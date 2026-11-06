@@ -119,6 +119,22 @@ def test_a_transient_outage_is_waited_out_and_the_names_asked_again(monkeypatch)
     assert run.ok == 9 and run.errors == 0 and run.requeued == 3                   # the failed batch went back to the front and then succeeded
 
 
+def test_the_k7_script_spends_the_weekend_budget_on_saturday_and_sunday_only():
+    sh = (Path(__file__).resolve().parents[1] / "scripts" / "deep_backfill.sh").read_text(encoding="utf-8")
+    assert 'DOW="$(date +%u)"' in sh and '[ "$DOW" -ge 6 ]' in sh
+    assert 'BUDGET="${VG_DEEP_BUDGET_WEEKEND:-${VG_DEEP_BUDGET:-15000}}"' in sh      # weekend: its own budget, falling back to the weekday one
+    assert sh.count("--budget") == 1 and '--budget "$BUDGET"' in sh                    # the command uses the chosen value, not VG_DEEP_BUDGET directly
+    # run the selection logic for real: Mon-Fri -> weekday budget, Sat/Sun -> weekend budget
+    import subprocess
+    snippet = 'if [ "$DOW" -ge 6 ]; then BUDGET="${VG_DEEP_BUDGET_WEEKEND:-${VG_DEEP_BUDGET:-15000}}"; else BUDGET="${VG_DEEP_BUDGET:-15000}"; fi; echo $BUDGET'
+    for dow, want in (("1", "37500"), ("5", "37500"), ("6", "40500"), ("7", "40500")):
+        out = subprocess.run(["bash", "-c", snippet], env={"DOW": dow, "VG_DEEP_BUDGET": "37500", "VG_DEEP_BUDGET_WEEKEND": "40500", "PATH": "/usr/bin:/bin"},
+                             capture_output=True, text=True, check=True).stdout.strip()
+        assert out == want, dow
+    out = subprocess.run(["bash", "-c", snippet], env={"DOW": "6", "VG_DEEP_BUDGET": "37500", "PATH": "/usr/bin:/bin"}, capture_output=True, text=True, check=True).stdout.strip()
+    assert out == "37500"                                                              # no weekend value set -> the weekday one
+
+
 def test_the_k7_script_passes_the_worker_count():
     sh = (Path(__file__).resolve().parents[1] / "scripts" / "deep_backfill.sh").read_text(encoding="utf-8")
     assert 'export VG_FEED_WORKERS="${VG_DEEP_WORKERS:-${VG_FEED_WORKERS:-1}}"' in sh
