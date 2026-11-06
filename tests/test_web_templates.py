@@ -115,6 +115,16 @@ def test_strip_shows_text_symbol_and_status_word_never_color_only():
     assert "checked 21:40" in out
 
 
+def test_phone_strip_summary_only_when_every_source_is_fresh():
+    ok = _page("tracker")
+    assert '<li class="strip-sum lv-ok"><span aria-hidden="true">✓</span> Data up to date · EOD 30 Oct 2026</li>' in ok
+    bad = _it("price", "Prices", "5 stocks — gap (normal ≈ 962)", "bad", "✖", "problem")
+    out = _page("tracker", strip=_strip(OK_STRIP["items"][0], bad))
+    assert "strip-sum" not in out.split("</style>")[-1] and 'class="lv-bad"' in out   # never "up to date" next to a red source
+    css = ok[ok.index("<style>"):ok.index("</style>")]
+    assert ".strip li.lv-ok { display:none; }" in css and ".strip li.strip-sum { display:none; }" in css   # phone-only swap
+
+
 def test_strip_error_is_shown_as_a_red_strip_not_hidden():
     out = _page("tracker", strip=_strip(error="OperationalError: connection refused"))
     assert "Data freshness could not be checked" in out and "connection refused" in out

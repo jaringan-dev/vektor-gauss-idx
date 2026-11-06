@@ -145,6 +145,13 @@
     .strip li.lv-warn { background:var(--warn-bg); color:var(--warn-fg); border-color:var(--warn-fg); }
     .strip li.lv-bad  { background:var(--fail-bg); color:var(--fail-fg); border-color:var(--fail-fg); font-weight:600; }
     .strip .checked { margin-left:auto; color:var(--muted); }
+    .strip li.strip-sum { display:none; }
+    /* Phones: one short line. Fresh sources fold into the summary chip; a yellow/red source still shows as its own chip. */
+    @media (max-width:640px) {
+      .strip li.lv-ok { display:none; }
+      .strip li.strip-sum { display:inline-block; color:var(--ready-fg); border-color:transparent; padding-left:0; }
+      .strip .checked .when { display:none; }
+    }
 
     main { padding:16px 20px; max-width:1500px; }
     .pagehead h1 { margin:0 0 14px; font-size:20px; }
@@ -438,12 +445,16 @@
         <ul><li class="lv-bad"><span aria-hidden="true">✖</span> Data freshness could not be checked: {{ strip.error }}</li></ul>
         {% else %}
         <ul>
+          {#- Phones show this one line instead of the four chips when everything is fresh; anything yellow or red is always shown. -#}
+          {%- if strip["items"] and not (strip["items"]|rejectattr("level", "equalto", "ok")|list) %}{% set strip_eod = strip["items"]|selectattr("label", "equalto", "EOD")|first %}
+          <li class="strip-sum lv-ok"><span aria-hidden="true">✓</span> Data up to date{% if strip_eod %} · EOD {{ strip_eod.text }}{% endif %}</li>
+          {%- endif %}
           {% for it in strip["items"] %}
           <li class="lv-{{ it.level }}"><b>{{ it.label }}</b> <span aria-hidden="true">{{ it.symbol }}</span>
             {{ it.text }}<span class="sr-only"> — status {{ it.word }}</span></li>
           {% endfor %}
         </ul>
-        <span class="checked">{% if strip.checked_at %}checked {{ strip.checked_at }} · {% endif %}<a href="/coverage">data coverage</a></span>
+        <span class="checked">{% if strip.checked_at %}<span class="when">checked {{ strip.checked_at }} · </span>{% endif %}<a href="/coverage">data coverage</a></span>
         {% endif %}
       </section>
       {% endif %}
