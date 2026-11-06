@@ -29,6 +29,7 @@ from .base import FetchStatus
 
 _KEYWORD = "PENGHENTIAN SEMENTARA"
 _PAGE_SIZE = 200
+_MAX_PAGES = 50       # safety cap: 50 pages x page size, far above any real day
 _HALT_RE = re.compile(r"PENGHENTIAN SEMENTARA PERDAGANGAN", re.IGNORECASE)
 # "Pembukaan Penghentian Sementara Perdagangan..." (reopening) and "Pencabutan
 # Penghentian Sementara Perdagangan..." (lifting) both contain the halt phrase
@@ -101,9 +102,11 @@ class IdxTradingHaltSource:
             page = payload.get("Replies") or []
             replies.extend(page)
             total = payload.get("ResultCount", len(replies)) if total is None else total
-            if len(replies) >= total or not page:
+            if len(replies) >= total or not page or index_from >= _MAX_PAGES:
                 break
-            index_from += _PAGE_SIZE
+            # IDX's indexFrom is a PAGE NUMBER (0, 1, 2 ...), not a row offset: 'indexFrom=200' returns nothing, so a
+            # day with more than one page silently lost every row after the first page (audit 2026-11-07, B15).
+            index_from += 1
         return json.dumps({"ResultCount": total, "Replies": replies}).encode("utf-8")
 
     @staticmethod
