@@ -34,7 +34,7 @@ PREVIEW = 3                      # leaders shown per board in the summary strip
 RECENT_SESSIONS = 30             # sessions offered in the date picker
 LIQUID_VALUE_IDR = 5_000_000_000  # same line as engine.LIQUID_VALUE_IDR (a test guards it)
 
-_NUMERIC = ("close", "prev", "volume", "value", "frequency", "nonreg_volume", "nonreg_value", "nonreg_frequency")
+_NUMERIC = ("close", "prev", "volume", "value", "frequency", "nonreg_volume", "nonreg_value", "nonreg_frequency", "listed_shares")
 
 
 def _f(v) -> float | None:
@@ -55,7 +55,7 @@ def load(want: date | None = None) -> dict:
         rows: list[dict] = []
         if session is not None:
             cur.execute(
-                "SELECT ticker, close, prev, volume, value, frequency, nonreg_volume, nonreg_value, nonreg_frequency "
+                "SELECT ticker, close, prev, volume, value, frequency, nonreg_volume, nonreg_value, nonreg_frequency, listed_shares "
                 "FROM price_bars WHERE session_date = %s AND close IS NOT NULL",
                 (session,),
             )
@@ -68,6 +68,13 @@ def change(row: dict) -> float | None:
     """Fraction the close moved against the previous close; None when either is missing or the previous close is not positive."""
     close, prev = row.get("close"), row.get("prev")
     return (close / prev - 1) if close is not None and prev else None
+
+
+def market_cap(row: dict) -> float | None:
+    """Close x listed shares, from the same stored stock summary (it matches the feed's /api/market-cap to the share). None when
+    either is missing or not positive."""
+    close, shares = row.get("close"), row.get("listed_shares")
+    return close * shares if close and shares and close > 0 and shares > 0 else None
 
 
 def _traded(row: dict, regular: bool) -> dict:
@@ -107,10 +114,12 @@ def rank(rows: list[dict], board: str, *, liquid: bool = False, regular: bool = 
     out = []
     for i, (m, r, t) in enumerate(top, 1):
         ch = change(r)
+        cap = market_cap(r)
         out.append({
             "rank": i, "ticker": r["ticker"], "price": fmt.price(r.get("close")), "chg": fmt.cell(ch, 2),
             "value": _money(t["value"]), "lots": _int(None if t["volume"] is None else t["volume"] / 100),
             "freq": _int(t["frequency"]), "metric": m,
+            "mcap": _money(cap), "turn": "n/a" if not cap or t["value"] is None else fmt.pct_plain(t["value"] / cap, 2),
             "bar": round(100 * abs(m) / lead) if lead else 0,                   # the leader fills the bar
         })
     return out

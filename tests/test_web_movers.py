@@ -165,12 +165,12 @@ def test_loading_only_selects_and_falls_back_to_the_newest_session(monkeypatch):
             self.sql = sql
             if "FROM price_bars WHERE" in sql:
                 self.description = [(c,) for c in ("ticker", "close", "prev", "volume", "value", "frequency",
-                                                    "nonreg_volume", "nonreg_value", "nonreg_frequency")]
+                                                    "nonreg_volume", "nonreg_value", "nonreg_frequency", "listed_shares")]
 
         def fetchall(self):
             if "trading_calendar" in self.sql:
                 return [(SD,), (OLDER,)]
-            return [("AAAA", 1100, 1000, 5_000_000, 50_000_000_000, 800, None, None, None)]
+            return [("AAAA", 1100, 1000, 5_000_000, 50_000_000_000, 800, None, None, None, 2_000_000_000)]
 
     class Conn:
         def __enter__(self):
@@ -186,10 +186,37 @@ def test_loading_only_selects_and_falls_back_to_the_newest_session(monkeypatch):
     out = movers.load(date(2020, 1, 2))                                  # not an offered session -> the newest
     assert out["session_date"] == SD and out["days"] == [SD, OLDER] and out["wanted"] == date(2020, 1, 2)
     assert out["rows"] == [{"ticker": "AAAA", "close": 1100.0, "prev": 1000.0, "volume": 5e6, "value": 5e10, "frequency": 800.0,
-                            "nonreg_volume": None, "nonreg_value": None, "nonreg_frequency": None}]
+                            "nonreg_volume": None, "nonreg_value": None, "nonreg_frequency": None, "listed_shares": 2e9}]
     assert seen and all(s.lstrip().upper().startswith("SELECT") for s, _p in seen)
     assert seen[-1][1] == (SD,)
     assert movers.load(OLDER)["session_date"] == OLDER                    # an offered session is honoured
+
+
+# ---- market cap and turnover ------------------------------------------------------------------------------------------------------
+
+def test_market_cap_is_close_times_listed_shares_and_turnover_is_value_over_it():
+    r = row("BIG", close=1000.0, value=10_000_000_000.0)
+    r["listed_shares"] = 100_000_000_000.0                            # cap Rp100T
+    assert movers.market_cap(r) == 100_000_000_000_000.0
+    top = movers.rank([r], "value")[0]
+    assert top["mcap"] == "100.0T" and top["turn"] == "0.01%"
+
+
+def test_missing_or_non_positive_shares_give_n_a_not_a_crash():
+    for shares in (None, 0.0, -5.0):
+        r = row("ODD", value=10_000_000_000.0)
+        r["listed_shares"] = shares
+        assert movers.market_cap(r) is None
+        top = movers.rank([r], "value")[0]
+        assert top["mcap"] == "n/a" and top["turn"] == "n/a"
+    assert movers.market_cap(row("NOKEY")) is None                  # the key absent altogether
+
+
+def test_turnover_follows_the_regular_board_switch():
+    r = row("BLK", value=10_000_000_000.0, nv=6_000_000_000.0)
+    r["listed_shares"] = 1_000_000_000.0                              # cap 100 x 1e9 = Rp100B
+    assert movers.rank([r], "value")[0]["turn"] == "10.00%"
+    assert movers.rank([r], "value", regular=True)[0]["turn"] == "4.00%"
 
 
 # ---- the page ---------------------------------------------------------------------------------------------------------------------

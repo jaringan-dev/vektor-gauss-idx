@@ -58,7 +58,8 @@
           <tr role="row"><th scope="col" role="columnheader">#</th><th scope="col" role="columnheader" style="text-align:left">Stock</th>
               <th scope="col" role="columnheader">Price</th><th scope="col" role="columnheader">Change</th>
               <th scope="col" role="columnheader">Value</th><th scope="col" role="columnheader">Volume (lots)</th>
-              <th scope="col" role="columnheader">Frequency</th></tr>
+              <th scope="col" role="columnheader">Frequency</th>
+              <th scope="col" role="columnheader">Market cap</th><th scope="col" role="columnheader">Turnover</th></tr>
         </thead>
         <tbody role="rowgroup">
           {% for r in v.rows %}
@@ -70,6 +71,8 @@
             <td role="cell" data-label="Value">{{ r.value }}</td>
             <td role="cell" data-label="Volume (lots)">{{ r.lots }}</td>
             <td role="cell" data-label="Frequency">{{ r.freq }}</td>
+            <td role="cell" data-label="Market cap">{{ r.mcap }}</td>
+            <td role="cell" data-label="Turnover" title="Value traded as a share of market cap">{{ r.turn }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -83,6 +86,6 @@
 
 {% block footer %}
   <p>From the IDX end-of-day stock summary stored in the database. Value is in rupiah (T = trillion, B = billion, M = million); volume is shown in lots
-     (1 lot = 100 shares). Value, volume and frequency include the negotiated board unless <b>Regular board only</b> is on.</p>
+     (1 lot = 100 shares). Market cap = close times listed shares; turnover = value traded divided by market cap. Value, volume and frequency include the negotiated board unless <b>Regular board only</b> is on.</p>
   {{ disclaimer() }}
 {% endblock %}
