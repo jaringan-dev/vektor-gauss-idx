@@ -107,7 +107,7 @@ It waits for the open (08:50), records until 16:05 WIB, writes one row per stock
 row (phase `trade_record`). It costs no REST quota. The PC and WSL must be up for the whole session; the run holds its own WSL session.
 
 ```powershell
-$a = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d Ubuntu-24.04 -u vg -- bash -lc ~/vektor-gauss/scripts/record_trades.sh"
+$a = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d Ubuntu-24.04 -u vg -- bash /home/vg/vektor-gauss/scripts/record_trades.sh"
 $t = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 8:55AM
 $s = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 9)
 Register-ScheduledTask -TaskName "VektorGauss-TradeRecorder" -Action $a -Trigger $t -Settings $s
