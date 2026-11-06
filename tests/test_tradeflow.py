@@ -281,13 +281,57 @@ def test_the_reconnect_wait_grows_to_a_cap():
     assert w.sleeps == [2.0, 5.0, 10.0, 30.0, 30.0, 30.0]
 
 
-def test_a_connection_that_was_healthy_for_a_while_starts_the_waits_again():
+def test_a_connection_that_was_healthy_for_a_while_is_reopened_at_once_and_starts_the_waits_again():
     w = World()
     w.sockets = [Socket(w, ConnectionError("x")), Socket(w, ConnectionError("x")),            # two quick drops: 2 s, then 5 s
-                 Socket(w, msg(tn=n(1)), ("tick", 120), ConnectionError("dropped after two minutes")),    # healthy: waits start over
+                 Socket(w, msg(tn=n(1)), ("tick", 120), ConnectionError("dropped after two minutes")),    # healthy: NO wait, waits start over
                  Socket(w, ConnectionError("x")), Socket(w, ("tick", 30000))]
     assert w.recorder().run() == 0
-    assert w.sleeps == [2.0, 5.0, 2.0, 5.0]
+    assert w.sleeps == [2.0, 5.0, 2.0]
+
+
+SNAP = json.dumps({"type": "snapshot", "market": {"status": "open"}, "top": [],
+                   "recent": [trade(tn=n(2)), trade(tn=n(3)), trade(tn=n(4))]})
+
+
+def test_after_a_healthy_connection_drops_the_reconnect_snapshot_wins_back_what_was_missed():
+    w = World()
+    w.sockets = [Socket(w, msg(tn=n(1)), msg(tn=n(2)), ("tick", 120), ConnectionError("no close frame received or sent")),
+                 Socket(w, SNAP, msg(tn=n(5)), ("tick", 30000))]
+    rec = w.recorder(flush_seconds=1000)
+    assert rec.run() == 0 and w.sleeps == []                     # asked again at once
+    c = rec.book.counts
+    assert (c.accepted, c.duplicates, rec.stats.recovered) == (5, 0, 2)       # n3 and n4 were missed; n2 was already counted, silently
+    assert (rec.stats.gaps, rec.stats.blind_seconds) == (1, 0.0)
+    assert "blind 0.0 s over 1 drops, 2 trades won back" in rec.summary()
+    assert sum(r[3] for r in w.written) == 5
+
+
+def test_the_snapshot_of_the_first_connection_is_never_counted():
+    w = World()                                                  # a restart: the snapshot repeats what the last run already stored
+    w.sockets = [Socket(w, SNAP, msg(tn=n(9)), ("tick", 30000))]
+    rec = w.recorder(flush_seconds=1000)
+    assert rec.run() == 0
+    assert rec.book.counts.accepted == 1 and rec.stats.recovered == 0 and rec.book.counts.snapshots == 1
+
+
+def test_the_blind_time_runs_from_the_drop_to_the_first_message_even_when_a_retry_fails():
+    w = World()
+    w.sockets = [Socket(w, msg(tn=n(1)), ("tick", 120), ConnectionError("dropped")),         # healthy, then dropped
+                 Socket(w, ConnectionError("refused again")),                                  # reopened at once, dies before any message
+                 Socket(w, SNAP, ("tick", 30000))]
+    rec = w.recorder(flush_seconds=1000)
+    assert rec.run() == 0 and w.sleeps == [2.0]
+    assert rec.stats.gaps == 1 and rec.stats.blind_seconds == 2.0                 # one outage of 2 s, not two of ~0 s
+
+
+def test_a_snapshot_with_malformed_items_counts_the_good_ones_and_rejects_the_rest():
+    w = World()
+    snap = json.dumps({"type": "snapshot", "top": [], "recent": [trade(tn=n(3)), {"junk": 1}, trade(tn=n(4))]})
+    w.sockets = [Socket(w, msg(tn=n(1)), ("tick", 120), ConnectionError("x")), Socket(w, snap, ("tick", 30000))]
+    rec = w.recorder(flush_seconds=1000)
+    assert rec.run() == 0
+    assert (rec.book.counts.accepted, rec.stats.recovered, rec.book.counts.rejected) == (3, 2, 1)
 
 
 @pytest.mark.parametrize("code, why", [(4401, "refused"), (4403, "paid user")])
@@ -321,7 +365,8 @@ def test_a_connection_that_goes_silent_is_replaced():
     w.sockets = [Socket(w, msg(tn=n(1)), *(["timeout"] * 30)), Socket(w, msg(tn=n(2)), ("tick", 30000))]
     rec = w.recorder(flush_seconds=10, stall_seconds=90)
     assert rec.run() == 0 and rec.stats.connections == 2
-    assert w.sleeps[:1] == [2.0]                                  # the silent connection was treated as dropped: a short wait, then a new one
+    assert w.sleeps == []                                         # it had been up for 90+ s, so it counts as healthy: replaced at once, no wait
+    assert rec.stats.gaps == 1 and rec.stats.blind_seconds == 0.0
     assert rec.book.counts.accepted == 2 and sum(r[3] for r in w.written) == 2
 
 

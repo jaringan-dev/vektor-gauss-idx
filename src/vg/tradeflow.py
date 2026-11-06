@@ -18,9 +18,13 @@ Design:
   * `parse_trade` / `MinuteBook` are pure: validate one message, drop a repeated `tn`, add into a bucket.
   * `Recorder` owns the flushing (every few seconds, additive upsert, a failed write keeps the buckets for the next try) and the
     connection loop (backoff on a dropped connection, stop on 4401 / 4403, patient on 4408).
-  * The snapshot the server sends after every connect (the last 50 trades) is NOT counted: after a restart it would repeat what the
-    previous flush already stored, and `tn` is not strictly increasing, so there is no safe high-water mark to cut it with. The few
-    trades between a drop and the reconnect are the price of never counting twice; the run is logged with its connection count.
+  * The server drops the connection about every ten minutes (6 times in the first hour recorded, "no close frame"), and every second
+    of being disconnected is ~78 trades. Two things keep that loss small: after a connection that had been healthy the recorder asks
+    again AT ONCE (the growing waits are only for a feed that is really down), and the snapshot the server sends after every connect
+    (the last 50 trades) is counted on a RECONNECT, de-duplicated by trade number against everything this process already counted.
+    The snapshot of the FIRST connection of a run is not counted: after a restart it would repeat what the previous run's last flush
+    stored, and `tn` is not strictly increasing, so there is no safe cut. The summary reports the seconds spent blind (drop to the first
+    message of the next connection) and the trades the snapshots gave back, so the loss is a number, not a guess.
 """
 
 from __future__ import annotations
@@ -167,13 +171,16 @@ class MinuteBook:
         self._order: deque[str] = deque()
         self._keep = seen_keep
 
-    def add(self, data: Any) -> bool:
+    def add(self, data: Any, *, replay: bool = False) -> bool:
+        """Count one trade. `replay` = it comes from a snapshot, where most trades were counted before: a repeat is then expected and
+        is not tallied as a duplicate (a malformed one is still a reject)."""
         t = parse_trade(data, self.today)
         if t is None:
             self.counts.rejected += 1
             return False
         if t.tn in self._seen:
-            self.counts.duplicates += 1
+            if not replay:
+                self.counts.duplicates += 1
             return False
         self._seen.add(t.tn)
         self._order.append(t.tn)
@@ -256,6 +263,9 @@ class Stats:
     rows_written: int = 0
     write_errors: int = 0
     last_error: str = ""
+    gaps: int = 0               # reconnects after a drop
+    blind_seconds: float = 0.0  # time from each drop to the first message of the next connection (an upper bound on what was missed)
+    recovered: int = 0          # trades a reconnect's snapshot gave back that the dropped connection had not delivered
     stopped: str = ""           # why the run ended
     note: str = ""              # something worth saying about the run that is not an error (e.g. no holiday calendar for this year)
 
@@ -282,11 +292,16 @@ class Recorder:
         self._started = self.mono()
         self._last_flush = self._started
         self._last_msg = self._started
+        self._dropped_at: float | None = None
 
     # -- messages --
     def handle(self, raw: str | bytes) -> None:
         """One frame from the server. Only `trade` frames are counted; the snapshot, top-5 and anything unknown are not."""
         self._last_msg = self.mono()
+        if self._dropped_at is not None:             # first message after a drop: that is how long we were blind
+            self.stats.gaps += 1
+            self.stats.blind_seconds += max(self._last_msg - self._dropped_at, 0.0)
+            self._dropped_at = None
         try:
             msg = json.loads(raw)
         except (TypeError, ValueError):
@@ -296,7 +311,13 @@ class Recorder:
         if kind == "trade":
             self.book.add(msg.get("data"))
         elif kind == "snapshot":
-            self.book.counts.snapshots += 1          # the last 50 trades: deliberately not counted (see the module docstring)
+            self.book.counts.snapshots += 1
+            recent = msg.get("recent")
+            if self.stats.connections > 1 and isinstance(recent, list):     # a reconnect: the seen-set makes this safe (see the docstring)
+                before = self.book.counts.accepted
+                for item in recent:
+                    self.book.add(item, replay=True)
+                self.stats.recovered += self.book.counts.accepted - before
 
     # -- writing --
     def flush(self, force: bool = False) -> None:
@@ -364,8 +385,11 @@ class Recorder:
                     code = close_code(exc)
                     self.stats.last_error = f"{type(exc).__name__}: {exc}"[:200]
                     self.flush(force=True)
-                    if opened is not None and self.mono() - opened >= HEALTHY_SECONDS:
+                    healthy = opened is not None and self.mono() - opened >= HEALTHY_SECONDS
+                    if healthy:
                         attempt = 0           # it had been up a while: this drop is news, not a flapping feed, so start the waits again
+                    if opened is not None and self._dropped_at is None:
+                        self._dropped_at = self.mono()                       # from here on we are blind until the next message
                     if code in FATAL_CLOSE:
                         self.stats.stopped = f"refused {code}: {FATAL_CLOSE[code]}"
                         return 2
@@ -378,6 +402,8 @@ class Recorder:
                         continue
                     if self._over():
                         break
+                    if healthy:
+                        continue              # a drop out of a healthy connection: ask again at once, every second is ~78 trades
                     self.sleep(BACKOFFS[min(attempt, len(BACKOFFS) - 1)])
                     attempt += 1
             return 0
@@ -396,6 +422,7 @@ class Recorder:
     def summary(self) -> str:
         c, s = self.book.counts, self.stats
         out = (f"trades {c.accepted:,} (duplicates {c.duplicates:,}, rejected {c.rejected:,}); connections {s.connections}; "
+               f"blind {s.blind_seconds:.1f} s over {s.gaps} drops, {s.recovered} trades won back from snapshots; "
                f"rows written {s.rows_written:,} in {s.flushes} flushes; stopped: {s.stopped or 'end of run'}")
         return out + (f"; write errors {s.write_errors} (last: {s.last_error})" if s.write_errors else "") + \
             (f"; last connection error: {s.last_error}" if s.last_error and not s.write_errors else "") + \
