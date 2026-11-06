@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import psycopg
 from psycopg.types.json import Jsonb
 
@@ -1012,6 +1014,32 @@ _BROKER_LIQUID_VALUE_IDR = 5_000_000_000
 # so a dead feed cannot make EOD grind through ~190 doomed calls.
 _FEED_ABORT_AFTER_ERRORS = 10
 
+# A feed that answers 5xx or drops the connection is blinking, not banning us (5 Nov 2026: ten 502s in a row ended the night's K7
+# backfill, and the same names answered 200 an hour later). The per-call retry in the source rides out a few seconds; this rides out
+# minutes: before giving up on a streak of such errors the loop waits, asks the same names again, and waits longer each time.
+# 4xx (bad key, quota, ban) and parse/database errors are never waited out.
+_FEED_COOLDOWNS_DEFAULT_S = (120.0, 300.0, 600.0)
+_TRANSPORT_ERRORS = tuple(sorted(
+    n for n, c in vars(httpx).items() if isinstance(c, type) and issubclass(c, httpx.TransportError)))
+
+
+def _feed_cooldowns() -> tuple[float, ...]:
+    """Pauses (seconds) a run waits out when the feed keeps failing with 5xx / network errors. VG_FEED_COOLDOWNS="120,300,600";
+    empty or 0 turns the waiting off (the run then aborts after _FEED_ABORT_AFTER_ERRORS errors as before)."""
+    raw = os.environ.get("VG_FEED_COOLDOWNS")
+    if raw is None:
+        return _FEED_COOLDOWNS_DEFAULT_S
+    try:
+        return tuple(v for v in (float(x) for x in raw.split(",") if x.strip()) if v > 0)
+    except ValueError:
+        return _FEED_COOLDOWNS_DEFAULT_S
+
+
+def _is_transient(detail: str | None) -> bool:
+    """Does a failure's detail read like the feed or the network blinking (HTTP 5xx, timeout, refused / dropped connection)?"""
+    d = detail or ""
+    return "Server error '5" in d or any(f"{n}:" in d for n in _TRANSPORT_ERRORS)
+
 
 def select_broker_universe(base, liquid, radar) -> list[str]:
     """Order-preserving union: watchlist + holdings first, then liquid names (biggest value
@@ -1027,6 +1055,10 @@ class _FeedRun:
     rows: int = 0
     failures: list = field(default_factory=list)
     aborted: bool = False
+    transient: bool = False      # the abort was the feed's server / network errors, not a quota or a ban
+    cooldowns: int = 0           # how many times the loop waited out a streak of such errors
+    cooled_s: float = 0.0        # ...and for how many seconds in all
+    requeued: int = 0            # names asked again after a wait
 
 
 def _feed_loop(items, fetch_one, pause: float) -> _FeedRun:
@@ -1034,25 +1066,61 @@ def _feed_loop(items, fetch_one, pause: float) -> _FeedRun:
 
     `no_data` is benign (a name that simply did not trade). _FEED_ABORT_AFTER_ERRORS consecutive
     hard errors stop the run: a dead feed or an exhausted quota must not make us grind through
-    hundreds of doomed calls. Errors that are interleaved with successes never abort."""
+    hundreds of doomed calls. Errors that are interleaved with successes never abort.
+
+    Exception: when every error of the streak reads like the feed or the network blinking (_is_transient), the loop does not give
+    up at once. It waits (_feed_cooldowns, longer each time), puts the failed names back at the front of the queue and probes with
+    them; one failure during a probe starts the next wait. A success ends the outage and restores the full patience. Only when the
+    waits are used up does the run abort, and then it says it was the feed, not the quota."""
     run = _FeedRun()
-    consecutive = 0
-    for i, item in enumerate(items):
+    queue = deque(items)
+    cooldowns = _feed_cooldowns()
+    streak: list = []            # (item, outcome) of the current run of hard errors
+    transient = True             # every error of the streak looks like the feed / network blinking
+    patience = 0                 # waits already used in the current outage
+    probing = False              # just came back from a wait: the first failure counts as the whole streak
+    while queue:
+        item = queue.popleft()
         o = fetch_one(item)
         run.rows += o.rows
-        if o.status == "ok":
-            run.ok, consecutive = run.ok + 1, 0
-        elif o.status == "no_data":
-            run.no_data, consecutive = run.no_data + 1, 0
+        if o.status in ("ok", "no_data"):
+            run.ok, run.no_data = run.ok + (o.status == "ok"), run.no_data + (o.status == "no_data")
+            streak, transient, patience, probing = [], True, 0, False
         else:
-            run.errors, consecutive = run.errors + 1, consecutive + 1
+            run.errors += 1
             run.failures.append(o)
-            if consecutive >= _FEED_ABORT_AFTER_ERRORS:
-                run.aborted = True
+            streak.append((item, o))
+            transient = transient and _is_transient(o.detail)
+            if len(streak) >= (1 if probing and transient else _FEED_ABORT_AFTER_ERRORS):
+                if transient and patience < len(cooldowns):
+                    wait, patience = cooldowns[patience], patience + 1
+                    dropped = {id(oc) for _, oc in streak}
+                    run.failures = [f for f in run.failures if id(f) not in dropped]     # asked again below, not failed yet
+                    run.errors -= len(streak)
+                    run.requeued += len(streak)
+                    run.cooldowns, run.cooled_s = run.cooldowns + 1, run.cooled_s + wait
+                    queue.extendleft(reversed([it for it, _ in streak]))
+                    streak, probing = [], True
+                    time.sleep(wait)
+                    continue
+                run.aborted, run.transient = True, transient
                 break
-        if i < len(items) - 1:
+        if queue:
             time.sleep(pause)
     return run
+
+
+def _with_feed_notes(run: _FeedRun, detail: str) -> str:
+    """The run's one-line summary plus what the loop did about the feed: the waits it sat out, or why it aborted."""
+    if run.cooldowns:
+        detail += (f", waited {run.cooled_s / 60:.0f} min out the feed's server errors "
+                   f"({run.cooldowns} cool-down(s), {run.requeued} names asked again)")
+    if run.aborted and run.transient:
+        return ("ABORTED: the feed kept answering with server / network errors (5xx, timeouts) through every wait - not a quota or "
+                "a ban; running again resumes where this stopped - " + detail)
+    if run.aborted:
+        return f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
+    return detail
 
 
 _HAVE_TABLES = ("broker_flows", "broker_levels")      # whitelist: the name goes into SQL
@@ -1115,7 +1183,7 @@ def collect_broker_summary_full(
     """Broker summary for watchlist + holdings + EVERY liquid name + radar extras. Default = the
     newest trading day (the EOD pass); `session_date` fills a PAST day (the feed serves history).
     Idempotent (skips names already stored), paced by CONFIG.feed_delay_seconds, aborts after
-    _FEED_ABORT_AFTER_ERRORS consecutive hard errors. Returns the failures plus one summary line
+    _FEED_ABORT_AFTER_ERRORS consecutive hard errors (a streak of 5xx / network errors is first waited out, see `_feed_loop`). Returns the failures plus one summary line
     (not 190 lines of noise). For the EOD pass run it AFTER the first `compute` so radar names exist."""
     plan = plan_broker_full(session_date=session_date, have_table=have_table)
     latest = plan["latest"]
@@ -1148,8 +1216,7 @@ def collect_broker_summary_full(
     )
     if waited:
         detail += f", waited {waited / 60:.0f} min for the feed to publish the day"
-    if run.aborted:
-        detail = f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
+    detail = _with_feed_notes(run, detail)
     return [*run.failures, CollectOutcome(latest, "error" if run.aborted else "ok", run.rows, detail)]
 
 
@@ -1335,9 +1402,7 @@ def collect_price_history_all(*, delay: float | None = None) -> list[CollectOutc
         tickers = [r[0] for r in cur.fetchall()]
     pause = CONFIG.feed_delay_seconds if delay is None else delay
     run = _feed_loop(tickers, collect_price_history_ticker, pause)
-    detail = f"{len(tickers)} tickers: filled {run.ok}, no_data {run.no_data}, errors {run.errors}"
-    if run.aborted:
-        detail = f"ABORTED after {_FEED_ABORT_AFTER_ERRORS} consecutive errors (quota/ban?) — " + detail
+    detail = _with_feed_notes(run, f"{len(tickers)} tickers: filled {run.ok}, no_data {run.no_data}, errors {run.errors}")
     return [*run.failures, CollectOutcome(latest, "error" if run.aborted else "ok", run.rows, detail)]
 
 
