@@ -9,6 +9,7 @@ Personal capital-flow / bandarmology research tool for the Indonesian Stock Exch
 
 | Doc | What |
 |---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **System map** — sources, collectors, database, processing, outputs, schedule (kept in sync by a test) |
 | [RENCANA-FASE-1.md](RENCANA-FASE-1.md) | Phase 1 plan — scope, methodology (2-tier + forward-test), schema, Telegram |
 | [PRINSIP-DATA.md](PRINSIP-DATA.md) | **Binding.** Source tiers + 9 anti-manipulation checks |
 | [RENCANA-FASE-2.md](RENCANA-FASE-2.md) | Phase 2 design (held) — product concept, data inventory, GitHub/Cloudflare infra, web architecture |
