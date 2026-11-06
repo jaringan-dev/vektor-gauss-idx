@@ -416,6 +416,26 @@ CREATE TABLE IF NOT EXISTS market_breadth2 (
     computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Every tag as FIRST computed (audit 2026-11-07, B13). `compute` re-runs the last ~5 days every night and rewrites the
+-- unresolved signal_log rows with data that arrived later (e.g. a KSEI month published days after the session), so
+-- signal_log cannot tell what was known at the time. This table only ever gains rows (INSERT ... ON CONFLICT DO NOTHING,
+-- never updated or deleted except its ret2_* outcome columns): captured_at is when the tag first appeared. The forward
+-- test counts a tag only if it was captured before 08:00 WIB of the next calendar day (before the next open), from
+-- engine.FREEZE_SINCE on. Outcome columns are filled by `vg backfill-outcomes2` exactly like signal_log.ret2_*.
+CREATE TABLE IF NOT EXISTS signal_snapshot (
+    session_date    DATE NOT NULL,
+    ticker          TEXT NOT NULL,
+    tag             TEXT NOT NULL,
+    captured_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ret2_h1         NUMERIC,
+    ret2_h3         NUMERIC,
+    ret2_h5         NUMERIC,
+    ret2_h10        NUMERIC,
+    ret2c_h5        NUMERIC,
+    ret2_at         TIMESTAMPTZ,
+    PRIMARY KEY (session_date, ticker, tag)
+);
+
 -- ---------------------------------------------------------------------------
 -- Operational
 -- ---------------------------------------------------------------------------

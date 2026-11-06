@@ -33,7 +33,11 @@ def load_cur(cur, tags: list[str] | None = None) -> dict[str, dict]:
     for c in _COLS:
         parts.append(f"count({c}), avg(({c} > 0)::int)::float, avg({c})::float")
     where = "" if tags is None else "WHERE tag = ANY(%s)"
-    sql = f"SELECT tag, {', '.join(parts)} FROM signal_log {where} GROUP BY tag ORDER BY tag"
+    from ..engine import (
+        EVAL_SOURCE,  # the same rows as the Track record (frozen first-seen tags from FREEZE_SINCE on)
+    )
+
+    sql = f"SELECT tag, {', '.join(parts)} FROM {EVAL_SOURCE} s {where} GROUP BY tag ORDER BY tag"
     cur.execute(sql, (list(tags),) if tags is not None else None)
     out: dict[str, dict] = {}
     for row in cur.fetchall():

@@ -22,13 +22,14 @@ def _f(v):
 
 def load(tag: str) -> dict:
     from ..db import connect
+    from ..engine import EVAL_SOURCE
 
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
-            # Outcome v2 (VWAP t+1 entry, total return): the same numbers as the Track record (engine.eval_tags).
+            # Outcome v2 (VWAP t+1 entry, total return) over the same rows as the Track record (engine.EVAL_SOURCE).
             "SELECT date_trunc('month', s.session_date)::date, count(*), avg(s.ret2_h5 - m.ret2_h5_all), "
             "avg((s.ret2_h5 > 0)::int)::float, avg(m.hit2_h5_all) "
-            "FROM signal_log s JOIN market_breadth2 m USING (session_date) "
+            f"FROM {EVAL_SOURCE} s JOIN market_breadth2 m USING (session_date) "
             "WHERE s.tag = %s AND s.ret2_h5 IS NOT NULL GROUP BY 1 ORDER BY 1 DESC LIMIT 24", (tag,))
         monthly = cur.fetchall()
         cur.execute("SELECT max(session_date) FROM signal_log WHERE tag = %s", (tag,))

@@ -134,7 +134,8 @@ def test_edge_load_reads_four_horizons_for_the_asked_tags_only():
     assert "tag = ANY(%s)" in cur.sql and cur.params == (["AKUM-ASING"],) and "ret2_h1" in cur.sql and "ret2_h10" in cur.sql   # outcome v2
     cur_all = _Cur([])
     edge.load_cur(cur_all, None)
-    assert "WHERE" not in cur_all.sql and cur_all.params is None
+    assert "tag = ANY" not in cur_all.sql and cur_all.params is None          # no tag filter (the shared source has its own WHERE)
+    assert "signal_snapshot" in cur_all.sql                                    # same rows as the Track record (engine.EVAL_SOURCE)
 
 
 def test_a_horizon_shows_win_rate_and_expectancy_marks_thin_samples_and_never_prints_none():

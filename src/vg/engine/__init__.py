@@ -39,6 +39,24 @@ _LOOKBACK_TD = 26            # trading days of history to load per ticker
 _FWD_HORIZONS = (1, 3, 5, 10)
 LIQUID_VALUE_IDR = 5_000_000_000   # >Rp5B traded that day => "liquid" for eval breakdown
 
+# B13 (audit 2026-11-07): from this session on, the evaluation counts a tag only as FIRST computed (signal_snapshot) and only
+# if that happened before 08:00 WIB of the next calendar day. Earlier sessions can only be read from signal_log, whose
+# unresolved rows were rewritten by the nightly recompute; their first-seen time is lost, and the pages say so.
+FREEZE_SINCE = date(2026, 11, 9)
+# The rows every evaluation reads (eval_tags, tag_monthly_edge, the pattern page, the expectancy panel): one definition, so
+# the numbers cannot disagree. Columns: session_date, ticker, tag, ret2_h1/h3/h5/h10 (outcome v2), ret_h5 (v1, comparison).
+# The date literal comes from the constant above, never from input.
+EVAL_SOURCE = f"""(
+    SELECT session_date, ticker, tag, ret2_h1, ret2_h3, ret2_h5, ret2_h10, ret_h5
+    FROM signal_log WHERE session_date < DATE '{FREEZE_SINCE.isoformat()}'
+    UNION ALL
+    SELECT ss.session_date, ss.ticker, ss.tag, ss.ret2_h1, ss.ret2_h3, ss.ret2_h5, ss.ret2_h10, sl.ret_h5
+    FROM signal_snapshot ss
+    LEFT JOIN signal_log sl USING (session_date, ticker, tag)
+    WHERE ss.session_date >= DATE '{FREEZE_SINCE.isoformat()}'
+      AND ss.captured_at <= ((ss.session_date + 1)::timestamp + interval '8 hours') AT TIME ZONE 'Asia/Jakarta'
+)"""
+
 # Phase 1.25 tunables (guesses — the forward test decides)
 TICKET_Z_HIGH = 1.5          # avg-ticket z >= this => unusually large trades (institutional footprint)
 TICKET_Z_LOW = -1.0          # avg-ticket z <= this => unusually small trades (retail churn)
@@ -877,6 +895,12 @@ def compute_day(session_date: date) -> ComputeSummary:
             log_rows, conflict=("session_date", "ticker", "tag"),
             update=("close",),
         )
+        # The forward record (B13): a tag's FIRST appearance, never overwritten or deleted by a later recompute, so the
+        # evaluation can count only what was known before the next open. See signal_snapshot in db/schema.sql.
+        upsert_many(
+            cur, "signal_snapshot", ("session_date", "ticker", "tag"),
+            [(r[0], r[1], r[2]) for r in log_rows], conflict=("session_date", "ticker", "tag"),
+        )
         _log(cur, "compute", session_date, "ok", n_comp,
              f"{len(tickers)} tickers, {len(log_rows)} tags")
 
@@ -1172,7 +1196,7 @@ def eval_tags(since: date | None = None) -> list[dict]:
                    (avg((s.ret2_h5 > 0)::int)
                        FILTER (WHERE p.value > %(liq)s))::float    AS hit_rate_liquid,
                    avg(s.ret_h5 - m.ret_h5_all)                    AS edge_h5_v1
-            FROM signal_log s
+            FROM {EVAL_SOURCE} s
             JOIN market_breadth2 m2 USING (session_date)
             LEFT JOIN market_breadth m USING (session_date)
             JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
@@ -1207,7 +1231,7 @@ def tag_monthly_edge(since: date | None = None) -> dict[str, list[tuple[date, in
             f"""
             SELECT s.tag, date_trunc('month', s.session_date)::date AS month, count(*) AS n,
                    avg(s.ret2_h5 - m2.ret2_h5_all) AS edge_h5
-            FROM signal_log s
+            FROM {EVAL_SOURCE} s
             JOIN market_breadth2 m2 USING (session_date)
             WHERE s.ret2_h5 IS NOT NULL{since_clause}
             GROUP BY 1, 2

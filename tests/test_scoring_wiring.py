@@ -180,3 +180,6 @@ def test_compute_day_stores_scores_and_logs_the_wash_tag_as_probation(monkeypatc
     assert by_ticker["BBBB"]["bpi3"] is None
     _log_cols, log_rows = calls["signal_log"]
     assert [(r[1], r[2], r[3]) for r in log_rows] == [("AAAA", "AKUM-NETRAL-WASH", "probation")]
+    # B13: every tag is also written to the never-overwritten first-seen record, insert-only (no update columns).
+    snap_cols, snap_rows = calls["signal_snapshot"]
+    assert snap_cols == ("session_date", "ticker", "tag") and [(r[1], r[2]) for r in snap_rows] == [("AAAA", "AKUM-NETRAL-WASH")]

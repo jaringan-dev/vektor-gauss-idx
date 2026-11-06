@@ -151,6 +151,17 @@ def backfill(*, full: bool = False) -> dict:
             params,
         )
         rows = cur.rowcount
+        # The frozen forward record (signal_snapshot, B13) gets the same outcome columns from the same query.
+        cur.execute(
+            f"""
+            WITH r AS ({_RETURNS})
+            UPDATE signal_snapshot s
+            SET ret2_h1 = r.r1, ret2_h3 = r.r3, ret2_h5 = r.r5, ret2_h10 = r.r10, ret2c_h5 = r.rc5, ret2_at = now()
+            FROM r
+            WHERE s.ticker = r.ticker AND s.session_date = r.session_date {pending}
+            """,
+            params,
+        )
         # Equal-weight benchmark, same formula: every stock that traded on the signal day. Rebuilt whole (cheap, and it keeps
         # the benchmark consistent with the factors as they stand today).
         cur.execute("TRUNCATE market_breadth2")
