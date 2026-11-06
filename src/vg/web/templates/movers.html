@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ticker, db_error, disclaimer %}
+{% block subtitle %}Top movers{% endblock %}
+
+{% block content %}
+  {% if error %}
+    {{ db_error(error) }}
+  {% elif not v.session_date %}
+    <div class="panel">
+      <h2>No data yet</h2>
+      <p class="note">There are no price bars in the database yet. Run <code>vg collect-price</code> first.</p>
+    </div>
+  {% else %}
+    <div class="answer"><span class="q">What moved the most?</span>
+      The five daily rankings for session {{ v.session_date }}{% if not v.is_latest %} (not the newest session){% endif %}, from {{ v.n_stocks }} stocks with a close.
+      End of day, not live: it is a plain sort of the day's numbers, not a pattern or a score. Use <b>Liquid only</b> when a stock that moved a lot on a few trades fills the list.</div>
+    {% if v.notice %}<div class="answer notice" role="status"><span class="q">Date</span>{{ v.notice }}</div>{% endif %}
+
+    <section class="grid kpis" aria-label="Leaders of every ranking">
+      {% for s in v.summary %}
+      <div class="kpi{{ ' on' if s.on else '' }}">
+        <div class="k"><a class="kpi-link" href="{{ s.href }}">{{ s.label }}</a></div>
+        {% if s.leaders %}
+        <div class="s">
+          {% for l in s.leaders %}
+            <div>{{ ticker(l.ticker) }} <span class="{{ l.chg.c }}">{{ l.chg.t }}</span>
+              {% if s.key == 'value' %}· {{ l.value }}{% elif s.key == 'volume' %}· {{ l.lots }} lots{% elif s.key == 'freq' %}· {{ l.freq }} trades{% endif %}</div>
+          {% endfor %}
+        </div>
+        {% else %}<div class="s">Nothing qualifies.</div>{% endif %}
+      </div>
+      {% endfor %}
+    </section>
+
+    <div class="panel">
+      <h2>{{ v.board_label }} — session {{ v.session_date }}</h2>
+      <p class="chips pills" aria-label="Ranking">
+        {% for p in v.pills %}<a class="fchip{{ ' on' if p.on else '' }}" href="{{ p.href }}" title="{{ p.title }}"{% if p.on %} aria-pressed="true"{% endif %}>{{ p.label }}</a>{% endfor %}
+      </p>
+      <p class="chips pills" aria-label="Filters">
+        {% for t in v.toggles %}<a class="fchip{{ ' on' if t.on else '' }}" href="{{ t.href }}" title="{{ t.title }}"{% if t.on %} aria-pressed="true"{% endif %}>{{ t.label }}</a>{% endfor %}
+      </p>
+      <form method="get" action="/movers" class="filterbar" aria-label="Session">
+        <input type="hidden" name="board" value="{{ v.board }}">
+        {% if v.liquid %}<input type="hidden" name="liquid" value="1">{% endif %}
+        {% if v.regular %}<input type="hidden" name="reg" value="1">{% endif %}
+        <label for="mv-date">Session</label>
+        <select id="mv-date" name="date">
+          {% for d in v.days %}<option value="{{ d.iso }}"{% if d.on %} selected{% endif %}>{{ d.iso }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="menu-btn">Show</button>
+      </form>
+      <p class="note">{{ v.board_note|capitalize }}{% if v.liquid %} · liquid stocks only (more than Rp5 billion traded){% endif %}{% if v.regular %} · regular board only (negotiated board left out){% endif %}.
+        {% if v.rows %}Top {{ v.rows|length }}.{% endif %}</p>
+      {% if v.rows %}
+      <table class="cards" role="table" aria-label="{{ v.board_label }}">
+        <thead role="rowgroup">
+          <tr role="row"><th scope="col" role="columnheader">#</th><th scope="col" role="columnheader" style="text-align:left">Stock</th>
+              <th scope="col" role="columnheader">Price</th><th scope="col" role="columnheader">Change</th>
+              <th scope="col" role="columnheader">Value</th><th scope="col" role="columnheader">Volume (lots)</th>
+              <th scope="col" role="columnheader">Frequency</th></tr>
+        </thead>
+        <tbody role="rowgroup">
+          {% for r in v.rows %}
+          <tr role="row">
+            <td role="cell" class="rankcell">{{ r.rank }}</td>
+            <td role="cell" class="key" style="text-align:left"><span class="rk">#{{ r.rank }}</span>{{ ticker(r.ticker) }}</td>
+            <td role="cell" data-label="Price">{{ r.price }}</td>
+            <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+            <td role="cell" data-label="Value">{{ r.value }}</td>
+            <td role="cell" data-label="Volume (lots)">{{ r.lots }}</td>
+            <td role="cell" data-label="Frequency">{{ r.freq }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="note">No stock qualifies for this ranking on this session.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block footer %}
+  <p>From the IDX end-of-day stock summary stored in the database. Value is in rupiah (T = trillion, B = billion, M = million); volume is shown in lots
+     (1 lot = 100 shares). Value, volume and frequency include the negotiated board unless <b>Regular board only</b> is on.</p>
+  {{ disclaimer() }}
+{% endblock %}

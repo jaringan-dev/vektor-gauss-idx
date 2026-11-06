@@ -39,7 +39,7 @@ def test_every_html_route_has_a_sidebar_link_and_vice_versa():
 
 def test_every_nav_key_is_an_active_page_used_by_a_route():
     keys = {it["key"] for g in webapp._NAV for it in g["items"]}
-    assert keys == {"home", "today", "tracker", "risk", "research", "screener", "ranking", "rotation", "health", "coverage", "guide"}   # the active_page values the routes pass
+    assert keys == {"home", "today", "tracker", "risk", "research", "screener", "movers", "ranking", "rotation", "health", "coverage", "guide"}   # the active_page values the routes pass
 
 
 @pytest.fixture()

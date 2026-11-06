@@ -24,7 +24,7 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
-from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, rotation as rotmod, runlog
+from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, movers as moversmod, rotation as rotmod, runlog
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -50,6 +50,7 @@ _NAV = [
     ]},
     {"title": "Stocks", "items": [
         {"key": "screener", "label": "Today's stocks", "href": "/screener", "icon": "🔍"},
+        {"key": "movers", "label": "Top movers", "href": "/movers", "icon": "🚀"},
         {"key": "ranking", "label": "Top rankings", "href": "/ranking", "icon": "🏆"},
         {"key": "rotation", "label": "Sector rotation", "href": "/rotation", "icon": "🔄"},
     ]},
@@ -72,7 +73,7 @@ _TOP_NAV = [
     {"key": "system", "label": "System Monitor", "href": "/system"},
 ]
 # active_page (the sidebar key) -> top-bar section. A route can override it with ctx["section"] (the stock page does).
-_SECTION = {"home": "screener", "today": "screener", "screener": "screener", "ranking": "screener", "rotation": "screener",
+_SECTION = {"home": "screener", "today": "screener", "screener": "screener", "movers": "screener", "ranking": "screener", "rotation": "screener",
             "tracker": "eval", "risk": "eval", "research": "eval", "health": "system", "coverage": "system"}
 
 
@@ -432,6 +433,25 @@ def ranking(h: str = "5d") -> HTMLResponse:
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("ranking.html", ctx)
+
+
+_MOVERS_CACHE = TTLCache(ttl_seconds=300)
+
+
+@app.get("/movers", response_class=HTMLResponse)
+def movers(board: str = "gainer", liquid: str = "0", reg: str = "0", d: str = Query("", alias="date")) -> HTMLResponse:
+    """The five daily rankings (top gainer / loser / value / volume / frequency) from the stored end-of-day summary."""
+    ctx: dict = {"active_page": "movers", "error": None, "v": None}
+    try:
+        try:
+            want = date.fromisoformat(d) if d else None
+        except ValueError:
+            want = None                                     # a mistyped date falls back to the newest session
+        raw, _wall, _hit = _MOVERS_CACHE.get_or_compute(("movers", want), lambda: moversmod.load(want))
+        ctx["v"] = moversmod.build_view(raw, board, liquid=liquid == "1", regular=reg == "1")
+    except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
+        ctx["error"] = f"{type(exc).__name__}: {exc}"
+    return _render("movers.html", ctx)
 
 
 def _counts(n_days: int) -> tuple[list, dict]:
