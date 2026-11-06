@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import term, th, tag_chip, verdict, chart, db_error, disclaimer %}
+{% from "_macros.html" import term, th, tag_chip, verdict, chart, range_key, db_error, disclaimer %}
 {% block title %}{{ ticker }} — Vektor Gauss{% endblock %}
 {% block subtitle %}{{ ticker }}{% if v and v.name %} <span style="font-weight:400;color:var(--muted);font-size:15px">· {{ v.name }}{% if v.sector %} · {{ v.sector }}{% endif %}</span>{% endif %}{% endblock %}
 
@@ -53,22 +53,36 @@
     {% endif %}
     {% if v.charts.band %}
     <div class="panel">
-      <h2>Foreign brokers per day: the {{ term('certain_bounds', 'certain range') }}</h2>
-      <p class="note">Each bar is the range that is guaranteed to contain foreign-broker net flow that day, as a share of traded value. A bar entirely above zero means
-         net buying is certain; entirely below, net selling is certain; a bar that crosses zero means the data cannot tell. A short bar is a precise answer.
-         Only days with broker data are drawn.</p>
+      <h2>Are foreign brokers buying or selling? Day by day</h2>
+      <p class="note">Each bar is one day: how much the foreign brokers bought or sold, as a share of that day's traded value. The broker table shows only part of the
+         selling side, so the exact figure is unknown; what we can say for sure is a {{ term('certain_bounds', 'certain range') }}. The solid part of a bar is the amount that is
+         certain, the faint part is how much more it could be, and a grey bar means the range crosses zero, so the data cannot say which way. Only days with broker data are drawn.</p>
+      {{ range_key() }}
+      {% set bs = v.band_summary %}
+      {% if bs %}<div class="answer"><span class="q">In short</span>Over the {{ bs.n }} days with broker data, net buying was certain on <b>{{ bs.buy }}</b> days and net selling was certain
+        on <b>{{ bs.sell }}</b> days; on {{ bs.unclear }} days the data cannot say. Added up over the whole period, the net flow was between
+        <b class="{{ 'pos' if bs.cls == 'pos' else '' }}">{{ bs.cum_lo }}</b> and <b>{{ bs.cum_hi }}</b>, so {{ bs.verdict }}.</div>{% endif %}
       {{ chart(v.charts.band, v.charts.band_m) }}
     </div>
     {% endif %}
     {% if v.charts.groups %}
     <div class="panel">
       <h2>Who is buying and selling? {{ term('group_flow', 'Net flow by group') }} per day</h2>
-      <p class="note">The same {{ term('certain_bounds', 'certain range') }} as above, split into three groups that always add up to zero (every rupiah bought is sold by
-         someone): <b>foreign houses</b> (the foreign institutional brokers), <b>domestic retail brokers</b> (the mass-retail apps and brokers) and <b>all other brokers</b>
-         (everyone else, which mixes local institutions, bank-backed houses and smaller brokers). The groups come from the broker's code, not from who its client is,
-         so "retail" and "institution" are an estimate. The three top panels share one scale, so a flat panel means a small share of the day's value, not missing data.
-         The bottom panel shows at least how much of the day's value the <em>same</em> brokers both bought and sold ({{ term('roundtrip', 'round-trip') }}). That includes
-         a broker's own clients trading against each other, so a high value is not proof of a market maker.</p>
+      <p class="note">The same bars as above, split into three groups of brokers. Every rupiah bought is sold by someone, so the three groups always cancel out.
+         <b>Foreign houses</b> are the foreign institutional brokers, <b>domestic retail brokers</b> are the mass-retail apps and brokers, and <b>all other brokers</b> are everyone else
+         (local institutions, bank-backed houses and smaller brokers). The groups come from the broker's code, not from who its client is, so "retail" and "institution" are an estimate.
+         The three top panels share one scale, so a flat panel means a small share of the day's value, not missing data. The bottom panel is different: it shows at least how much of the
+         day's value the <em>same</em> brokers both bought and sold ({{ term('roundtrip', 'round-trip') }}). A broker's own clients trading against each other count too, so a high value is
+         not proof of a market maker.</p>
+      {{ range_key() }}
+      {% if v.group_summary %}
+      <table aria-label="Buying and selling by group over the period">
+        <thead><tr><th scope="col" style="text-align:left">Group</th><th scope="col">Days buying was certain</th><th scope="col">Days selling was certain</th><th scope="col">Days unclear</th>
+          <th scope="col" class="wrap">Added up over the period</th></tr></thead>
+        <tbody>{% for g in v.group_summary %}<tr><td style="text-align:left"><b>{{ g.label }}</b></td><td>{{ g.buy }}</td><td>{{ g.sell }}</td><td>{{ g.unclear }}</td>
+          <td class="wrap {{ g.cls }}">between {{ g.cum_lo }} and {{ g.cum_hi }}{% if g.cls == 'pos' %} · net buying is certain{% elif g.cls == 'neg' %} · net selling is certain{% else %} · cannot say{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% endif %}
       {% if v.group_hidden %}<p class="note">{{ v.group_hidden }} day{{ 's' if v.group_hidden != 1 else '' }} left out: the broker table was an exact copy of the previous day's, so it is not new data.</p>{% endif %}
       {{ chart(v.charts.groups, v.charts.groups_m) }}
     </div>

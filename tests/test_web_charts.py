@@ -73,9 +73,11 @@ def test_bounds_band_colours_by_certainty_and_skips_missing_days():
     ds = _days(5)
     svg = charts.bounds_band(ds, [0.06, None, -0.09, -0.03, 0.01], [0.09, None, -0.06, 0.04, 0.02])
     _parse(svg)
-    assert svg.count("<rect") == 4
+    assert svg.count("<g>") == 4                                              # one group per day WITH data; the missing day is skipped
     assert "var(--pos)" in svg and "var(--neg)" in svg and "var(--muted)" in svg
     assert "between +6.0% and +9.0% of traded value" in svg
+    assert "net buying is certain" in svg and "net selling is certain" in svg and "unclear" in svg       # the hover text says what the bar means
+    assert "buying certain on 2 days · selling certain on 1 day · unclear on 1 day" in svg                # counts above the bars, singular handled
 
 
 def test_text_is_escaped():
@@ -90,7 +92,7 @@ def test_bounds_band_clips_outlier_days_but_keeps_their_real_values():
     hi = [0.03] * 11 + [0.56]
     svg = charts.bounds_band(ds, lo, hi)
     _parse(svg)
-    assert "1 day beyond the scale" in svg
+    assert "1 faint bar cut off at the edge" in svg
     assert "between +50.0% and +56.0% of traded value" in svg        # tooltip keeps the true range
     assert "+56%" not in svg                                           # the axis is not stretched to the outlier
 
@@ -127,7 +129,8 @@ def test_group_panels_draws_every_panel_with_labels_titles_and_a_round_trip_floo
         assert label in svg
     assert "between +1.0% and +3.0% of traded value" in svg and "at least 20.0% of traded value" in svg
     assert 'aria-labelledby="groups-t groups-d"' in svg
-    assert "guaranteed to contain" in svg                                      # the description tells a screen-reader user what a bar means
+    assert "A solid bar is the amount that is certain" in svg and "same scale" in svg                 # the description tells a screen-reader user what a bar means
+    assert "buying certain on 30 days" in svg and "selling certain on 30 days" in svg and "unclear on 30 days" in svg   # each panel carries its own day counts
 
 
 def test_group_panels_leaves_gaps_for_missing_days_and_escapes_text():
@@ -135,7 +138,7 @@ def test_group_panels_leaves_gaps_for_missing_days_and_escapes_text():
     lo = [0.01, None, 0.01, 0.01, 0.01, None, 0.01, 0.01]
     hi = [0.02, None, 0.02, 0.02, 0.02, None, 0.02, 0.02]
     svg = charts.group_panels(ds, [("A <b>&", lo, hi)])
-    assert svg.count("<rect") == 6 and "A &lt;b&gt;&amp;" in svg
+    assert svg.count("<g>") == 6 and "A &lt;b&gt;&amp;" in svg
     _parse(svg)
 
 
@@ -145,7 +148,7 @@ def test_group_panels_clip_outliers_and_say_so_on_their_own_line():
     hi = [0.02] * 20
     lo[3], hi[3] = 0.1, 0.9                                                    # one huge crossing day
     svg = charts.group_panels(ds, [("A", lo, hi)])
-    assert "beyond the scale" in svg and "+90.0%" in svg                       # real range kept in the tooltip
+    assert "1 faint bar cut off at the edge" in svg and "+90.0%" in svg        # real range kept in the tooltip
     _parse(svg)
 
 

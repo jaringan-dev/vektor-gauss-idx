@@ -313,7 +313,8 @@ def group_series(raw: dict) -> dict | None:
         levels.setdefault(d, []).append((side, code, _f(val)))
     days = [r[0] for r in flow]
     value = {r[0]: _f(r[4]) for r in flow}
-    out: dict = {"days": days, "foreign": ([], []), "retail": ([], []), "other": ([], []), "churn": [], "hidden": 0}
+    out: dict = {"days": days, "foreign": ([], []), "retail": ([], []), "other": ([], []), "churn": [], "hidden": 0,
+                 "value": [value.get(d) for d in days]}
     prev_sig = None
     for d in days:
         rows, lv = flows.get(d), levels.get(d)
@@ -333,6 +334,40 @@ def group_series(raw: dict) -> dict | None:
         out["churn"].append(floor / value[d] if floor is not None else None)
     if not any(v is not None for v in out["foreign"][0]):
         return None
+    return out
+
+
+def range_summary(rows) -> dict | None:
+    """What a run of daily guaranteed ranges settles, in words and numbers. `rows` = [(lo, hi)] in rupiah, days without data left out.
+    Day counts say how often the direction was certain; the cumulative range is the sum of the daily lows and of the daily highs, which is
+    itself guaranteed to contain the period's net flow. None when there is no day."""
+    rows = [(a, b) for a, b in rows if a is not None and b is not None]
+    if not rows:
+        return None
+    buy, sell = sum(1 for a, _ in rows if a > 0), sum(1 for _, b in rows if b < 0)
+    cum_lo, cum_hi = sum(a for a, _ in rows), sum(b for _, b in rows)
+    if cum_lo > 0:
+        verdict, cls = "net buying over the whole period is certain", "pos"
+    elif cum_hi < 0:
+        verdict, cls = "net selling over the whole period is certain", "neg"
+    else:
+        verdict, cls = "the data cannot say whether it was net buying or net selling over the whole period", ""
+    return {"n": len(rows), "buy": buy, "sell": sell, "unclear": len(rows) - buy - sell, "cum_lo": fmt.idr(cum_lo),
+            "cum_hi": fmt.idr(cum_hi), "verdict": verdict, "cls": cls}
+
+
+GROUP_LABELS = (("foreign", "Foreign houses"), ("retail", "Domestic retail brokers"), ("other", "All other brokers"))
+
+
+def group_summary(g: dict | None) -> list[dict]:
+    """One `range_summary` per broker group, in rupiah (the chart data is a share of each day's traded value)."""
+    out = []
+    for key, label in GROUP_LABELS if g else ():
+        lo, hi = g[key]
+        rows = [(a * v, b * v) if (a is not None and b is not None and v) else (None, None) for a, b, v in zip(lo, hi, g["value"], strict=True)]
+        s = range_summary(rows)
+        if s:
+            out.append({"label": label, **s})
     return out
 
 
@@ -359,7 +394,7 @@ def _build_charts(raw: dict, plan, g: dict | None = None) -> dict:
         if not g:
             return None
         nets = [("Foreign houses", *g["foreign"]), ("Domestic retail brokers", *g["retail"]), ("All other brokers", *g["other"])]
-        return charts.group_panels(g["days"], nets, ("Round-trip floor (same broker buys and sells)", g["churn"]), width=width, uid=uid)
+        return charts.group_panels(g["days"], nets, ("Same brokers on both sides (at least this share)", g["churn"]), width=width, uid=uid)
 
     return {
         "groups": group_chart(charts.W, "groups"),
@@ -461,6 +496,8 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
     charts_view = _build_charts(raw, plan, groups)
     return {
         "charts": charts_view, "group_hidden": groups["hidden"] if groups else 0,
+        "band_summary": range_summary([(_f(r[2]), _f(r[3])) for r in raw.get("chart_flow") or []]),
+        "group_summary": group_summary(groups),
         "ticker": t, "name": name, "sector": sector, "latest": raw["latest"].isoformat(),
         "close": fmt.price(close), "chg": fmt.cell(chg, 1), "comp": comp_view, "tags_today": tags_today_view,
         "summary": stock_summary(summary_in), "recent": recent, "history": history, "buyers": buyers,

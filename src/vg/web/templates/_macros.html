@@ -31,6 +31,17 @@
 <div class="chart-wide">{{ wide|safe }}</div>{% if narrow %}<div class="chart-narrow">{{ narrow|safe }}</div>{% endif %}
 {%- endmacro %}
 
+{# The key to the broker-range bars (solid = certain, faint = could be more, grey = cannot say). Same words on both charts. #}
+{% macro range_key() -%}
+<ul class="legend" aria-label="How to read the bars">
+  <li><span class="sw" aria-hidden="true" style="background:var(--pos)">&nbsp;</span>Green, solid: buying is certain, at least this much</li>
+  <li><span class="sw" aria-hidden="true" style="background:var(--pos);opacity:.3">&nbsp;</span>Green, faint: it could be this much more</li>
+  <li><span class="sw" aria-hidden="true" style="background:var(--neg)">&nbsp;</span>Red, solid: selling is certain, at least this much</li>
+  <li><span class="sw" aria-hidden="true" style="background:var(--neg);opacity:.3">&nbsp;</span>Red, faint: it could be this much more</li>
+  <li><span class="sw" aria-hidden="true" style="background:var(--muted);opacity:.4">&nbsp;</span>Grey: the data cannot say whether it was buying or selling</li>
+</ul>
+{%- endmacro %}
+
 {% macro db_error(error) -%}
 <div class="panel">
   <h2>Cannot read the data</h2>
