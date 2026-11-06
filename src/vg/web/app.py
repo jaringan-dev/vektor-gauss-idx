@@ -14,9 +14,10 @@ import threading
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
-from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from .. import engine, research, risk, risk_eval
@@ -24,7 +25,7 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
-from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, movers as moversmod, rotation as rotmod, runlog
+from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, movers as moversmod, rotation as rotmod, runlog, watchlist as watchlistmod
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -116,6 +117,14 @@ def _render(name: str, ctx: dict, status_code: int = 200) -> HTMLResponse:
     ctx["strip"] = _strip_ctx()
     ctx["glossary_json"] = _GLOSSARY_JSON
     return HTMLResponse(_TEMPLATES.get_template(name).render(ctx), status_code=status_code)
+
+def _watchlist() -> list[str]:
+    """The user's own watchlist. A failed read is an empty list here (the /today panel reports it); it never breaks the page it decorates."""
+    try:
+        return watchlistmod.load()
+    except Exception:  # noqa: BLE001
+        return []
+
 
 # Tag-eval tables are slow (in-sample ≈ 2.9s) but only change after `vg compute` /
 # `vg backfill-outcomes`. 30-minute TTL, invalidated early by _eval_version() (which moves
@@ -234,7 +243,7 @@ def home(q: str = "", view: str = "", liquid: str = "0", wl: str = "0", sort: st
             ctx["session_date"] = sd
             raw, wall, ctx["cache_hit"] = _HOME_CACHE.get_or_compute(("home", sd), lambda: homemod.load(sd), fresh=fresh)
             ctx["computed_at"] = datetime.fromtimestamp(wall).strftime("%H:%M")  # noqa: DTZ006 — local wall-clock label
-            v = homemod.build_view(raw, CONFIG.watchlist, CONFIG.holdings)
+            v = homemod.build_view(raw, _watchlist(), CONFIG.holdings)
             filtered = homemod.apply(v["rows"], p)
             pg = listing.paginate(len(filtered), p["page"], homemod.PER_PAGE)
             ctx.update(v=v, pg=pg, rows=filtered[pg["start"]:pg["end"]], filtered=any((p["q"], p["view"], p["liquid"], p["wl"])),
@@ -246,21 +255,69 @@ def home(q: str = "", view: str = "", liquid: str = "0", wl: str = "0", sort: st
 
 
 @app.get("/today", response_class=HTMLResponse)
-def today(fresh: bool = False) -> HTMLResponse:
+def today(request: Request, fresh: bool = False) -> HTMLResponse:
     ctx: dict = {"active_page": "today", "error": None, "v": None, "empty": False, "computed_at": None, "cache_hit": False,
-                 "wl": set(CONFIG.watchlist), "held": set(CONFIG.holdings)}
+                 "wl": set(), "wl_list": [], "wl_error": None, "wl_msgs": watchlistmod.messages(dict(request.query_params)),
+                 "held": set(CONFIG.holdings)}
+    try:
+        ctx["wl_list"] = watchlistmod.load()
+    except Exception as exc:  # noqa: BLE001 — the rest of the page still works; the panel says why the list is missing
+        ctx["wl_error"] = f"{type(exc).__name__}: {exc}"
+    ctx["wl"] = set(ctx["wl_list"])
     try:
         sd = engine.latest_signal_date()
         if sd is None:
             ctx["empty"] = True
         else:
-            watch = list(dict.fromkeys((*CONFIG.watchlist, *CONFIG.holdings)))
+            watch = list(dict.fromkeys((*ctx["wl_list"], *CONFIG.holdings)))
             ctx["v"], wall, ctx["cache_hit"] = _TODAY_CACHE.get_or_compute(
                 ("today", sd, tuple(watch)), lambda: todaymod.build_view(todaymod.load(sd, watch), _track_summary()), fresh=fresh)
             ctx["computed_at"] = datetime.fromtimestamp(wall).strftime("%H:%M")
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
     return _render("today.html", ctx)
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """The fields of a small urlencoded form post (python-multipart is not installed, and none of these forms need it)."""
+    body = (await request.body())[:20_000].decode("utf-8", "replace")
+    return {k: v[0] for k, v in parse_qs(body, keep_blank_values=True).items()}
+
+
+def _same_origin(request: Request) -> bool:
+    """A change is only accepted from a page of this dashboard. Login is HTTP Basic, which the browser re-sends by itself, so another site
+    could otherwise post a form here; a browser always labels such a post with the page it came from. No Origin at all (curl, tests) is allowed."""
+    origin = request.headers.get("origin")
+    if origin is None:
+        return True
+    allowed = {request.headers.get("host", ""), request.headers.get("x-forwarded-host", "")} - {""}      # a proxy may carry the public name
+    return urlparse(origin).netloc in allowed                                                           # "null" never matches
+
+
+@app.post("/watchlist/add")
+async def watchlist_add(request: Request):
+    if not _same_origin(request):
+        return PlainTextResponse("Refused: this form was not sent from the dashboard.", status_code=403)
+    form = await _form(request)
+    nxt = watchlistmod.safe_next(form.get("next"))
+    try:
+        result = watchlistmod.add(form.get("tickers"))
+    except Exception:  # noqa: BLE001
+        return RedirectResponse(watchlistmod.redirect_url(nxt, error=True), status_code=303)
+    return RedirectResponse(watchlistmod.redirect_url(nxt, result=result), status_code=303)
+
+
+@app.post("/watchlist/remove")
+async def watchlist_remove(request: Request):
+    if not _same_origin(request):
+        return PlainTextResponse("Refused: this form was not sent from the dashboard.", status_code=403)
+    form = await _form(request)
+    nxt = watchlistmod.safe_next(form.get("next"))
+    try:
+        removed = watchlistmod.remove(form.get("ticker"))
+    except Exception:  # noqa: BLE001
+        return RedirectResponse(watchlistmod.redirect_url(nxt, error=True), status_code=303)
+    return RedirectResponse(watchlistmod.redirect_url(nxt, removed=removed), status_code=303)
 
 
 @app.get("/track-record", response_class=HTMLResponse)
@@ -306,7 +363,7 @@ def forward_tracker(fresh: bool = False) -> HTMLResponse:
 def _screener_view() -> tuple:
     """Latest signalled session + one decorated row per tagged ticker (newest flow first)."""
     sd = engine.latest_signal_date()
-    wl = set(CONFIG.watchlist)
+    wl = set(_watchlist())
     held = set(CONFIG.holdings)
     rows: list[dict] = []
     if sd is not None:

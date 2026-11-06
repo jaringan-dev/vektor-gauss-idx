@@ -368,6 +368,16 @@
     :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
     ::selection { background:rgba(57,255,20,.28); }
     html { scrollbar-color:var(--border) transparent; }
+    /* the watchlist panel on /today */
+    ul.wl-chips { list-style:none; display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 0; padding:0; }
+    ul.wl-chips li { display:inline-flex; align-items:center; gap:2px; padding:2px 4px 2px 12px; border:1px solid var(--glass-edge); border-radius:10px; background:var(--prob-bg); }
+    ul.wl-chips form { margin:0; display:inline; }
+    .wl-x { border:0; background:transparent; color:var(--muted); cursor:pointer; min-width:28px; min-height:28px; border-radius:8px; font-size:13px; }
+    .wl-x:hover, .wl-x:focus-visible { color:var(--fail-fg); background:var(--fail-bg); }
+    .wl-msg { margin:6px 0; padding:8px 12px; border-radius:10px; font-size:13px; }
+    .wl-msg.ok { background:var(--ready-bg); color:var(--ready-fg); }
+    .wl-msg.warn { background:var(--warn-bg); color:var(--warn-fg); }
+    .wl-msg.bad { background:var(--fail-bg); color:var(--fail-fg); }
     @media (max-width:859px) { .topnav .brand { display:none; } .topnav { padding:0 10px; } }   /* the menu bar below carries the name on narrow screens */
     @media (forced-colors: active) { .pagehead h1 { -webkit-text-fill-color:currentColor; background:none; color:CanvasText; } }
   </style>

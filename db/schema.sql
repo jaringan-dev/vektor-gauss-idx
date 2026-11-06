@@ -564,3 +564,10 @@ CREATE TABLE IF NOT EXISTS trade_flow_1m (
     PRIMARY KEY (session_date, ticker, minute)
 );
 CREATE INDEX IF NOT EXISTS idx_trade_flow_1m_day ON trade_flow_1m (session_date, minute);
+
+-- The user's own watchlist, kept from the dashboard (/today). It starts EMPTY and is only ever filled by the user: nothing is added from
+-- configuration. VG_WATCHLIST in .env is a different thing (which stocks the nightly collection pulls tick data for).
+CREATE TABLE IF NOT EXISTS user_watchlist (
+    ticker    TEXT PRIMARY KEY,
+    added_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

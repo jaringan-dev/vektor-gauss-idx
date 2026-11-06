@@ -6,7 +6,9 @@ on anything other than the local machine. Rules:
   * `vg serve --host <non-loopback>` REFUSES to start unless VG_WEB_PASSWORD is set and long enough (`startup_error`);
   * with a password set, every request (except /healthz) needs HTTP Basic credentials; comparisons are constant-time;
   * repeated failures from one client address are throttled (HTTP 429) so a password cannot be guessed at speed;
-  * all responses carry no-store / no-sniff / no-frame / no-referrer headers.
+  * all responses carry no-store / no-sniff / no-frame headers and `Referrer-Policy: same-origin` (nothing is leaked to another site, but
+    a browser can still label a form post from this dashboard with its own address, which the watchlist forms check; `no-referrer`
+    made it send `Origin: null` for every post, so the dashboard could not tell its own forms from a stranger's).
 
 Basic auth sends the password in every request, so it must travel over an encrypted path (Tailscale/WireGuard, or HTTPS
 from a tunnel). The setup guide (PHONE-ACCESS.md) says so, and recommends the encrypted route first.
@@ -31,7 +33,7 @@ _SECURITY_HEADERS = [
     (b"cache-control", b"no-store"),
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
-    (b"referrer-policy", b"no-referrer"),
+    (b"referrer-policy", b"same-origin"),
 ]
 
 

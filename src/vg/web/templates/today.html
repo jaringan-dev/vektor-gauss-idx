@@ -22,11 +22,36 @@
   {% else %}<p class="note">{{ empty }}</p>{% endif %}
 {% endmacro %}
 
+{% macro watchlist_panel() %}
+<div class="panel" id="watchlist">
+  <h2>Your watchlist</h2>
+  <p class="note">Only the stocks you add here. Nothing is filled in for you, and nothing is added without you.</p>
+  {% for m in wl_msgs %}<p class="wl-msg {{ m.kind }}" role="status">{{ m.text }}</p>{% endfor %}
+  {% if wl_error %}<div class="err">Could not read your watchlist: {{ wl_error }}</div>{% endif %}
+  <form method="post" action="/watchlist/add" class="filterbar" aria-label="Add stocks to your watchlist">
+    <input type="hidden" name="next" value="/today">
+    <label class="sr-only" for="wl-add">Stock codes to add</label>
+    <input id="wl-add" class="filter" name="tickers" type="text" autocomplete="off" placeholder="Add stocks, e.g. BBCA, TLKM" required>
+    <button type="submit" class="menu-btn">Add</button>
+  </form>
+  {% if wl_list %}
+  <ul class="wl-chips" aria-label="Stocks on your watchlist">
+    {% for t in wl_list %}
+    <li><a class="tk" href="/stock/{{ t }}"><b>{{ t }}</b></a>
+      <form method="post" action="/watchlist/remove"><input type="hidden" name="next" value="/today"><input type="hidden" name="ticker" value="{{ t }}">
+        <button type="submit" class="wl-x" aria-label="Remove {{ t }} from your watchlist" title="Remove {{ t }}">&#10005;</button></form></li>
+    {% endfor %}
+  </ul>
+  {% elif not wl_error %}<p class="note">Your watchlist is empty.</p>{% endif %}
+</div>
+{% endmacro %}
+
 {% block content %}
   {% if error %}
     {{ db_error(error) }}
   {% elif empty %}
     <div class="panel"><h2>No signals yet</h2><p class="note">There are no rows in <code>signal_log</code>. Run <code>vg compute</code> first.</p></div>
+    {{ watchlist_panel() }}
   {% else %}
     <div class="answer"><span class="q">What happened on {{ v.session_date }}, and what is worth a look?</span>
       {% for s in v.market %}{{ s }} {% endfor %}
@@ -36,6 +61,8 @@
     </div>
 
     <p class="wide-note" style="margin:-6px 0 14px">Built at {{ computed_at }}{% if cache_hit %} (kept for up to 10 minutes; add <code>?fresh=1</code> to the address to rebuild){% endif %}.</p>
+
+    {{ watchlist_panel() }}
 
     {% if v.watch %}
     <div class="panel">

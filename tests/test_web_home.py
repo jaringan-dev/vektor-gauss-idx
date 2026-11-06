@@ -265,7 +265,7 @@ def client(monkeypatch):
     monkeypatch.setattr(webapp.engine, "tag_monthly_edge", lambda since=None: {})
     monkeypatch.setattr(webapp.engine, "latest_signal_date", lambda: SD)
     monkeypatch.setattr(home, "load", lambda sd: _raw())
-    monkeypatch.setattr(webapp.CONFIG, "watchlist", ("BBCA", "PRDA"), raising=False)
+    monkeypatch.setattr(webapp, "_watchlist", lambda: ["BBCA", "PRDA"])          # the user's own list (a table), not VG_WATCHLIST
     monkeypatch.setattr(webapp.CONFIG, "holdings", (), raising=False)
 
     def unavailable(*a, **k):

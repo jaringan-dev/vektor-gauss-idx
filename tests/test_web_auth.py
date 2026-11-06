@@ -63,7 +63,7 @@ def test_healthz_is_open_for_monitors_but_nothing_else_is():
 def test_every_response_carries_security_headers_including_the_challenge():
     for r in (_client().get("/"), _client().get("/", headers=_basic())):
         assert r.headers["cache-control"] == "no-store" and r.headers["x-frame-options"] == "DENY"
-        assert r.headers["x-content-type-options"] == "nosniff" and r.headers["referrer-policy"] == "no-referrer"
+        assert r.headers["x-content-type-options"] == "nosniff" and r.headers["referrer-policy"] == "same-origin"
 
 
 def test_without_a_password_it_only_adds_headers_and_never_blocks():
