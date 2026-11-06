@@ -381,6 +381,8 @@
     .wl-msg.warn { background:var(--warn-bg); color:var(--warn-fg); }
     .wl-msg.bad { background:var(--fail-bg); color:var(--fail-fg); }
     @media (max-width:859px) { .topnav .brand { display:none; } .topnav { padding:0 10px; } }   /* the menu bar below carries the name on narrow screens */
+    /* Phones: one navigation only. The Menu button opens the sidebar, which reaches every screen; the top bar would be a third layer above the data. */
+    @media (max-width:640px) { .topnav { display:none; } body.has-topnav { --topnav-h:0px; } }
     @media (forced-colors: active) { .pagehead h1 { -webkit-text-fill-color:currentColor; background:none; color:CanvasText; } }
   </style>
   <noscript><style>.sidebar { display:block !important; } .menu-btn { display:none; }</style></noscript>

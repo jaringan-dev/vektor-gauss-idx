@@ -51,7 +51,7 @@ _NAV = [
         {"key": "research", "label": "Is the edge real?", "href": "/research", "icon": "🧪"},
     ]},
     {"title": "Stocks", "items": [
-        {"key": "screener", "label": "Today's stocks", "href": "/screener", "icon": "🔍"},
+        {"key": "screener", "label": "Foreign-flow screener", "href": "/screener", "icon": "🔍"},
         {"key": "movers", "label": "Top movers", "href": "/movers", "icon": "🚀"},
         {"key": "ranking", "label": "Top rankings", "href": "/ranking", "icon": "🏆"},
         {"key": "rotation", "label": "Sector rotation", "href": "/rotation", "icon": "🔄"},
@@ -890,7 +890,7 @@ def stock_detail(ticker: str, capital: float | None = None, risk_pct: float | No
         capital = CONFIG.account_balance / 1_000_000
     if risk_pct is None:
         risk_pct = CONFIG.risk_pct * 100
-    ctx: dict = {"active_page": "screener", "section": "stock", "ticker": t, "error": None, "not_found": False, "v": None,
+    ctx: dict = {"active_page": "stock", "section": "stock", "ticker": t, "error": None, "not_found": False, "v": None,
                  "capital": capital, "risk_pct": risk_pct}
     if not stockmod.TICKER_RE.match(t):
         ctx["not_found"] = True

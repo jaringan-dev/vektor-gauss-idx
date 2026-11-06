@@ -43,6 +43,7 @@ SORTS = {"ticker": ("ticker", "asc"), "price": ("price_raw", "desc"), "change": 
 VIEWS = (("acc", "Accumulation"), ("top", "Top Accumulation"), ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
 PILL_VIEWS = ("top", "haka", "wash")
 HAKA_DOMINANT = 0.55      # buyers lifted the offer on at least 55% of the volume whose aggressor is known
+AGGR_MIN_SHARE = 0.10     # show the Aggressor-ratio column only when at least 10% of the session's rows have order-flow data
 DEFAULTS = {"q": "", "view": "", "liquid": 0, "wl": 0, "sort": "bpi", "dir": "desc", "page": 1}
 
 
@@ -177,12 +178,15 @@ def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
         notice = (f"BPI has not been computed for {raw['session_date']}; the newest scored session is {last}. "
                   "Run vg compute to fill it." if last else
                   f"BPI has not been computed for {raw['session_date']} (no session has a score yet). Run vg compute to fill it.")
+    n_aggr = sum(r["haka_raw"] is not None for r in rows)
     return {
         "session_date": raw["session_date"], "rows": rows, "n_rows": len(rows), "notice": notice,
+        # A column that is N/A on (nearly) every row is noise: hide it and say why in the note under the table instead.
+        "n_aggr": n_aggr, "show_aggr": bool(rows) and n_aggr / len(rows) >= AGGR_MIN_SHARE,
         "cards": {
             "acc": {"n": sum(r["acc"] for r in rows), "of": len(rows)},
             "wash": {"n": sum(r["wash"] for r in rows)},
-            "avg": {**_pts(avg), "sub": avg_sub},
+            "avg": {**_pts(avg), "sub": avg_sub, "wl_empty": not wl},
             "eod": eod_card(raw, bool(scored)),
         },
     }

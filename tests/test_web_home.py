@@ -301,8 +301,33 @@ def test_home_colours_bpi_badges_the_wash_stock_and_shows_na(client):
     assert re.search(r'data-label="Aggressor ratio" class="aggr na">N/A<', t)         # null -> N/A
     assert 'title="90% of the volume was classified; HAKA/HAKI = 1.42"' in t
     assert 'aria-label="HAKA 59 percent, HAKI 41 percent"' in t and "59% / 41%" in t   # the split bar, with its numbers beside it
-    assert 'class="badge ready" href="/pattern/AKUM-ASING"' in t                    # accumulation tags are green badges
-    assert "None" not in re.search(r"<tbody.*?</tbody>", t, re.DOTALL).group(0)
+    body = re.search(r"<tbody.*?</tbody>", t, re.DOTALL).group(0)
+    # Patterns are plain-word chips with the code in the tooltip, never the green "ready" badge (that colour means "passed the forward test").
+    assert 'class="chip tg" href="/pattern/AKUM-ASING"' in body and 'title="AKUM-ASING"' in body and 'class="badge ready"' not in body
+    assert "None" not in body
+    raja = re.search(r'<tr role="row" class="is-wash">.*?</tr>', body, re.DOTALL).group(0)
+    assert raja.count('class="chip tg"') == 1 and 'class="badge wash"' in raja      # wash badge always shows; then one pattern chip
+
+
+def test_home_shows_one_pattern_chip_and_counts_the_rest(client, monkeypatch):
+    monkeypatch.setattr(home, "load", lambda sd: _raw([_raw_row("MANY", "AKUM-ASING, MARKDOWN, DISTRIBUSI-ASING")]))
+    row = re.search(r"<tbody.*?</tbody>", client.get("/?fresh=1").text, re.DOTALL).group(0)
+    assert row.count('class="chip tg"') == 1 and 'href="/pattern/AKUM-ASING"' in row   # accumulation first
+    assert '<a class="chip more" href="/stock/MANY">+2 more</a>' in row
+
+
+def test_home_hides_the_aggressor_column_when_almost_no_stock_has_order_flow(client, monkeypatch):
+    rows = [_raw_row(f"T{i:03d}", "MARKUP") for i in range(20)]                     # 20 stocks, none with order-flow data
+    monkeypatch.setattr(home, "load", lambda sd: _raw(rows))
+    t = client.get("/?fresh=1").text
+    assert 'data-label="Aggressor ratio"' not in t and "Sort by aggressor ratio" not in t
+    assert "column is hidden: only 0 of 20 stocks have order-flow data" in t and 'href="/today#watchlist"' in t
+
+
+def test_home_empty_watchlist_card_links_to_where_stocks_are_added(client, monkeypatch):
+    monkeypatch.setattr(webapp, "_watchlist", list)
+    cards = re.search(r'<section class="grid kpis".*?</section>', client.get("/?fresh=1").text, re.DOTALL).group(0)
+    assert 'Your watchlist is empty. <a href="/today#watchlist">Add stocks</a>' in cards
 
 
 def test_home_filters_and_sorting_work_through_the_address(client):

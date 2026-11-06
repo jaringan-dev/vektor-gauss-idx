@@ -13,7 +13,7 @@
   [data-density="compact"] .kpi .k { font-size:11px; letter-spacing:.01em; line-height:1.25; grid-column:1; }
   [data-density="compact"] .kpi .v { font-size:18px; line-height:1.2; grid-column:2; grid-row:1; text-align:right; }
   [data-density="compact"] .kpi .s { font-size:11px; line-height:1.3; margin-top:1px; grid-column:1 / -1;
-                     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }          /* one line; the full text is in the tooltip */
+                     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden; }   /* up to two lines; the full text is in the tooltip */
   [data-density="compact"] .kpi .badge { padding:0 6px; font-size:10px; }
   @media (max-width:760px) {
     .grid.kpis[data-density="compact"] { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -40,7 +40,9 @@
     .table-scroll { max-height:max(320px, min(65vh, calc(100vh - 360px))); overflow:auto; }
     #screener th, #screener td { padding:3px 8px; font-size:13px; white-space:nowrap; }
     #screener .badge, #screener .chip { padding:0 6px; line-height:20px; font-size:11px; margin-top:0; margin-bottom:0; }   /* the 24px tap-target height stays */
-    #screener td.wrap, #screener th.wrap { white-space:nowrap; min-width:0; }
+    /* Signals wrap inside their cell (each chip stays whole) so the table fits its box instead of scrolling sideways. */
+    #screener td.wrap { white-space:normal; min-width:240px; }
+    #screener td.wrap .chip, #screener td.wrap .badge { white-space:nowrap; margin:1px 2px; }
     #screener thead th { position:sticky; top:0; z-index:2; font-size:10.5px;
                          background:color-mix(in srgb, var(--panel) 86%, transparent);
                          -webkit-backdrop-filter:saturate(180%) blur(10px); backdrop-filter:saturate(180%) blur(10px);
@@ -80,7 +82,7 @@
       <div class="kpi">
         <div class="k">Average BPI, watchlist</div>
         <div class="v {{ v.cards.avg.c }}">{{ v.cards.avg.t }}</div>
-        <div class="s" title="{{ v.cards.avg.sub }}">{{ v.cards.avg.sub }}</div>
+        <div class="s" title="{{ v.cards.avg.sub }}">{% if v.cards.avg.wl_empty %}Your watchlist is empty. <a href="/today#watchlist">Add stocks</a>{% else %}{{ v.cards.avg.sub }}{% endif %}</div>
       </div>
       {% set eod = v.cards.eod %}
       <div class="kpi eod-{{ eod.state }}">
@@ -123,7 +125,7 @@
             {{ sh('change', 'Change', 'change_today') }}
             {{ sh('bpi', 'BPI (top 3)', 'bpi') }}
             {{ sh('overlap', 'Same houses', 'overlap3') }}
-            {{ sh('aggr', 'Aggressor ratio', 'aggressor') }}
+            {% if v.show_aggr %}{{ sh('aggr', 'Aggressor ratio', 'aggressor') }}{% endif %}
             {{ sh('signals', 'Signals', none, true) }}
           </tr>
         </thead>
@@ -135,14 +137,17 @@
             <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
             <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}{{ ' heat' if r.bpi.c else '' }}"{% if r.bpi.c %} style="--i:{{ r.bpi_heat }}"{% endif %}>{{ r.bpi.t }}{% if r.bpi_live %} <span class="computed" title="Computed from the stored broker table when this page is opened; the engine has not stored it yet">computed</span>{% endif %}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
             <td role="cell" data-label="Same houses" class="{{ 'warnfg' if r.overlap_raw and r.overlap_raw >= 2 else '' }}">{{ r.overlap }}</td>
+            {% if v.show_aggr %}
             <td role="cell" data-label="Aggressor ratio" class="aggr{{ ' na' if not r.haka else '' }}"{% if r.aggr_note %} title="{{ r.aggr_note }}; HAKA/HAKI = {{ r.aggr }}"{% endif %}>
               {%- if r.haka %}<span class="split" role="img" aria-label="HAKA {{ r.haka.haka }} percent, HAKI {{ r.haka.haki }} percent"><i class="haka" style="width:{{ r.haka.haka }}%"></i><i class="haki"></i></span>
               <span class="split-t">{{ r.haka.haka }}% / {{ r.haka.haki }}%</span>{% else %}N/A{% endif -%}
             </td>
+            {% endif %}
             <td role="cell" data-label="Signals" class="wrap">
-              {%- if r.wash %}<a class="badge wash" href="/pattern/AKUM-NETRAL-WASH" data-term="tag:AKUM-NETRAL-WASH">AKUM-NETRAL-WASH</a> {% endif -%}
-              {%- for t in r.acc_tags %}<a class="badge ready" href="/pattern/{{ t }}" data-term="tag:{{ t }}">{{ t }}</a> {% endfor -%}
-              {{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}
+              {#- Plain words, code in the tooltip. Not green: green is the "passed the forward test" colour, and no pattern has. Accumulation patterns come first. -#}
+              {%- if r.wash %}<a class="badge wash" href="/pattern/AKUM-NETRAL-WASH" data-term="tag:AKUM-NETRAL-WASH" title="AKUM-NETRAL-WASH">{{ plain_tag('AKUM-NETRAL-WASH') }}</a> {% endif -%}
+              {#- One chip + "+N more": this screen is for scanning many rows; the full list is one click away on the stock page. -#}
+              {{ tag_chips(r.acc_tags + r.tag_list, 1, '/stock/' ~ r.ticker) }}
             </td>
           </tr>
           {% endfor %}
@@ -158,7 +163,9 @@
       {% endif %}
       <p class="wide-note">
         <a class="t" href="/guide#bpi" data-term="bpi">BPI</a> compares how concentrated the buying and the selling were: positive means a few houses bought while many sold.
-        {{ term('aggressor', 'Aggressor ratio') }} is N/A when no order-flow data was collected for the stock (it is collected for watchlist stocks only).
+        {% if v.show_aggr %}{{ term('aggressor', 'Aggressor ratio') }} is N/A when no order-flow data was collected for the stock (it is collected for watchlist stocks only).
+        {% else %}The {{ term('aggressor', 'Aggressor ratio') }} column is hidden: only {{ v.n_aggr }} of {{ v.n_rows }} stocks have order-flow data this session
+        (it is collected for <a href="/today#watchlist">watchlist</a> stocks only). It still shows on each stock's page.{% endif %}
         {% if computed_at %}Built at {{ computed_at }}{% if cache_hit %}, kept for up to 5 minutes{% endif %}.{% endif %}
       </p>
     </div>

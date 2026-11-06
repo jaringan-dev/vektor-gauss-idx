@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import term, ticker, tag_chips, quad, db_error, disclaimer %}
-{% block subtitle %}Today's stocks{% endblock %}
+{% block subtitle %}Foreign-flow screener{% endblock %}
 
 {% macro sh(key, label, term_key=none, left=false) -%}
 {%- set s = sorts[key] if sorts else none -%}
