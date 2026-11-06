@@ -74,6 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
     gd.add_argument("--latest", action="store_true", help="the latest confirmed trading day")
     gd.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
+    bf = sub.add_parser(
+        "collect-broker-full",
+        help="COMPLETE broker tables (every broker that traded, feed all_data=true) -> broker_flows_full; feeds the stalker / inventory pages only",
+    )
+    bf.add_argument("--sessions", type=int, default=1, metavar="N", help="the newest N trading days, newest first (default 1 = today's pass)")
+    bf.add_argument("--budget", type=int, default=None, metavar="CALLS", help="stop after about this many feed calls (a rerun carries on)")
+    bf.add_argument("--plan", action="store_true", help="show what would be fetched, fetch nothing")
+
     cb = sub.add_parser(
         "collect-broker-summary",
         help="broker summary (vektorgauss, Tier 3, forward-only) -> broker_flows",
@@ -336,6 +344,19 @@ def main(argv: list[str] | None = None) -> int:
             ok = sum(1 for o in outs if o.status == "ok")
             print(f"done: {ok}/{len(outs)} days with filings")
         return 0
+
+    if args.cmd == "collect-broker-full":
+        from . import brokerfull
+
+        if args.plan:
+            for d in brokerfull.recent_sessions(args.sessions):
+                plan = collect.plan_broker_full(session_date=d, have_table=brokerfull.TABLE)
+                print(f"session {plan['latest']}: universe {len(plan['universe'])} · already stored {len(plan['have'])} · would fetch {len(plan['todo'])}")
+            return 0
+        outs = brokerfull.collect_recent(args.sessions, budget=args.budget)
+        for o in outs:
+            _print(o)
+        return 0 if outs and outs[-1].status == "ok" else 1
 
     if args.cmd == "collect-broker-summary":
         if (args.plan or args.date or args.backfill or args.levels_only) and not args.full:

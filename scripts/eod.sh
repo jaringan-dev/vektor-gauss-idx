@@ -57,6 +57,9 @@ fi
 # to be `--radar` (a 60-name cap) which let daily coverage silently sag to ~60 (checklist G3).
 # Best-effort — a Tier-3 outage must never abort EOD.
 vg collect-broker-summary --full || true
+# The COMPLETE broker tables (every broker that traded, ~960 calls) for the stalker / inventory pages. A separate table: nothing computed
+# from broker_flows reads it, so the BROKER-* signals are untouched. After the line above so that day is already published. Best-effort.
+vg collect-broker-full --sessions 1 || true
 # Done-details (HAKA/HAKI) for the WATCHLIST (+ VG_LQ45_TICKERS if set) only - never the whole market (~130 calls per
 # stock-day). Time-boxed by VG_DONE_BUDGET_MINUTES (default 15) so it cannot hold up pass 2 and the digest.
 # Feeds the Aggressor Ratio in pass 2. Best-effort Tier 3; a ticker already stored for the day costs 0 calls.

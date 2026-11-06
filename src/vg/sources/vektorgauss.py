@@ -198,6 +198,7 @@ class VgBrokerSummarySource(BrokerSummarySource):
         return _date.fromisoformat(end) if end else None
 
     _retry_waits: tuple[float, ...] = (2.0, 6.0)  # seconds before the 2nd and 3rd try
+    _extra_params: dict = {}                      # a subclass adds query parameters here; empty = the request is exactly as before
 
     def _download(self, ticker: str, on_date: date | None = None) -> bytes:
         if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
@@ -213,6 +214,7 @@ class VgBrokerSummarySource(BrokerSummarySource):
             # endpoint returns only the latest published day.
             d = on_date.isoformat()
             params["start_date"] = params["end_date"] = d
+        params.update(self._extra_params)
         # A 5xx or a dropped connection is the feed or the network blinking (5 Nov: ten 502s in a row ended the night's backfill,
         # and the same names answered 200 an hour later; 4 Nov: three minutes of DNS failures). Wait and ask again a couple of
         # times. 4xx (bad key, quota, ban) is NOT retried: asking harder would only make that worse.
@@ -271,6 +273,16 @@ class VgBrokerSummarySource(BrokerSummarySource):
             status, session_date, ticker, self.name, self.tier,
             raw_bytes=raw, rows=rows, levels=levels,
         )
+
+
+class VgFullBrokerSource(VgBrokerSummarySource):
+    """The same endpoint with `all_data=true`: EVERY broker that traded the stock that day, not only the 20 biggest net buyers.
+
+    Same price in quota (1 call; checked 6 Nov 2026: BBCA 71 brokers, bought 817B = sold 817B). Its rows go to `broker_flows_full`, a table of
+    its own: `broker_flows` and everything computed from it (the BROKER-* tags under forward test) are untouched."""
+
+    name = "vektorgauss_full"
+    _extra_params = {"all_data": "true"}
 
 
 _HISTORY_PATH = "/api/history/{ticker}"

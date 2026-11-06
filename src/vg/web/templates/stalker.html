@@ -55,10 +55,9 @@
     <div class="panel"><h2>No broker data</h2><p class="note">The broker table is empty. Run the nightly collection first.</p></div>
     {% elif v.incomplete %}
     <div class="panel"><h2>Not available yet: the stored broker tables are incomplete</h2>
-      <p class="note">So far the database keeps only the 20 biggest <b>net buyers</b> of each stock each day. No net seller is in it, and a broker's days outside that top 20 are missing,
-        so a per-broker net buy or sell computed from it would be wrong (too high). This page only uses a stock-day whose table is complete (bought and sold value agree within 1%),
-        and only {{ v.n_complete }} of the {{ v.n_pairs }} stock-days in this window qualify, almost all of them thinly traded stocks, which would misrepresent the broker.
-        It fills in by itself once complete tables are collected.</p></div>
+      <p class="note">This page uses the complete broker table (every broker that traded, collected nightly by <code>vg collect-broker-full</code>) and only a stock-day whose table is
+        complete (bought and sold value agree within 1%). Only {{ v.n_complete }} of the {{ v.n_pairs }} stock-days in this window qualify, so nothing is shown rather than a partial picture.
+        The complete table only exists from the day its collection began, so a long window fills up one session at a time.</p></div>
     {% else %}
     {% if v.partial %}<div class="answer notice" role="status"><span class="q">Partly covered</span>
       Only {{ v.n_complete }} of {{ v.n_pairs }} stock-days in this window have a complete broker table; the others are left out.</div>{% endif %}
@@ -74,7 +73,7 @@
 {% endblock %}
 
 {% block footer %}
-  <p>Summed from the stored broker table. Coverage was about 250 liquid stocks a day until mid-October 2026 and is nearly the whole market since, so a long window
-     covers fewer small stocks in its early days. Average price is value divided by shares, so it can differ a little from the exchange's own figure.</p>
+  <p>Summed from the complete broker table, which is collected from the day it was switched on, so a long window only fills up gradually. Average price is value divided by
+     shares, so it can differ a little from the exchange's own figure.</p>
   {{ disclaimer() }}
 {% endblock %}

@@ -1123,7 +1123,7 @@ def _with_feed_notes(run: _FeedRun, detail: str) -> str:
     return detail
 
 
-_HAVE_TABLES = ("broker_flows", "broker_levels")      # whitelist: the name goes into SQL
+_HAVE_TABLES = ("broker_flows", "broker_levels", "broker_flows_full")      # whitelist: the name goes into SQL
 
 
 def plan_broker_full(

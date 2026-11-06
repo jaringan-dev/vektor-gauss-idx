@@ -28,6 +28,7 @@ DAILY = (
     ("collect_index", "index", False),
     ("collect_broker", "broker flows", True),
     ("collect_broker_inventory", "broker inventory", False),
+    ("collect_broker_full", "complete broker tables", False),
     ("collect_done_details", "done details", False),
     ("collect_disclosure", "disclosure filings", False),
     ("parse_disclosure", "disclosure parsing", False),

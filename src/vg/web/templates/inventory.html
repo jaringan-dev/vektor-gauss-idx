@@ -27,13 +27,12 @@
 
     {% if v.incomplete %}
     <div class="panel"><h2>Not available yet: the stored broker tables are incomplete</h2>
-      <p class="note">So far the database keeps only the 20 biggest <b>net buyers</b> of each stock each day. No net seller is in it, and a broker's days outside that top 20 are missing,
-        so a running net position built from it would be wrong (too high, with no sellers). This page only uses days whose table is complete (bought and sold value agree within 1%),
-        and too few of the {{ v.n_all }} days of {{ v.ticker }} in this period qualify (at least 80% are needed, so a few quiet days cannot stand for the whole period).
-        It fills in by itself once complete tables are collected.</p></div>
+      <p class="note">This page uses the complete broker table (every broker that traded, collected nightly by <code>vg collect-broker-full</code>) and only days whose table is complete
+        (bought and sold value agree within 1%). Too few of the {{ v.n_all }} days of {{ v.ticker }} in this period have one (at least 80% are needed, so a few days cannot stand for the whole
+        period). The complete table only exists from the day its collection began, so a long period fills up one session at a time: try 2W once a few sessions have been collected.</p></div>
     {% elif not v.has_data %}
     <div class="panel"><h2>No broker data for {{ v.ticker }}</h2>
-      <p class="note">The broker table has nothing for this stock. Check the spelling; broker data covers about 250 liquid stocks since May 2025 and nearly the whole market since October 2026.</p></div>
+      <p class="note">The broker table has nothing for this stock. Check the spelling, or the complete broker table has not been collected for it yet.</p></div>
     {% elif not v.chart %}
     <div class="panel"><h2>Not enough to draw</h2>
       <p class="note">{{ v.n_days }} session{{ 's' if v.n_days != 1 else '' }} of broker data ({{ v.first }} to {{ v.last }}) is too few, or no broker was a net buyer or seller with this filter. Try a longer period or "All" brokers.</p></div>
@@ -56,7 +55,7 @@
 {% endblock %}
 
 {% block footer %}
-  <p>Summed from the stored broker table (value = rupiah bought minus sold; lot = shares bought minus sold, divided by 100). "Origin" is the broker's own origin from our
-     list of foreign houses, not the investor behind each order. Early days cover only liquid stocks, so a long period on a small stock may start late.</p>
+  <p>Summed from the complete broker table (value = rupiah bought minus sold; lot = shares bought minus sold, divided by 100). "Origin" is the broker's own origin from our
+     list of foreign houses, not the investor behind each order. The complete table is collected from the day it was switched on, so a long period only fills up gradually.</p>
   {{ disclaimer() }}
 {% endblock %}

@@ -2,12 +2,12 @@
 over a chosen period (2 weeks ... 1 year), counted from zero on the first day, with the closing price underneath.
 
 A broker's "inventory" here is the sum of its daily net (bought minus sold) in the period - what it accumulated or gave up while we watched,
-not its absolute holding (no data source reports that). It is summed from the stored broker table (`broker_flows`), so it needs broker data
+not its absolute holding (no data source reports that). It is summed from the complete broker table (`broker_flows_full`), so it needs broker data
 for that stock; the page says when there is none.
 
-COMPLETE TABLES ONLY. Until now the stored table keeps just the 20 biggest NET BUYERS of each stock each day: no net seller is in it, and a
-broker's days outside the top 20 are missing, so a running net built from it would be inflated and would show no sellers. A day counts only
-when its table is complete (bought and sold value agree within 1%). The page says how many days it had to leave out and shows nothing when
+COMPLETE TABLES ONLY. It reads `broker_flows_full` (every broker that traded, from `vg collect-broker-full`), not `broker_flows`, which keeps just
+the 20 biggest NET BUYERS of each stock each day: no net seller, so a running net from it would be inflated. A day counts only when its table is
+complete (bought and sold value agree within 1%). The page says how many days it had to leave out and shows nothing when
 no day qualifies. Unless at least 80% of the period's days qualify it shows nothing either: the tables that are complete are almost only the quiet days
 of thinly traded stocks (fewer than 20 brokers touched them), and a running net over those alone would misrepresent the period.
 
@@ -63,16 +63,16 @@ def load(ticker: str, rng: str) -> dict:
     with connect() as conn, conn.cursor() as cur:
         having = f"HAVING sum(buy_val) > 0 AND abs(sum(buy_val) - sum(sell_val)) <= {COMPLETE_TOLERANCE} * sum(buy_val)"
         if rng == "YTD":
-            cur.execute("SELECT max(session_date) FROM broker_flows WHERE ticker = %s", (ticker,))
+            cur.execute("SELECT max(session_date) FROM broker_flows_full WHERE ticker = %s", (ticker,))
             latest = cur.fetchone()[0]
-            cur.execute("SELECT DISTINCT session_date FROM broker_flows WHERE ticker = %s AND session_date >= %s ORDER BY session_date",
+            cur.execute("SELECT DISTINCT session_date FROM broker_flows_full WHERE ticker = %s AND session_date >= %s ORDER BY session_date",
                         (ticker, date(latest.year, 1, 1) if latest else date.today()))  # noqa: DTZ011 - local date, as elsewhere
         else:
-            cur.execute("SELECT DISTINCT session_date FROM broker_flows WHERE ticker = %s ORDER BY session_date DESC LIMIT %s", (ticker, int(n)))
+            cur.execute("SELECT DISTINCT session_date FROM broker_flows_full WHERE ticker = %s ORDER BY session_date DESC LIMIT %s", (ticker, int(n)))
         period = sorted(r[0] for r in cur.fetchall())                  # every day the period has broker data for
         days: list = []
         if period:
-            cur.execute("SELECT session_date FROM broker_flows WHERE ticker = %s AND session_date = ANY(%s) GROUP BY session_date " + having +
+            cur.execute("SELECT session_date FROM broker_flows_full WHERE ticker = %s AND session_date = ANY(%s) GROUP BY session_date " + having +
                         " ORDER BY session_date", (ticker, period))
             days = [r[0] for r in cur.fetchall()]
         n_all = len(period)
@@ -81,7 +81,7 @@ def load(ticker: str, rng: str) -> dict:
         rows: list[tuple] = []
         closes: dict = {}
         if days:
-            cur.execute("SELECT session_date, broker_code, side_flag, buy_val, sell_val, buy_vol, sell_vol FROM broker_flows "
+            cur.execute("SELECT session_date, broker_code, side_flag, buy_val, sell_val, buy_vol, sell_vol FROM broker_flows_full "
                         "WHERE ticker = %s AND session_date = ANY(%s)", (ticker, days))
             rows = cur.fetchall()
             cur.execute("SELECT session_date, close FROM price_bars WHERE ticker = %s AND session_date = ANY(%s)", (ticker, days))

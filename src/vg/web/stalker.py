@@ -1,14 +1,14 @@
 """Broker stalker (`/stalker`): pick one broker and a window (today ... 60 sessions) and see which stocks it bought and sold the most, net.
 
 For every stock the broker traded in the window: net value, value bought and sold, and the average price it paid and received
-(value divided by shares). All of it is summed from the stored broker table (`broker_flows`), so it only covers stocks and days the feed
-returned: coverage was about 250 liquid stocks a day until mid-October 2026 and is nearly the whole market since, which the page says.
+(value divided by shares). All of it is summed from `broker_flows_full`, the complete broker table (every broker that traded the stock, from
+`vg collect-broker-full`). It does NOT read `broker_flows`, which keeps just the 20 biggest NET BUYERS of each stock each day: no net seller, so
+any per-broker "net" from it would be wrong (inflated).
 
-COMPLETE TABLES ONLY. Until now the stored table keeps just the 20 biggest NET BUYERS of each stock each day: no net seller is in it, and a
-broker's days outside the top 20 are missing, so any per-broker "net" would be wrong (inflated). A stock-day counts only when its table is
-complete, meaning bought and sold value agree within 1% (in practice only thinly traded stocks that fewer than 20 brokers touched). Unless at
-least half of the window's stock-days qualify the page shows nothing, because a handful of small stocks must not pass for the market; above that
-it says how much it left out.
+COMPLETE TABLES ONLY. A stock-day counts only when its table is complete, meaning bought and sold value agree within 1%. Unless at least half
+of the window's stock-days qualify the page shows nothing, because a handful of stocks must not pass for the market; above that it says how much
+it left out. The full table only exists from the day its collection began (and for any days backfilled), so a long window fills up one session
+at a time.
 
 `load()` touches the database (SELECT only); `clean_*`, `shape` and `build_view` are pure and unit-tested.
 """
@@ -63,21 +63,21 @@ def load(broker: str, window: int) -> dict:
     from ..db import connect
 
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT DISTINCT session_date FROM broker_flows ORDER BY session_date DESC LIMIT %s", (int(window),))
+        cur.execute("SELECT DISTINCT session_date FROM broker_flows_full ORDER BY session_date DESC LIMIT %s", (int(window),))
         days = [r[0] for r in cur.fetchall()]
         rows: list[tuple] = []
         n_pairs = n_complete = 0
         if days:
             cur.execute(
                 "SELECT count(*), count(*) FILTER (WHERE " + COMPLETE_SQL + ") FROM ("
-                "SELECT sum(buy_val) AS sb, sum(sell_val) AS ss FROM broker_flows WHERE session_date = ANY(%s) GROUP BY session_date, ticker) t",
+                "SELECT sum(buy_val) AS sb, sum(sell_val) AS ss FROM broker_flows_full WHERE session_date = ANY(%s) GROUP BY session_date, ticker) t",
                 (days,))
             n_pairs, n_complete = cur.fetchone()
             if n_pairs and n_complete >= COVERAGE_MIN * n_pairs:
                 cur.execute(
-                    "WITH ok AS (SELECT session_date, ticker FROM broker_flows WHERE session_date = ANY(%s) GROUP BY session_date, ticker "
+                    "WITH ok AS (SELECT session_date, ticker FROM broker_flows_full WHERE session_date = ANY(%s) GROUP BY session_date, ticker "
                     "            HAVING " + COMPLETE_HAVING + ") "
-                    "SELECT f.ticker, sum(f.buy_val), sum(f.sell_val), sum(f.buy_vol), sum(f.sell_vol) FROM broker_flows f "
+                    "SELECT f.ticker, sum(f.buy_val), sum(f.sell_val), sum(f.buy_vol), sum(f.sell_vol) FROM broker_flows_full f "
                     "JOIN ok USING (session_date, ticker) WHERE f.broker_code = %s AND f.session_date = ANY(%s) GROUP BY f.ticker",
                     (days, broker, days))
                 rows = cur.fetchall()

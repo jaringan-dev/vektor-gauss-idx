@@ -571,3 +571,22 @@ CREATE TABLE IF NOT EXISTS user_watchlist (
     ticker    TEXT PRIMARY KEY,
     added_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- COMPLETE per-broker table (feed all_data=true): every broker that traded the stock that day, so buy value = sell value for the day.
+-- `broker_flows` keeps only the 20 biggest NET buyers (no sellers) and feeds the BROKER-* signals; this table feeds the broker stalker and
+-- inventory pages only, and nothing computed from `broker_flows` reads it. Collected by `vg collect-broker-full`.
+CREATE TABLE IF NOT EXISTS broker_flows_full (
+    session_date  DATE NOT NULL,
+    ticker        TEXT NOT NULL,
+    broker_code   TEXT NOT NULL,
+    side_flag     TEXT,                     -- 'D' | 'F' from the static foreign-broker list
+    buy_val       NUMERIC,
+    sell_val      NUMERIC,
+    buy_vol       NUMERIC,
+    sell_vol      NUMERIC,
+    fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (ticker, session_date, broker_code)
+);
+CREATE INDEX IF NOT EXISTS broker_flows_full_broker ON broker_flows_full (broker_code, session_date);
+CREATE INDEX IF NOT EXISTS broker_flows_full_day ON broker_flows_full (session_date);
+
