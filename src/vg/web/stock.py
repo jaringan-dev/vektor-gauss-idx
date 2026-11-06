@@ -14,7 +14,7 @@ from .. import broker_bounds, risk
 from ..engine import BPI_HIGH, WASH_OVERLAP_MIN
 from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
-from . import charts, fmt
+from . import charts, edge, fmt
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import stock_summary
 
@@ -95,6 +95,8 @@ def load(ticker: str) -> dict | None:
             "SELECT session_date, tag, ret_h5, ret_vs_ihsg_h5 FROM signal_log WHERE ticker = %s AND session_date >= %s "
             "ORDER BY session_date DESC, tag", (ticker, latest - timedelta(days=HISTORY_DAYS)))
         tags = cur.fetchall()
+        flagged_today = sorted({r[1] for r in tags if r[0] == latest})
+        edge_rows = edge.load_cur(cur, flagged_today) if flagged_today else {}
         cur.execute("SELECT max(session_date) FROM broker_levels WHERE ticker = %s", (ticker,))
         lvl_day = cur.fetchone()[0]
         levels = []
@@ -128,7 +130,7 @@ def load(ticker: str) -> dict | None:
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
-            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring,
+            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "edge": edge_rows,
             "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
 
 
@@ -166,7 +168,8 @@ def _score_row(day, vals: tuple) -> dict:
     return {
         "date": day.isoformat(),
         "has_bpi": bpi3 is not None, "has_aggr": haka is not None, "has_div": r["retail_div_state"] is not None,
-        "bpi3": _pts(bpi3), "bpi5": _pts(r["bpi5"]),
+        "bpi3": _pts(bpi3), "bpi5": _pts(r["bpi5"]), "bpi_points": None if bpi3 is None else round(bpi3 * 100, 1),
+        "haka_pct": None if haka is None else round(max(0.0, min(1.0, haka)) * 100),
         "overlap": f"{overlap} of 3" if overlap is not None else _NA,
         # same_houses = the overlap alone (what the caption states); wash = overlap AND a high index (the tag's rule)
         "same_houses": bool(overlap is not None and overlap >= WASH_OVERLAP_MIN),
@@ -178,6 +181,42 @@ def _score_row(day, vals: tuple) -> dict:
         "inst": _range(r["finst_net_lo"], r["finst_net_hi"]),
         "div": _DIV_WORDS.get(r["retail_div_state"] or "", _NA),
     }
+
+
+def overlap_matrix(levels: list, day) -> dict | None:
+    """Top-3 buyers next to top-3 sellers on the latest broker session. `levels` rows: (side, rank, code, name, value), rank 1 first.
+    A broker that appears on both sides is `shared`; `shared_n` of them make the day an alert from `WASH_OVERLAP_MIN` on (the same
+    rule as the shared-houses measure). None when there is no broker ladder for the stock."""
+    buy = [r for r in levels or [] if r[0] == "B"][:3]
+    sell = [r for r in levels or [] if r[0] == "S"][:3]
+    if not buy and not sell:
+        return None
+    b_codes, s_codes = {r[2] for r in buy}, {r[2] for r in sell}
+    shared = b_codes & s_codes
+
+    def side(rows):
+        return [{"rank": i + 1, "code": r[2], "name": r[3] or "", "val": fmt.idr(_f(r[4])).lstrip("+"), "shared": r[2] in shared}
+                for i, r in enumerate(rows)]
+
+    rows = [{"rank": i + 1, "buy": (side(buy) + [None] * 3)[i], "sell": (side(sell) + [None] * 3)[i]} for i in range(3)]
+    n = len(shared)
+    return {"day": day.isoformat() if day else None, "rows": rows, "shared_n": n, "alert": n >= WASH_OVERLAP_MIN,
+            "shared": sorted(shared)}
+
+
+def edge_card(data: dict | None, tags_today_view: list[dict]) -> dict | None:
+    """The "Signal Historical Edge" card: for each pattern flagged today, win rate and expectancy at H+1/H+3/H+5/H+10. None = no pattern
+    today or no stored result for any of them (the page then says so)."""
+    if not tags_today_view:
+        return None
+    rows = []
+    for t in tags_today_view:
+        d = (data or {}).get(t["code"])
+        if d:
+            r = edge.row_view(t["code"], d)
+            r["name"] = t["name"]
+            rows.append(r)
+    return {"rows": rows, "horizons": [f"H+{h}" for h in edge.HORIZONS], "small_n": edge.SMALL_N} if rows else None
 
 
 def scoring_view(rows: list | None, latest: date, tags_today: list[str]) -> dict:
@@ -192,7 +231,7 @@ def scoring_view(rows: list | None, latest: date, tags_today: list[str]) -> dict
     view = [_score_row(d, v) for d, v in scored]
     cur = view[0]
     return {
-        "state": "ok", "current": cur, "history": view,
+        "state": "ok", "current": {**cur, "gauge": charts.bpi_gauge(cur["bpi_points"])}, "history": view,
         "stale": scored[0][0] != latest,                         # newest scored session is not the stock's latest session
         "wash_today": "AKUM-NETRAL-WASH" in tags_today,
         "bpi_high_pts": f"{BPI_HIGH * 100:.0f}", "wash_min": WASH_OVERLAP_MIN,
@@ -505,6 +544,8 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
         "ownership": own, "corp": [{"date": c[0].isoformat(), "type": c[1], "ratio": c[3] or c[2] or ""} for c in raw["corp"]],
         "risk": risk_view, "has_atr": plan is not None,
         "scoring": scoring_view(raw.get("scoring"), raw["latest"], tags_today),
+        "matrix": overlap_matrix(raw["levels"], raw["levels_day"]),
+        "edge": edge_card(raw.get("edge"), tags_today_view),
         "own_chart": ownership_view(raw.get("own_series")),
         "disclosures": disclosure_view(raw.get("disclosures")),
     }

@@ -18,14 +18,14 @@ from vg.web import freshness, glossary, home
 SD = date(2026, 11, 5)
 
 
-def _raw_row(ticker, tags="", bpi=None, overlap=None, ratio=None, cov=None, value=10_000_000_000, close=1000.0, prev=990.0):
+def _raw_row(ticker, tags="", bpi=None, overlap=None, ratio=None, cov=None, value=10_000_000_000, close=1000.0, prev=990.0, haka=None):
     return {"ticker": ticker, "close": close, "prev": prev, "value": value, "quadrant": "AKUMULASI", "bpi3": bpi,
-            "bpi_overlap3": overlap, "aggr_ratio": ratio, "aggr_coverage": cov, "tags": tags}
+            "bpi_overlap3": overlap, "aggr_ratio": ratio, "aggr_coverage": cov, "aggr_haka_share": haka, "tags": tags}
 
 
 def _raw(rows=None, columns_present=True, last_scored=None):
     rows = rows if rows is not None else [
-        _raw_row("BBCA", "AKUM-ASING", bpi=0.30, overlap=0, ratio=1.42, cov=0.9),
+        _raw_row("BBCA", "AKUM-ASING", bpi=0.30, overlap=0, ratio=1.42, cov=0.9, haka=0.59),
         _raw_row("RAJA", "AKUM-NETRAL-WASH, KSEI-INST-AKUM", bpi=0.22, overlap=2),
         _raw_row("PRDA", "MARKDOWN", bpi=-0.18, overlap=1),
         _raw_row("ZZZZ", "DISTRIBUSI-ASING"),                                     # tagged but never scored
@@ -77,7 +77,7 @@ def test_aggressor_ratio_is_na_when_null_and_a_number_otherwise():
 
 def test_the_wash_flag_is_a_separate_badge_not_one_of_the_chips():
     rows = {r["ticker"]: r for r in home.build_view(_raw())["rows"]}
-    assert rows["RAJA"]["wash"] is True and rows["RAJA"]["tag_list"] == ["KSEI-INST-AKUM"]
+    assert rows["RAJA"]["wash"] is True and rows["RAJA"]["tag_list"] == [] and rows["RAJA"]["acc_tags"] == ["KSEI-INST-AKUM"]   # accumulation tags get their own green badge
     assert rows["BBCA"]["wash"] is False
 
 
@@ -138,9 +138,46 @@ def test_query_strings_keep_state_and_drop_defaults():
 
 
 def test_chips_toggle_and_views_are_a_single_choice_group():
-    chips = {c["label"]: c for c in home.chips(home.clean({"view": "wash"}))}
-    assert chips["Wash alert"]["on"] and chips["Wash alert"]["href"] == "?"
-    assert not chips["Accumulation"]["on"] and chips["Accumulation"]["href"] == "?view=acc"
+    pills = home.chips(home.clean({"view": "wash"}))
+    assert [c["label"] for c in pills] == ["All", "Liquid Only", "Top Accumulation", "Haka Dominant", "Wash Alert", "My Watchlist"]
+    chips = {c["label"]: c for c in pills}
+    assert chips["Wash Alert"]["on"] and chips["Wash Alert"]["href"] == "?" and not chips["All"]["on"]
+    assert not chips["Top Accumulation"]["on"] and chips["Top Accumulation"]["href"] == "?view=top"
+    assert chips["Haka Dominant"]["href"] == "?view=haka"                           # picking another view replaces the current one
+    assert all(c["title"] for c in pills)                                         # every pill says what it filters on
+
+
+def test_the_all_pill_is_lit_only_when_nothing_is_filtered_and_clears_the_filters_but_keeps_the_search():
+    assert next(c for c in home.chips(home.clean({})) if c["label"] == "All")["on"]
+    p = home.clean({"q": "bb", "view": "haka", "liquid": "1", "wl": "1"})
+    allp = next(c for c in home.chips(p) if c["label"] == "All")
+    assert not allp["on"] and allp["href"] == "?q=bb"
+    assert next(c for c in home.chips(p) if c["label"] == "Liquid Only")["href"] == "?q=bb&view=haka&wl=1"
+
+
+def test_top_accumulation_keeps_accumulation_stocks_that_are_not_negative_and_haka_dominant_needs_order_flow():
+    rows = home.build_view(_raw([
+        _raw_row("UP", "AKUM-ASING", bpi=0.4, haka=0.70), _raw_row("DOWN", "AKUM-ASING", bpi=-0.1, haka=0.30),
+        _raw_row("NOSC", "AKUM-ASING"), _raw_row("PLAIN", "MARKUP", bpi=0.5, haka=0.55), _raw_row("EDGE", "MARKUP", bpi=0.1, haka=0.549)]))["rows"]
+    top = [r["ticker"] for r in home.apply(rows, home.clean({"view": "top"}))]
+    assert top == ["UP", "NOSC"]                                                  # DOWN is negative, PLAIN has no accumulation tag; unscored goes last
+    assert [r["ticker"] for r in home.apply(rows, home.clean({"view": "haka"}))] == ["PLAIN", "UP"]   # 55% counts, 54.9% and N/A do not; the default order is BPI, highest first
+
+
+def test_the_haka_bar_adds_up_to_one_hundred_and_is_none_without_order_flow():
+    assert home.split_bar(0.625) == {"haka": 62, "haki": 38, "dominant": True}
+    assert home.split_bar(0.2) == {"haka": 20, "haki": 80, "dominant": False}
+    assert home.split_bar(None) is None and home.split_bar(7)["haka"] == 100       # out-of-range data is clipped, never an overflow
+
+
+def test_the_eod_card_has_three_honest_states():
+    scored = home.build_view(_raw())["cards"]["eod"]
+    assert (scored["state"], scored["word"], scored["t"]) == ("scored", "Scored", "2026-11-05")
+    unscored = [_raw_row("AAAA", "MARKUP")]
+    behind = home.build_view(_raw(unscored, last_scored=date(2026, 9, 3)))["cards"]["eod"]
+    assert behind["state"] == "behind" and behind["t"] == "2026-09-03" and "63 days" in behind["sub"]
+    assert home.build_view(_raw(unscored))["cards"]["eod"]["state"] == "none"
+    assert home.build_view(_raw(unscored, columns_present=False))["cards"]["eod"]["word"] == "Not set up"
 
 
 # ---- load(): scoring columns not in the database yet --------------------------------------------------------
@@ -251,17 +288,20 @@ def test_home_is_the_screener_with_three_header_cards_and_the_scored_table(clien
                    'aria-label="Stock screener"', "+30.0 pts", "-18.0 pts", 'href="/stock/BBCA"', "Not investment advice"):
         assert needle in t, needle
     cards = re.search(r'<section class="grid kpis".*?</section>', t, re.DOTALL).group(0)
-    assert re.search(r'<div class="k">Total accumulation</div>\s*<div class="v">2</div>', cards)
+    assert re.search(r'<div class="k">Total accumulation</div>\s*<div class="v"><a class="kpi-link" href="\?view=acc">2</a></div>', cards)
     assert re.search(r'<div class="k">Wash trading alert</div>\s*<div class="v">1</div>', cards)
+    assert len(re.findall(r'<div class="kpi[ "]', cards)) == 4 and "Last scored session" in cards and ">Scored<" in cards       # the fourth card: EOD / scoring status
 
 
 def test_home_colours_bpi_badges_the_wash_stock_and_shows_na(client):
     t = client.get("/").text
-    assert re.search(r'class="bpi pos">\+30\.0 pts', t) and re.search(r'class="bpi neg">-18\.0 pts', t)
+    assert re.search(r'class="bpi pos heat" style="--i:0\.6">\+30\.0 pts', t) and re.search(r'class="bpi neg heat" style="--i:0\.36">-18\.0 pts', t)   # heat = |BPI| / 50
     assert t.count('class="badge wash"') == 1 and 'href="/pattern/AKUM-NETRAL-WASH"' in t
     assert re.search(r'<tr role="row" class="is-wash">\s*<td[^>]*>.*?RAJA', t, re.DOTALL)
-    assert re.search(r'data-label="Aggressor ratio" class="na">N/A<', t)            # null -> N/A
-    assert 'data-label="Aggressor ratio" title="90% of the volume was classified">1.42<' in t
+    assert re.search(r'data-label="Aggressor ratio" class="aggr na">N/A<', t)         # null -> N/A
+    assert 'title="90% of the volume was classified; HAKA/HAKI = 1.42"' in t
+    assert 'aria-label="HAKA 59 percent, HAKI 41 percent"' in t and "59% / 41%" in t   # the split bar, with its numbers beside it
+    assert 'class="badge ready" href="/pattern/AKUM-ASING"' in t                    # accumulation tags are green badges
     assert "None" not in re.search(r"<tbody.*?</tbody>", t, re.DOTALL).group(0)
 
 

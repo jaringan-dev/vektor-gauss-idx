@@ -121,6 +121,43 @@
           <div class="v" style="font-size:15px">{{ c.div }}</div>
           <div class="s">retail {{ c.retail }} · institutions {{ c.inst }}</div></div>
       </div>
+      <div class="widgets" aria-label="Broker scoring widgets">
+        <section class="widget" aria-labelledby="w-gauge">
+          <h3 id="w-gauge">Bandar Power Meter</h3>
+          {% if c.gauge %}{{ c.gauge|safe }}
+          <p class="note">{{ term('bpi', 'BPI') }} of the top 3 brokers, in points. Green: a few houses bought while the selling was spread out. Grey: balanced. Red: the reverse.</p>
+          {% else %}<p class="na-big">N/A</p><p class="note">No broker ladder for this stock on the scored session.</p>{% endif %}
+        </section>
+        <section class="widget" aria-labelledby="w-haka">
+          <h3 id="w-haka">HAKA vs HAKI</h3>
+          {% if c.haka_pct is not none %}
+          <div class="hsplit" role="img" aria-label="HAKA {{ c.haka_pct }} percent, HAKI {{ 100 - c.haka_pct }} percent of the volume with a known aggressor">
+            <i class="haka" style="width:{{ c.haka_pct }}%">{% if c.haka_pct >= 14 %}HAKA {{ c.haka_pct }}%{% endif %}</i><i class="haki" style="width:{{ 100 - c.haka_pct }}%">{% if c.haka_pct <= 86 %}HAKI {{ 100 - c.haka_pct }}%{% endif %}</i>
+          </div>
+          <p class="note">Of the volume whose aggressor is known, buyers lifted the offer (HAKA) on {{ c.haka_pct }}% and sellers hit the bid (HAKI) on {{ 100 - c.haka_pct }}%.
+            {{ c.coverage }} of the volume carried an aggressor flag.</p>
+          {% else %}<p class="na-big">N/A</p><p class="note">No order-flow data for this day: it is collected for watchlist stocks only.</p>{% endif %}
+        </section>
+        <section class="widget wide" aria-labelledby="w-overlap">
+          <h3 id="w-overlap">Overlap broker matrix{% if v.matrix and v.matrix.day %} <span class="note">({{ v.matrix.day }})</span>{% endif %}</h3>
+          {% if v.matrix %}
+          {% set mx = v.matrix %}
+          <table class="matrix{{ ' alert' if mx.alert else '' }}" aria-label="Top 3 buyers next to top 3 sellers">
+            <thead><tr><th scope="col" style="text-align:left">#</th><th scope="col" style="text-align:left">Top 3 buyers</th><th scope="col" style="text-align:left">Top 3 sellers</th></tr></thead>
+            <tbody>
+              {% for r in mx.rows %}
+              <tr><td style="text-align:left">{{ r.rank }}</td>
+                {% for side in (r.buy, r.sell) %}<td style="text-align:left" class="{{ 'shared' if side and side.shared else '' }}">{% if side %}<b>{{ side.code }}</b> <span class="note">{{ side.val }}</span>{% if side.shared %} <span class="badge wash">on both sides</span>{% endif %}{% else %}<span class="note">—</span>{% endif %}</td>{% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          <p class="note">{% if mx.alert %}<b class="warnfg">{{ mx.shared_n }} of the 3 biggest buyers are also among the 3 biggest sellers</b>: the same houses are on both sides, so a concentrated buy is not read as one party accumulating.
+            {% elif mx.shared_n %}{{ mx.shared_n }} house ({{ mx.shared|join(', ') }}) is on both sides; the alert starts at {{ sc.wash_min }}.{% else %}No house is on both sides: buyers and sellers differ.{% endif %}
+            Brokers are codes, not clients.</p>
+          {% else %}<p class="na-big">N/A</p><p class="note">No broker ladder for this stock. Per-broker coverage is limited to about 200 liquid stocks.</p>{% endif %}
+        </section>
+      </div>
       {% if sc.wash_today %}
       <p class="wide-note"><b>Flagged today:</b> {{ tag_chip('AKUM-NETRAL-WASH') }} The buying looks concentrated (at least {{ sc.bpi_high_pts }} points above the selling), but
          {{ sc.wash_min }} or more of the three biggest buyers are also among the three biggest sellers, so it is not read as one party accumulating.</p>
@@ -140,6 +177,29 @@
           </tbody>
         </table>
       </details>
+      {% endif %}
+    </div>
+
+    {% set ed = v.edge %}
+    <div class="panel" id="historical-edge">
+      <h2>Signal Historical Edge <span class="badge probation">history, not a forecast</span></h2>
+      {% if ed %}
+      <p class="note">How past signals of each pattern flagged today turned out. <b>Win rate</b> is the share that ended above zero; <b>expectancy</b> is the average return.
+        Both are raw (not adjusted for the market, before trading costs) over the whole stored history, so read them as context: the forward-test verdict below decides, and a pattern is only proven once it has passed it.</p>
+      <table class="cards" aria-label="Historical win rate and expectancy by horizon">
+        <thead><tr><th scope="col" style="text-align:left">Pattern</th>{% for h in ed.horizons %}<th scope="col">{{ h }}<br><span class="note">win · avg return</span></th>{% endfor %}<th scope="col">Signals</th></tr></thead>
+        <tbody>
+          {% for r in ed.rows %}
+          <tr><td class="key" style="text-align:left">{{ tag_chip(r.tag) }}</td>
+            {% for cell in r.cells %}<td data-label="{{ ed.horizons[loop.index0] }}">{% if cell.n %}<b class="{{ cell.win_c }}">{{ cell.win }}</b> · <span class="{{ cell.exp_c }}">{{ cell.exp }}</span>{% if cell.thin %} <span class="badge warn" title="Fewer than {{ ed.small_n }} signals at this horizon">thin</span>{% endif %}{% else %}<span class="note">N/A</span>{% endif %}</td>{% endfor %}
+            <td data-label="Signals">{{ '{:,}'.format(r.n) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% elif v.tags_today %}
+      <p class="note">None of today's patterns has a stored outcome yet: results are filled in by the backfill once enough sessions have passed.</p>
+      {% else %}
+      <p class="note">No pattern was flagged for this stock on the latest session, so there is no history to show.</p>
       {% endif %}
     </div>
 
@@ -227,12 +287,12 @@
 
     <div class="panel">
       <h2>Last 10 sessions</h2>
-      <table aria-label="Last 10 sessions">
+      <table class="cards" aria-label="Last 10 sessions">
         <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col">Close</th><th scope="col">Change</th>{{ th('foreign_today', 'Foreign flow') }}<th scope="col">Traded value</th></tr></thead>
         <tbody>
           {% for r in v.recent %}
-          <tr><td style="text-align:left">{{ r.date }}</td><td>{{ r.close }}</td><td class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-              <td class="{{ r.foreign_c }}">{{ r.foreign }}</td><td>{{ r.value }}</td></tr>
+          <tr><td class="key" style="text-align:left">{{ r.date }}</td><td data-label="Close">{{ r.close }}</td><td data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
+              <td data-label="Foreign flow" class="{{ r.foreign_c }}">{{ r.foreign }}</td><td data-label="Traded value">{{ r.value }}</td></tr>
           {% endfor %}
         </tbody>
       </table>

@@ -24,7 +24,7 @@ from .. import status as sysstatus
 from ..config import CONFIG
 from ..db import connect
 from . import charts, coverage as cov
-from . import freshness, fmt, glossary, home as homemod, listing, rotation as rotmod
+from . import edge, eodlog, freshness, fmt, glossary, home as homemod, listing, rotation as rotmod, runlog
 from .auth import AuthMiddleware
 from . import status as gate
 from . import pattern as patternmod
@@ -40,25 +40,25 @@ _GLOSSARY_JSON = json.dumps(glossary.popover_data(), ensure_ascii=False).replace
 # Sidebar (A1). `key` must equal the `active_page` each route passes to its template.
 _NAV = [
     {"title": "Overview", "items": [
-        {"key": "home", "label": "Screener", "href": "/"},
-        {"key": "today", "label": "Today", "href": "/today"},
+        {"key": "home", "label": "Screener", "href": "/", "icon": "📊"},
+        {"key": "today", "label": "Today", "href": "/today", "icon": "☀️"},
     ]},
     {"title": "Patterns", "items": [
-        {"key": "tracker", "label": "Track record", "href": "/track-record"},
-        {"key": "risk", "label": "Stop & target test", "href": "/risk-test"},
-        {"key": "research", "label": "Is the edge real?", "href": "/research"},
+        {"key": "tracker", "label": "Track record", "href": "/track-record", "icon": "📈"},
+        {"key": "risk", "label": "Stop & target test", "href": "/risk-test", "icon": "🎯"},
+        {"key": "research", "label": "Is the edge real?", "href": "/research", "icon": "🧪"},
     ]},
     {"title": "Stocks", "items": [
-        {"key": "screener", "label": "Today's stocks", "href": "/screener"},
-        {"key": "ranking", "label": "Top rankings", "href": "/ranking"},
-        {"key": "rotation", "label": "Sector rotation", "href": "/rotation"},
+        {"key": "screener", "label": "Today's stocks", "href": "/screener", "icon": "🔍"},
+        {"key": "ranking", "label": "Top rankings", "href": "/ranking", "icon": "🏆"},
+        {"key": "rotation", "label": "Sector rotation", "href": "/rotation", "icon": "🔄"},
     ]},
     {"title": "Data", "items": [
-        {"key": "health", "label": "System health", "href": "/health"},
-        {"key": "coverage", "label": "Coverage & gaps", "href": "/coverage"},
+        {"key": "health", "label": "System health", "href": "/health", "icon": "⚙️"},
+        {"key": "coverage", "label": "Coverage & gaps", "href": "/coverage", "icon": "🗺️"},
     ]},
     {"title": "Help", "items": [
-        {"key": "guide", "label": "Guide & glossary", "href": "/guide"},
+        {"key": "guide", "label": "Guide & glossary", "href": "/guide", "icon": "📖"},
     ]},
 ]
 
@@ -278,6 +278,7 @@ def forward_tracker(fresh: bool = False) -> HTMLResponse:
         "cache_hit": False,
         "cache_minutes": int(_EVAL_CACHE.ttl // 60),
         "n_passed": 0,
+        "edge_rows": [], "edge_cmp": None, "edge_error": None,
     }
     try:
         ctx["insample"], t_in, hit_in = _cached_view_rows(None, fresh)
@@ -291,6 +292,13 @@ def forward_tracker(fresh: bool = False) -> HTMLResponse:
         ctx["cache_hit"] = hit_in and hit_fw
     except Exception as exc:  # noqa: BLE001 — DB down / schema not applied: show it, don't hide it
         ctx["error"] = f"{type(exc).__name__}: {exc}"
+    if not ctx["error"]:
+        try:
+            data, _wall, _hit = _EVAL_CACHE.get_or_compute(("edge-horizons",), edge.load, version=_eval_version(), fresh=fresh)
+            ctx["edge_rows"] = edge.view(data, order=[r["tag"] for r in ctx["insample"]])
+            ctx["edge_cmp"] = edge.compare(data)
+        except Exception as exc:  # noqa: BLE001 — the extra panel must never take the page down
+            ctx["edge_error"] = f"{type(exc).__name__}: {exc}"
     return _render("forward_test.html", ctx)
 
 
@@ -611,12 +619,21 @@ def _health_view() -> dict:
 
 @app.get("/health", response_class=HTMLResponse)
 @app.get("/system", response_class=HTMLResponse)
-def system_health() -> HTMLResponse:
-    ctx: dict = {"active_page": "health", "error": None, "h": None}
+def system_health(runs: str = "all") -> HTMLResponse:
+    ctx: dict = {"active_page": "health", "error": None, "h": None, "eod": None, "eod_error": None, "runlog": None, "runlog_error": None}
     try:
         ctx["h"], _wall, _hit = _HEALTH_CACHE.get_or_compute(("health",), _health_view)
     except Exception as exc:  # noqa: BLE001
         ctx["error"] = f"{type(exc).__name__}: {exc}"
+    if not ctx["error"]:
+        try:                                              # the two extra panels fail on their own, never the page
+            ctx["eod"] = eodlog.load()
+        except Exception as exc:  # noqa: BLE001
+            ctx["eod_error"] = f"{type(exc).__name__}: {exc}"
+        try:
+            ctx["runlog"] = runlog.view(runlog.load(), runs)
+        except Exception as exc:  # noqa: BLE001
+            ctx["runlog_error"] = f"{type(exc).__name__}: {exc}"
     return _render("health.html", ctx)
 
 

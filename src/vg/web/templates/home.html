@@ -23,7 +23,7 @@
     <section class="grid kpis" aria-label="Session summary">
       <div class="kpi">
         <div class="k">Total accumulation</div>
-        <div class="v">{{ v.cards.acc.n }}</div>
+        <div class="v"><a class="kpi-link" href="?view=acc">{{ v.cards.acc.n }}</a></div>
         <div class="s">stocks with an accumulation pattern, of {{ v.cards.acc.of }} listed</div>
       </div>
       <div class="kpi wash">
@@ -35,6 +35,12 @@
         <div class="k">Average BPI, watchlist</div>
         <div class="v {{ v.cards.avg.c }}">{{ v.cards.avg.t }}</div>
         <div class="s">{{ v.cards.avg.sub }}</div>
+      </div>
+      {% set eod = v.cards.eod %}
+      <div class="kpi eod-{{ eod.state }}">
+        <div class="k">Last scored session</div>
+        <div class="v {{ eod.c }}">{{ eod.t }}</div>
+        <div class="s"><span class="badge {{ 'ready' if eod.state == 'scored' else ('warn-pill' if eod.state == 'behind' else 'probation') }}">{{ eod.word }}</span> {{ eod.sub }}</div>
       </div>
     </section>
 
@@ -51,8 +57,8 @@
         {% if p.sort != 'bpi' or p.dir != 'desc' %}<input type="hidden" name="sort" value="{{ p.sort }}"><input type="hidden" name="dir" value="{{ p.dir }}">{% endif %}
         <button type="submit" class="menu-btn">Search</button>
       </form>
-      <p class="chips" aria-label="Filters">
-        {% for c in chips %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
+      <p class="chips pills" aria-label="Filters">
+        {% for c in chips %}<a class="fchip{{ ' on' if c.on else '' }}" href="{{ c.href }}" title="{{ c.title }}"{% if c.on %} aria-pressed="true"{% endif %}>{{ c.label }}</a>{% endfor %}
         {% if filtered %}<a class="fchip clear" href="{{ clear }}">Clear filters</a>{% endif %}
       </p>
       <p class="note">
@@ -78,11 +84,15 @@
             <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
             <td role="cell" data-label="Price">{{ r.price }}</td>
             <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
-            <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}">{{ r.bpi.t }}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
+            <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}{{ ' heat' if r.bpi.c else '' }}"{% if r.bpi.c %} style="--i:{{ r.bpi_heat }}"{% endif %}>{{ r.bpi.t }}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>
             <td role="cell" data-label="Same houses" class="{{ 'warnfg' if r.overlap_raw and r.overlap_raw >= 2 else '' }}">{{ r.overlap }}</td>
-            <td role="cell" data-label="Aggressor ratio"{% if r.aggr_note %} title="{{ r.aggr_note }}"{% endif %}{% if r.aggr == 'N/A' %} class="na"{% endif %}>{{ r.aggr }}</td>
+            <td role="cell" data-label="Aggressor ratio" class="aggr{{ ' na' if not r.haka else '' }}"{% if r.aggr_note %} title="{{ r.aggr_note }}; HAKA/HAKI = {{ r.aggr }}"{% endif %}>
+              {%- if r.haka %}<span class="split" role="img" aria-label="HAKA {{ r.haka.haka }} percent, HAKI {{ r.haka.haki }} percent"><i class="haka" style="width:{{ r.haka.haka }}%"></i><i class="haki"></i></span>
+              <span class="split-t">{{ r.haka.haka }}% / {{ r.haka.haki }}%</span>{% else %}N/A{% endif -%}
+            </td>
             <td role="cell" data-label="Signals" class="wrap">
               {%- if r.wash %}<a class="badge wash" href="/pattern/AKUM-NETRAL-WASH" data-term="tag:AKUM-NETRAL-WASH">AKUM-NETRAL-WASH</a> {% endif -%}
+              {%- for t in r.acc_tags %}<a class="badge ready" href="/pattern/{{ t }}" data-term="tag:{{ t }}">{{ t }}</a> {% endfor -%}
               {{ tag_chips(r.tag_list, 2, '/stock/' ~ r.ticker) }}
             </td>
           </tr>

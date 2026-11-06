@@ -38,6 +38,10 @@
   </table>
 {% endmacro %}
 
+{% macro hcell(c) -%}
+  {%- if c.n %}<b class="{{ c.win_c }}">{{ c.win }}</b> · <span class="{{ c.exp_c }}">{{ c.exp }}</span>{% if c.thin %} <span class="badge warn" title="Fewer than 30 signals at this horizon">thin</span>{% endif %}{% else %}<span class="note">N/A</span>{% endif -%}
+{%- endmacro %}
+
 {% block content %}
   {% if error %}
     {{ db_error(error) }}
@@ -47,6 +51,44 @@
       {{ min_n }} occurrences over at least {{ min_span }} days <i>and</i> its edge is still positive after about {{ cost_bp }} bp of trading costs.
       {% if n_passed %}Right now <b>{{ n_passed }} pattern{{ 's' if n_passed != 1 else '' }} {{ 'has' if n_passed == 1 else 'have' }} passed</b>.{% else %}Right now <b>no pattern has passed</b>.{% endif %} Failures are shown as prominently as passes, because that is the point of this page.
       Not sure what a column means? Click any dotted word.</div>
+    <div class="panel" id="expectancy">
+      <h2>Expectancy by horizon</h2>
+      {% if edge_rows %}
+      <p class="note">How past signals of each pattern turned out 1, 3, 5 and 10 sessions later: <b>win rate</b> (share that ended above zero) and <b>expectancy</b> (average return). Raw figures over the whole stored history: not adjusted for the market, before trading costs, in-sample. They are context; only the forward-test table decides a pass.</p>
+      <p class="scrollhint">Swipe the table sideways to see every column →</p>
+      <table class="sticky" aria-label="Expectancy by horizon and pattern">
+        <thead><tr><th scope="col" style="text-align:left">Pattern</th><th scope="col">Signals</th>{% for h in ('H+1', 'H+3', 'H+5', 'H+10') %}<th scope="col">{{ h }}<br><span class="note">win · avg return</span></th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for r in edge_rows %}
+          <tr><td style="text-align:left">{{ tag_chip(r.tag) }}</td><td>{{ '{:,}'.format(r.n) }}</td>{% for c in r.cells %}<td>{{ hcell(c) }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% elif edge_error %}
+      <p class="note">Not available right now: {{ edge_error }}</p>
+      {% else %}
+      <p class="note">No stored outcomes yet: they are filled in by <code>vg backfill-outcomes</code> once enough sessions have passed.</p>
+      {% endif %}
+    </div>
+    {% if edge_cmp %}
+    <div class="panel" id="pure-vs-wash">
+      <h2>Pure accumulation vs wash flag</h2>
+      <p class="note"><b>{{ edge_cmp.a }}</b> (foreign accumulation) next to <b>{{ edge_cmp.b }}</b> (concentrated buying, but the same houses also sell). If the wash flag does no worse, the shared-houses filter is not adding anything. Same raw, in-sample, before-cost figures as above; the gap is the expectancy of the first minus the second.</p>
+      <table class="matrix-cmp" aria-label="Pure accumulation compared with the wash flag">
+        <thead><tr><th scope="col" style="text-align:left">Horizon</th><th scope="col">{{ edge_cmp.a }}<br><span class="note">win · avg return</span></th><th scope="col">{{ edge_cmp.b }}<br><span class="note">win · avg return</span></th><th scope="col">Gap in expectancy</th></tr></thead>
+        <tbody>
+          {% for r in edge_cmp.rows %}
+          <tr><td style="text-align:left"><b>H+{{ r.h }}</b></td><td>{{ hcell(r.a) }}</td><td>{{ hcell(r.b) }}</td><td class="{{ r.diff_c }}">{{ r.diff }}{% if r.thin %} <span class="badge warn" title="One side has fewer than 30 signals or no result at this horizon">thin</span>{% endif %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% elif edge_rows %}
+    <div class="panel" id="pure-vs-wash">
+      <h2>Pure accumulation vs wash flag</h2>
+      <p class="note">One of the two patterns has no stored outcome yet, so there is nothing to compare.</p>
+    </div>
+    {% endif %}
     <div class="panel">
       <h2>{{ term('forward_test', 'Forward test') }}{% if forward_since %} — since {{ forward_since }}{% endif %}</h2>
       <p class="note">

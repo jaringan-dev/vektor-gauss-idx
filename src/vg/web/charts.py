@@ -599,3 +599,46 @@ def rotation_chart(items: list[dict], tail: int, *, width: int = W, height: int 
     desc = (f"Relative rotation of {len(items)} items, each drawn with its last {tail} points. "
             + ", ".join(f"{n} in {q}" for q, n in counts.items() if n) + ". The table below the chart lists every value.")
     return _svg(uid, height, "Relative rotation chart", desc, "".join(body), width)
+
+
+# ---- Bandar Power Meter -------------------------------------------------------------------------------------------------------------
+
+GAUGE_BANDS = ((-100, -10, "var(--neg)"), (-10, 10, "var(--muted)"), (10, 100, "var(--pos)"))     # the +/-10 band is BPI_HIGH, the wash rule's line
+
+
+def _polar(cx: float, cy: float, r: float, value: float) -> tuple[float, float]:
+    """A point on the half-circle: value -100 is the left end, 0 straight up, +100 the right end."""
+    import math
+
+    a = math.radians(180 - (max(-100.0, min(100.0, value)) + 100) / 200 * 180)
+    return cx + r * math.cos(a), cy - r * math.sin(a)
+
+
+def bpi_gauge(points: float | None, *, uid: str = "gauge", width: int = 240) -> str | None:
+    """A semicircular meter for the Bandar Power Index in points (-100..+100): red below -10, grey between, green above +10, and a
+    needle. A value outside the scale is pinned to the end (the number printed under the needle stays the true one).
+    None when there is no value; the page then shows N/A instead of an empty dial."""
+    if points is None:
+        return None
+    cx, cy, r, th = 120.0, 112.0, 92.0, 16.0
+    body = []
+    for lo, hi, colour in GAUGE_BANDS:
+        x0, y0 = _polar(cx, cy, r, lo)
+        x1, y1 = _polar(cx, cy, r, hi)
+        xi0, yi0 = _polar(cx, cy, r - th, lo)
+        xi1, yi1 = _polar(cx, cy, r - th, hi)
+        body.append(f'<path d="M{x0:.1f} {y0:.1f} A{r} {r} 0 0 1 {x1:.1f} {y1:.1f} L{xi1:.1f} {yi1:.1f} A{r - th} {r - th} 0 0 0 {xi0:.1f} {yi0:.1f} Z" '
+                    f'fill="{colour}" opacity=".55"/>')
+    nx, ny = _polar(cx, cy, r - th - 6, points)
+    body.append(f'<line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="var(--fg)" stroke-width="3" stroke-linecap="round"/>'
+                f'<circle cx="{cx}" cy="{cy}" r="6" fill="var(--fg)"/>')
+    for v, anchor in ((-100, "start"), (0, "middle"), (100, "end")):
+        x, y = _polar(cx, cy, r + 8, v) if v == 0 else (cx + (-r if v < 0 else r), cy + 12)
+        label = "0" if v == 0 else f"{v:+d}"
+        body.append(f'<text x="{x:.1f}" y="{(y - 2) if v == 0 else y:.1f}" text-anchor="{anchor}" fill="var(--muted)" font-size="10">{label}</text>')
+    body.append(f'<text x="{cx}" y="{cy + 26}" text-anchor="middle" fill="var(--fg)" font-size="16" font-weight="650">{points:+.1f}</text>')
+    desc = (f"Bandar Power Index, top 3, is {points:+.1f} points on a scale from -100 to +100. Below -10 is shown red, between -10 and +10 grey, "
+            "above +10 green. A positive value means a few brokers did the buying while the selling was spread out.")
+    return (f'<svg viewBox="0 0 240 150" width="100%" role="img" aria-labelledby="{uid}-t {uid}-d" '
+            f'style="max-width:{width}px;display:block;margin:0 auto;font:11px -apple-system,Segoe UI,Roboto,sans-serif">'
+            f'<title id="{uid}-t">Bandar Power Meter</title><desc id="{uid}-d">{escape(desc)}</desc>{"".join(body)}</svg>')

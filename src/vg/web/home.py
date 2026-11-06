@@ -31,7 +31,7 @@ ACCUMULATION_TAGS = frozenset(
 
 # The broker-scoring columns this screen reads. They are created by `vg init-db`; until it has run, each one is
 # selected as NULL so the page still renders (everything shows N/A) instead of failing.
-SCORE_COLS = ("bpi3", "bpi_overlap3", "aggr_ratio", "aggr_coverage")
+SCORE_COLS = ("bpi3", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage")
 NA = "N/A"
 BAR_FULL = 0.5            # a BPI of +/-50 points fills the little bar; larger values are clipped
 
@@ -39,7 +39,10 @@ PER_PAGE = listing.PER_PAGE
 # sort key -> (row field, natural first direction)
 SORTS = {"ticker": ("ticker", "asc"), "price": ("price_raw", "desc"), "change": ("chg_raw", "desc"), "bpi": ("bpi_raw", "desc"),
          "overlap": ("overlap_raw", "desc"), "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
-VIEWS = (("acc", "Accumulation"), ("wash", "Wash alert"))
+# The quick pills, in the order they are drawn. `acc` stays a valid address (the Total-accumulation card links to it) but has no pill.
+VIEWS = (("acc", "Accumulation"), ("top", "Top Accumulation"), ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
+PILL_VIEWS = ("top", "haka", "wash")
+HAKA_DOMINANT = 0.55      # buyers lifted the offer on at least 55% of the volume whose aggressor is known
 DEFAULTS = {"q": "", "view": "", "liquid": 0, "wl": 0, "sort": "bpi", "dir": "desc", "page": 1}
 
 
@@ -86,27 +89,55 @@ def _pts(x: float | None) -> dict:
     return {"t": f"{x * 100:+.1f} pts", "c": fmt.signcls(x)} if x is not None else {"t": NA, "c": ""}
 
 
+def split_bar(haka: float | None) -> dict | None:
+    """HAKA vs HAKI as two shares of the volume whose aggressor is known (they add up to 100%). None when there is no order-flow data."""
+    if haka is None:
+        return None
+    h = max(0.0, min(1.0, float(haka)))
+    return {"haka": round(h * 100), "haki": 100 - round(h * 100), "dominant": h >= HAKA_DOMINANT}
+
+
 def _row(r: dict, wl: set, held: set) -> dict:
     tags = glossary.split_tags(r.get("tags"))
     close, prev = r.get("close"), r.get("prev")
     chg = (close / prev - 1) if (close and prev) else None
     bpi, overlap, ratio, cov = r.get("bpi3"), r.get("bpi_overlap3"), r.get("aggr_ratio"), r.get("aggr_coverage")
+    haka = r.get("aggr_haka_share")
     return {
         "ticker": r["ticker"], "in_wl": r["ticker"] in wl, "held": r["ticker"] in held,
         "price": fmt.price(close), "chg": fmt.cell(chg, 1),
         "bpi": _pts(bpi), "bpi_bar": 0 if bpi is None else round(min(abs(bpi), BAR_FULL) / BAR_FULL * 100),
+        "bpi_heat": 0 if bpi is None else round(min(abs(bpi), BAR_FULL) / BAR_FULL, 2),      # 0..1: how strongly the cell is tinted
         "overlap": f"{overlap} of 3" if overlap is not None else NA,
         "aggr": f"{ratio:.2f}" if ratio is not None else NA,
+        "haka": split_bar(haka),
         "aggr_note": f"{cov * 100:.0f}% of the volume was classified" if (ratio is not None and cov is not None) else "",
         "wash": WASH_TAG in tags,
         "acc": any(t in ACCUMULATION_TAGS for t in tags),
-        "tag_list": [t for t in tags if t != WASH_TAG],
+        "acc_tags": [t for t in tags if t in ACCUMULATION_TAGS],
+        "tag_list": [t for t in tags if t != WASH_TAG and t not in ACCUMULATION_TAGS],
         # raw values for server-side filtering and sorting
-        "price_raw": close, "chg_raw": chg, "bpi_raw": bpi, "overlap_raw": overlap, "aggr_raw": ratio,
+        "price_raw": close, "chg_raw": chg, "bpi_raw": bpi, "overlap_raw": overlap, "aggr_raw": ratio, "haka_raw": haka,
         "value_raw": r.get("value"), "n_tags": len(tags),
         "search": " ".join([r["ticker"], r.get("tags") or "", *[glossary.plain_tag(t) for t in tags],
                             glossary.quad_word(r.get("quadrant"))]).upper(),
     }
+
+
+def eod_card(raw: dict, scored_today: bool) -> dict:
+    """Where the end-of-day run stands: the newest session that has prices and signals, and the newest one that has broker scores.
+    Three honest states: scored (this session has BPI), behind (an older session has scores), none (no session has any)."""
+    sd = raw["session_date"]
+    if not raw.get("columns_present", True):
+        return {"state": "none", "t": NA, "word": "Not set up", "c": "", "sub": f"EOD session {sd}; the scoring columns are not in the database yet."}
+    if scored_today:
+        return {"state": "scored", "t": sd.isoformat(), "word": "Scored", "c": "pos", "sub": f"EOD session {sd}: broker scores are in."}
+    last = raw.get("last_scored")
+    if last:
+        gap = (sd - last).days
+        return {"state": "behind", "t": last.isoformat(), "word": "Behind", "c": "warnfg",
+                "sub": f"Newest EOD session is {sd}, {gap} day{'s' if gap != 1 else ''} after the last scored one."}
+    return {"state": "none", "t": NA, "word": "No scores yet", "c": "", "sub": f"EOD session {sd}; no session has a broker score yet."}
 
 
 def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
@@ -136,6 +167,7 @@ def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
             "acc": {"n": sum(r["acc"] for r in rows), "of": len(rows)},
             "wash": {"n": sum(r["wash"] for r in rows)},
             "avg": {**_pts(avg), "sub": avg_sub},
+            "eod": eod_card(raw, bool(scored)),
         },
     }
 
@@ -164,6 +196,10 @@ def apply(rows: list[dict], p: dict) -> list[dict]:
         out = [r for r in out if p["q"].upper() in r["search"]]
     if p["view"] == "acc":
         out = [r for r in out if r["acc"]]
+    elif p["view"] == "top":                                      # accumulation pattern, and not a negative BPI (an unscored stock stays, last)
+        out = [r for r in out if r["acc"] and (r["bpi_raw"] is None or r["bpi_raw"] > 0)]
+    elif p["view"] == "haka":
+        out = [r for r in out if r["haka_raw"] is not None and r["haka_raw"] >= HAKA_DOMINANT]
     elif p["view"] == "wash":
         out = [r for r in out if r["wash"]]
     if p["liquid"]:
@@ -199,9 +235,25 @@ def sort_link(p: dict, key: str) -> dict:
     return {"href": query(p, sort=key, dir=SORTS[key][1]), "arrow": "", "active": False}
 
 
+PILL_TITLES = {
+    "All": "Every stock with a pattern or a score; clears the filters.",
+    "Liquid Only": "Stocks that traded more than Rp5 billion on the day (about 200).",
+    "Top Accumulation": "Stocks with an accumulation pattern and no negative BPI; stocks without a score come last.",
+    "Haka Dominant": "Buyers lifted the offer on at least 55% of the volume whose aggressor is known (needs order-flow data).",
+    "Wash Alert": "Concentrated buying, but the same houses also sell (AKUM-NETRAL-WASH).",
+    "My Watchlist": "Your watchlist and your holdings.",
+}
+
+
 def chips(p: dict) -> list[dict]:
-    """Filter chips: the two views are a single-choice group, the others toggle independently."""
-    out = [{"label": label, "on": p["view"] == code, "href": query(p, view="" if p["view"] == code else code)} for code, label in VIEWS]
-    out.append({"label": "Liquid stocks only", "on": bool(p["liquid"]), "href": query(p, liquid=0 if p["liquid"] else 1)})
-    out.append({"label": "My stocks", "on": bool(p["wl"]), "href": query(p, wl=0 if p["wl"] else 1)})
+    """The quick pills: All | Liquid Only | Top Accumulation | Haka Dominant | Wash Alert | My Watchlist. The three views are one
+    single-choice group; Liquid Only and My Watchlist toggle on their own; All is lit when nothing is filtered."""
+    labels = dict(VIEWS)
+    out = [{"label": "All", "on": not any((p["view"], p["liquid"], p["wl"])), "href": query(p, view="", liquid=0, wl=0)},
+           {"label": "Liquid Only", "on": bool(p["liquid"]), "href": query(p, liquid=0 if p["liquid"] else 1)}]
+    for code in PILL_VIEWS:
+        out.append({"label": labels[code], "on": p["view"] == code, "href": query(p, view="" if p["view"] == code else code)})
+    out.append({"label": "My Watchlist", "on": bool(p["wl"]), "href": query(p, wl=0 if p["wl"] else 1)})
+    for c in out:
+        c["title"] = PILL_TITLES[c["label"]]
     return out

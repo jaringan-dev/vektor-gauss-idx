@@ -13,6 +13,38 @@
       The same checks are sent to Telegram every day, so no message means something is wrong with the machine itself.
     </div>
 
+    <section class="grid kpis" aria-label="End-of-day run time">
+      {% set e = eod %}
+      <div class="kpi">
+        <div class="k">Last EOD run</div>
+        {% if e %}<div class="v">{{ e.total }}</div><div class="s">{{ e.day }}, started {{ e.start }}{% if not e.finished %} · no end marker in the log{% endif %}</div>
+        {% else %}<div class="v na">N/A</div><div class="s">{% if eod_error %}{{ eod_error }}{% else %}<code>eod.log</code> is not available on this machine.{% endif %}</div>{% endif %}
+      </div>
+      <div class="kpi{{ ' wash' if e and e.over else '' }}">
+        <div class="k">Order-flow harvest vs budget</div>
+        {% if e and e.harvest_pct is not none %}
+        <div class="v {{ 'neg' if e.over else '' }}">{{ e.harvest }}</div>
+        <div class="s">of a {{ e.budget }} budget ({{ e.harvest_pct }}%){% if e.over %} — over budget{% endif %}</div>
+        <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ e.harvest_bar }}" aria-label="Harvest time against its budget"><i class="{{ 'over' if e.over else '' }}" style="width:{{ e.harvest_bar }}%"></i></div>
+        {% else %}
+        <div class="v na">N/A</div><div class="s">{% if e %}the last run did not record the harvest time (the log line is newer than that run){% else %}needs <code>eod.log</code>{% endif %}</div>
+        {% endif %}
+      </div>
+      <div class="kpi{{ ' wash' if runlog and runlog.problems else '' }}">
+        <div class="k">Problem runs (last {{ runlog.total if runlog else 0 }})</div>
+        {% if runlog %}<div class="v {{ 'neg' if runlog.problems else 'pos' }}">{{ runlog.problems }}</div><div class="s">{% if runlog.problems %}runs whose status is not ok{% else %}every recent run finished ok{% endif %}</div>
+        {% else %}<div class="v na">N/A</div><div class="s">{{ runlog_error or 'no run_log rows' }}</div>{% endif %}
+      </div>
+    </section>
+    {% if e and e.rows|length > 1 %}
+    <details class="panel-lite"><summary>Last {{ e.rows|length }} EOD runs</summary>
+      <table aria-label="Recent EOD run times">
+        <thead><tr><th scope="col" style="text-align:left">Day</th><th scope="col">Started</th><th scope="col">Total</th><th scope="col">Order-flow harvest</th></tr></thead>
+        <tbody>{% for r in e.rows %}<tr><td style="text-align:left">{{ r.day }}</td><td>{{ r.start }}</td><td>{{ r.total }}</td><td class="{{ 'neg' if r.over else '' }}">{{ r.harvest }}{% if r.over %} (over budget){% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </details>
+    {% endif %}
+
     <div class="panel">
       <h2>Checks</h2>
       <table class="cards-off" aria-label="Health checks">
@@ -61,6 +93,32 @@
       </table>
       {% else %}
       <p class="note">No job runs recorded in the last 3 days.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel" id="run-log">
+      <h2>Run log</h2>
+      {% if runlog %}
+      <p class="chips pills" aria-label="Run log filter">
+        <a class="fchip{{ ' on' if runlog.filter == 'all' else '' }}" href="?runs=all#run-log"{% if runlog.filter == 'all' %} aria-pressed="true"{% endif %}>All runs ({{ runlog.total }})</a>
+        <a class="fchip{{ ' on' if runlog.filter == 'problems' else '' }}" href="?runs=problems#run-log"{% if runlog.filter == 'problems' %} aria-pressed="true"{% endif %}>Problems only ({{ runlog.problems }})</a>
+      </p>
+      <p class="note">Every collector, compute and validation step writes a row here when it ends. A status other than ok or no_data is a problem; the reason is in the last column (hover for the full text).</p>
+      {% if runlog.rows %}
+      <table class="cards" aria-label="Run log">
+        <thead><tr><th scope="col" style="text-align:left">Job</th><th scope="col" style="text-align:left">Day</th><th scope="col" style="text-align:left">Result</th><th scope="col">Rows</th><th scope="col" style="text-align:left">Started</th><th scope="col">Took</th><th scope="col" style="text-align:left">Error</th></tr></thead>
+        <tbody>
+          {% for r in runlog.rows %}
+          <tr{% if r.bad %} class="is-bad"{% endif %}><td class="key" style="text-align:left">{{ r.phase }}</td><td data-label="Day" style="text-align:left">{{ r.batch }}</td>
+            <td data-label="Result" style="text-align:left" class="{{ 'neg' if r.bad else '' }}"><span aria-hidden="true">{{ '✖' if r.bad else '✓' }}</span> {{ r.status }}</td>
+            <td data-label="Rows">{{ r.rows }}</td><td data-label="Started" style="text-align:left">{{ r.started }}</td><td data-label="Took">{{ r.took }}</td>
+            <td data-label="Error" class="wrap"{% if r.error_full %} title="{{ r.error_full }}"{% endif %}>{{ r.error or '—' }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p class="note">No run has a problem status in the last {{ runlog.total }} runs.</p>{% endif %}
+      {% else %}
+      <p class="note">{{ runlog_error or 'No runs are recorded yet.' }}</p>
       {% endif %}
     </div>
 
