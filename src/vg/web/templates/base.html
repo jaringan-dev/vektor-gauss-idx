@@ -156,6 +156,8 @@
     td.bpi.heat.pos { background:color-mix(in srgb, var(--pos) calc(var(--i,0) * 34%), transparent); }
     td.bpi.heat.neg { background:color-mix(in srgb, var(--neg) calc(var(--i,0) * 34%), transparent); }
     td.aggr { white-space:nowrap; }
+    .live { display:inline-block; padding:0 6px; border-radius:999px; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+            background:var(--warn-bg); color:var(--warn-fg); vertical-align:middle; }
     .meter { height:8px; border-radius:999px; background:var(--prob-bg); overflow:hidden; margin-top:8px; }
     .meter i { display:block; height:100%; background:var(--pos); border-radius:999px; }
     .meter i.over { background:var(--neg); }

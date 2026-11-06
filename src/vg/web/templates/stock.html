@@ -107,7 +107,7 @@
       {% else %}
       {% set c = sc.current %}
       <p class="note">Three plain measures of who is on each side of the trading. They describe the day; they are not a signal and carry no weight until the forward test shows they hold up.
-         Scored session: {{ c.date }}{% if sc.stale %} — <b>not</b> this stock's latest session ({{ v.latest }}): the broker table did not cover it that day{% endif %}.</p>
+         Scored session: {{ c.date }}{% if c.live %} <span class="live" title="Computed on the fly from the broker table; the engine has not stored it yet">live</span> (the same numbers the engine would store; nothing is written){% endif %}{% if sc.stale %} — <b>not</b> this stock's latest session ({{ v.latest }}): the broker table did not cover it that day{% endif %}.</p>
       <div class="grid kpis">
         <div class="kpi"><div class="k">{{ term('bpi', 'Bandar Power Index, top 3') }}</div>
           <div class="v {{ c.bpi3.c }}">{{ c.bpi3.t }}</div><div class="s">top 5: {{ c.bpi5.t }}</div></div>
@@ -171,7 +171,7 @@
           <thead><tr><th scope="col" style="text-align:left">Day</th>{{ th('bpi', 'Index, top 3') }}{{ th('overlap3', 'Shared') }}{{ th('aggressor', 'HAKA share') }}{{ th('retail_div', 'Retail vs institutions') }}</tr></thead>
           <tbody>
             {% for h in sc.history %}
-            <tr><td style="text-align:left">{{ h.date }}</td><td class="{{ h.bpi3.c }}">{{ h.bpi3.t }}</td>
+            <tr><td style="text-align:left">{{ h.date }}{% if h.live %} <span class="live" title="Computed on the fly; not stored">live</span>{% endif %}</td><td class="{{ h.bpi3.c }}">{{ h.bpi3.t }}</td>
                 <td>{{ h.overlap }}{% if h.same_houses %} <span class="badge warn">same houses</span>{% endif %}</td><td>{{ h.haka }}</td><td class="wrap">{{ h.div }}</td></tr>
             {% endfor %}
           </tbody>

@@ -14,7 +14,7 @@ from .. import broker_bounds, risk
 from ..engine import BPI_HIGH, WASH_OVERLAP_MIN
 from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
-from . import charts, edge, fmt
+from . import charts, edge, fmt, live_scores
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import stock_summary
 
@@ -71,6 +71,12 @@ def load(ticker: str) -> dict | None:
             "FROM signal_components WHERE ticker = %s ORDER BY session_date DESC LIMIT 15", (ticker,))
         comps = cur.fetchall()
         scoring = _load_scoring(cur, ticker)
+        scoring_live: set = set()
+        if scoring is not None:                          # sessions without stored scores: computed live from the stored ladders (SELECT only)
+            have_days = {r[0] for r in scoring}
+            live = live_scores.live_rows(cur, ticker, [b[0] for b in bars[:10] if b[0] not in have_days])
+            scoring_live = {r[0] for r in live}
+            scoring = sorted([*live, *scoring], key=lambda r: r[0], reverse=True)[:10]
         cur.execute(
             "SELECT b.session_date, b.open, b.high, b.low, b.close, b.volume, COALESCE(a.split_factor, 1) "
             "FROM price_bars b LEFT JOIN price_adj a USING (session_date, ticker) "
@@ -130,7 +136,7 @@ def load(ticker: str) -> dict | None:
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
-            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "edge": edge_rows,
+            "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "scoring_live": scoring_live, "edge": edge_rows,
             "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
 
 
@@ -160,13 +166,13 @@ def _pts(x) -> dict:
     return {"t": f"{x * 100:+.1f} pts", "c": fmt.signcls(x)} if x is not None else {"t": _NA, "c": ""}
 
 
-def _score_row(day, vals: tuple) -> dict:
+def _score_row(day, vals: tuple, live: bool = False) -> dict:
     """One session of scoring columns -> display cells. Every missing measure becomes N/A, never an error."""
     r = dict(zip(SCORING_COLUMNS, vals, strict=True))
     bpi3, overlap = _f(r["bpi3"]), r["bpi_overlap3"]
     haka, ratio, cov = _f(r["aggr_haka_share"]), _f(r["aggr_ratio"]), _f(r["aggr_coverage"])
     return {
-        "date": day.isoformat(),
+        "date": day.isoformat(), "live": live,
         "has_bpi": bpi3 is not None, "has_aggr": haka is not None, "has_div": r["retail_div_state"] is not None,
         "bpi3": _pts(bpi3), "bpi5": _pts(r["bpi5"]), "bpi_points": None if bpi3 is None else round(bpi3 * 100, 1),
         "haka_pct": None if haka is None else round(max(0.0, min(1.0, haka)) * 100),
@@ -219,7 +225,7 @@ def edge_card(data: dict | None, tags_today_view: list[dict]) -> dict | None:
     return {"rows": rows, "horizons": [f"H+{h}" for h in edge.HORIZONS], "small_n": edge.SMALL_N} if rows else None
 
 
-def scoring_view(rows: list | None, latest: date, tags_today: list[str]) -> dict:
+def scoring_view(rows: list | None, latest: date, tags_today: list[str], live_days=frozenset()) -> dict:
     """The broker-scoring panel. Pure. Three states, so the page always renders:
     absent = the columns are not in the database yet; empty = they are, but this stock has no scored session;
     ok = at least one scored session (`current` is the newest one, `history` the last 10)."""
@@ -228,7 +234,7 @@ def scoring_view(rows: list | None, latest: date, tags_today: list[str]) -> dict
     scored = [(r[0], r[1:]) for r in rows if any(v is not None for v in r[1:])]
     if not scored:
         return {"state": "empty"}
-    view = [_score_row(d, v) for d, v in scored]
+    view = [_score_row(d, v, d in live_days) for d, v in scored]
     cur = view[0]
     return {
         "state": "ok", "current": {**cur, "gauge": charts.bpi_gauge(cur["bpi_points"])}, "history": view,
@@ -543,7 +549,7 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
         "sellers": sellers, "levels_day": raw["levels_day"].isoformat() if raw["levels_day"] else None,
         "ownership": own, "corp": [{"date": c[0].isoformat(), "type": c[1], "ratio": c[3] or c[2] or ""} for c in raw["corp"]],
         "risk": risk_view, "has_atr": plan is not None,
-        "scoring": scoring_view(raw.get("scoring"), raw["latest"], tags_today),
+        "scoring": scoring_view(raw.get("scoring"), raw["latest"], tags_today, raw.get("scoring_live") or frozenset()),
         "matrix": overlap_matrix(raw["levels"], raw["levels_day"]),
         "edge": edge_card(raw.get("edge"), tags_today_view),
         "own_chart": ownership_view(raw.get("own_series")),
