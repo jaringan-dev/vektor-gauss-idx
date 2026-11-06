@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import time
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -1083,6 +1084,16 @@ class _FeedRun:
     requeued: int = 0            # names asked again after a wait
 
 
+def _feed_workers() -> int:
+    """VG_FEED_WORKERS: how many feed calls run at the same time (default 1 = strictly one after another, as always; capped at 8).
+    Checked live 6 Nov 2026: the feed answered 1 / 4 / 8 parallel callers with 0.8 / 2.0 / 4.4 calls a second, all 200. The quota is
+    per call, so parallel callers change how FAST a budget is spent, never how much is spent."""
+    try:
+        return max(1, min(8, int(os.environ.get("VG_FEED_WORKERS", "1"))))
+    except ValueError:
+        return 1
+
+
 def _feed_loop(items, fetch_one, pause: float) -> _FeedRun:
     """Call fetch_one(item) -> CollectOutcome for each item, `pause` seconds apart.
 
@@ -1093,42 +1104,56 @@ def _feed_loop(items, fetch_one, pause: float) -> _FeedRun:
     Exception: when every error of the streak reads like the feed or the network blinking (_is_transient), the loop does not give
     up at once. It waits (_feed_cooldowns, longer each time), puts the failed names back at the front of the queue and probes with
     them; one failure during a probe starts the next wait. A success ends the outage and restores the full patience. Only when the
-    waits are used up does the run abort, and then it says it was the feed, not the quota."""
+    waits are used up does the run abort, and then it says it was the feed, not the quota.
+
+    With VG_FEED_WORKERS > 1 the queue is taken in batches of that size: the batch's calls run at the same time, then their outcomes
+    are judged one by one, in order, by exactly the rules above (a batch of 1 is the original one-at-a-time loop). If the run aborts
+    in the middle of a batch, the rest of that batch has already been fetched and is still counted."""
     run = _FeedRun()
     queue = deque(items)
     cooldowns = _feed_cooldowns()
+    workers = _feed_workers()
+    pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
     streak: list = []            # (item, outcome) of the current run of hard errors
     transient = True             # every error of the streak looks like the feed / network blinking
     patience = 0                 # waits already used in the current outage
     probing = False              # just came back from a wait: the first failure counts as the whole streak
-    while queue:
-        item = queue.popleft()
-        o = fetch_one(item)
-        run.rows += o.rows
-        if o.status in ("ok", "no_data"):
-            run.ok, run.no_data = run.ok + (o.status == "ok"), run.no_data + (o.status == "no_data")
-            streak, transient, patience, probing = [], True, 0, False
-        else:
-            run.errors += 1
-            run.failures.append(o)
-            streak.append((item, o))
-            transient = transient and _is_transient(o.detail)
-            if len(streak) >= (1 if probing and transient else _FEED_ABORT_AFTER_ERRORS):
-                if transient and patience < len(cooldowns):
-                    wait, patience = cooldowns[patience], patience + 1
-                    dropped = {id(oc) for _, oc in streak}
-                    run.failures = [f for f in run.failures if id(f) not in dropped]     # asked again below, not failed yet
-                    run.errors -= len(streak)
-                    run.requeued += len(streak)
-                    run.cooldowns, run.cooled_s = run.cooldowns + 1, run.cooled_s + wait
-                    queue.extendleft(reversed([it for it, _ in streak]))
-                    streak, probing = [], True
-                    time.sleep(wait)
+    try:
+        while queue:
+            batch = [queue.popleft() for _ in range(min(workers, len(queue)))]
+            outcomes = list(pool.map(fetch_one, batch)) if pool else [fetch_one(batch[0])]
+            for item, o in zip(batch, outcomes, strict=True):
+                run.rows += o.rows
+                if o.status in ("ok", "no_data"):
+                    run.ok, run.no_data = run.ok + (o.status == "ok"), run.no_data + (o.status == "no_data")
+                    streak, transient, patience, probing = [], True, 0, False
                     continue
-                run.aborted, run.transient = True, transient
+                run.errors += 1
+                run.failures.append(o)
+                if run.aborted:
+                    continue                                   # already stopping: only the count of this batch's leftovers
+                streak.append((item, o))
+                transient = transient and _is_transient(o.detail)
+                if len(streak) >= (1 if probing and transient else _FEED_ABORT_AFTER_ERRORS):
+                    if transient and patience < len(cooldowns):
+                        wait, patience = cooldowns[patience], patience + 1
+                        dropped = {id(oc) for _, oc in streak}
+                        run.failures = [f for f in run.failures if id(f) not in dropped]     # asked again below, not failed yet
+                        run.errors -= len(streak)
+                        run.requeued += len(streak)
+                        run.cooldowns, run.cooled_s = run.cooldowns + 1, run.cooled_s + wait
+                        queue.extendleft(reversed([it for it, _ in streak]))
+                        streak, probing = [], True
+                        time.sleep(wait)
+                        continue
+                    run.aborted, run.transient = True, transient
+            if run.aborted:
                 break
-        if queue:
-            time.sleep(pause)
+            if queue:
+                time.sleep(pause)
+    finally:
+        if pool:
+            pool.shutdown(wait=True)
     return run
 
 

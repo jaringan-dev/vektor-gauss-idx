@@ -101,7 +101,7 @@ flowchart LR
 |---|---|---|---|
 | EOD | 19:15 WIB, hari kerja | `scripts/eod.sh` | Task `VektorGauss-EOD`; kunci `flock` mencegah tumpang tindih |
 | Kepemilikan KSEI | tiap hari, sampai file bulan lalu masuk | `vg collect-ownership --pending` (di dalam EOD) | tidak mengunduh apa pun setelah file bulan lalu tersimpan |
-| Backfill broker dalam (K7) | 00:10 tiap malam | `scripts/deep_backfill.sh` → `vg broker-deep` | Task `VektorGauss-DeepBackfill`; terbatas budget panggilan |
+| Backfill broker dalam (K7) | 00:10 tiap malam | `scripts/deep_backfill.sh` → `vg broker-deep` | Task `VektorGauss-DeepBackfill`; terbatas budget panggilan harian (`VG_DEEP_BUDGET`) dan berjalan paralel (`VG_DEEP_WORKERS`) |
 | Recorder trade | 08:55, Sen-Jum | `scripts/record_trades.sh` → `vg record-trades` | Task `VektorGauss-TradeRecorder`; melewati hari libur bursa |
 | Status pagi/malam | harian | `scripts/status.sh` → `vg status` | Bisa memberi tahu bila EOD tidak jalan |
 | Backup | Minggu, di dalam EOD | `scripts/backup.sh` | `pg_dump` + artefak mentah ke GitHub release |
@@ -214,7 +214,7 @@ dibuka ke jaringan (`auth.py`); formulir mengecek Origin sebagai pertahanan CSRF
 
 `config.py` (pydantic-settings) membaca `.env` dengan awalan `VG_*`; contohnya ada di `.env.example`. Kunci yang paling menentukan:
 `VG_DATABASE_URL`, `VG_FEED_BASE_URL` / `VG_FEED_API_KEY`, `VG_FORWARD_SINCE`, `VG_WATCHLIST` (daftar untuk koleksi, bukan watchlist
-dashboard), `VG_WEB_PASSWORD`, `VG_DEEP_BUDGET`, `VG_FEED_DELAY_SECONDS`.
+dashboard), `VG_WEB_PASSWORD`, `VG_DEEP_BUDGET`, `VG_DEEP_WORKERS` (panggilan feed paralel untuk K7, maks 8), `VG_FEED_DELAY_SECONDS`.
 
 ## 7. Cara memperbarui dokumen ini
 
