@@ -97,6 +97,9 @@ def build_checks(f: dict) -> list[Check]:
     else:
         out.append(Check(OK, "Collector errors", f"{n_failed} failed run{'s' if n_failed != 1 else ''} in the last 24 h"))
 
+    for level, name, text in f.get("watch") or []:               # vg.watch: did every collection run, the recorder, the feed allowance
+        out.append(Check(level, name, html.escape(text)))
+
     deep = f.get("deep")
     prog = deep_progress(deep)
     if prog is not None:
@@ -249,6 +252,27 @@ def _dashboard_fact() -> bool:
         return False
 
 
+def _quota_fact() -> dict | None:
+    """The feed's daily allowance, from the headers of one cheap call (price of one stock = 1 call). None when no feed is configured."""
+    import httpx
+
+    from .config import CONFIG
+
+    if not CONFIG.feed_base_url or not CONFIG.feed_api_key:
+        return None
+    r = httpx.get(CONFIG.feed_base_url + "/api/price/BBCA", headers={"X-API-Key": CONFIG.feed_api_key, "Accept": "application/json"},
+                  timeout=CONFIG.http_timeout)
+    if r.status_code == 429:
+        return {"remaining": 0, "limit": int(r.headers.get("x-ratelimit-limit") or 0) or None}
+    r.raise_for_status()
+
+    def num(name: str):
+        v = r.headers.get(name)
+        return int(v) if v and v.isdigit() else None
+
+    return {"remaining": num("x-ratelimit-remaining"), "limit": num("x-ratelimit-limit")}
+
+
 def _deep_plan() -> dict:
     from . import collect
 
@@ -259,6 +283,7 @@ def _deep_plan() -> dict:
 def gather(now: datetime | None = None, *, full: bool = True) -> dict:
     """Collect the facts. `full=False` (used by the dashboard) skips the slow or external probes (GitHub, the 800-day backfill plan)
     and reuses what the last `vg status` run saved."""
+    from . import watch
     from .config import CONFIG
     from .web import freshness as fr
 
@@ -280,6 +305,12 @@ def gather(now: datetime | None = None, *, full: bool = True) -> dict:
         f["dashboard"] = _try(errors, "dashboard", _dashboard_fact)
     else:
         f["backup"], f["dashboard"] = saved.get("backup"), True          # a page that renders is the dashboard answering
+    if full:
+        f["quota"] = _try(errors, "feed allowance", _quota_fact)
+    else:
+        f["quota"] = saved.get("quota")
+    watch_facts = _try(errors, "collector runs", lambda: watch.load(now))
+    f["watch"] = [list(t) for t in watch.checks(watch_facts, f["quota"])] if (watch_facts is not None or f["quota"]) else []
     f["disk_free_pct"] = _try(errors, "disk", lambda: 100.0 * shutil.disk_usage("/").free / shutil.disk_usage("/").total)
     return f
 
@@ -295,7 +326,7 @@ def save_snapshot(f: dict, checks: list[Check]) -> None:
 
     payload = {"facts": to_jsonable(f), "checks": [c.as_dict() for c in checks],
                "deep_plan": ({k: f["deep"][k] for k in ("total_days", "pending_days", "pending_calls")} if f.get("deep") else None),
-               "backup": f.get("backup")}
+               "backup": f.get("backup"), "quota": f.get("quota")}
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO analysis_snapshot (name, payload, computed_at) VALUES (%s, %s::jsonb, now()) "

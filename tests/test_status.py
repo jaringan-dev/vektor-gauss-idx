@@ -121,12 +121,16 @@ def test_gather_never_raises_and_turns_failures_into_warnings(monkeypatch):
     monkeypatch.setattr(st, "_backup_fact", boom)
     monkeypatch.setattr(st, "_dashboard_fact", lambda: False)
     monkeypatch.setattr(st, "load_snapshot", boom)
+    monkeypatch.setattr(st, "_quota_fact", boom)
     pytest.importorskip("psycopg")
+    from vg import watch
     from vg.web import freshness
 
     monkeypatch.setattr(freshness, "load_inputs", boom)
+    monkeypatch.setattr(watch, "load", boom)
     f = st.gather(NOW)
     assert any("could not check run log" in e for e in f["errors"]) and any("could not check backups" in e for e in f["errors"])
+    assert any("could not check collector runs" in e for e in f["errors"]) and any("could not check feed allowance" in e for e in f["errors"])
     checks = st.build_checks(f)
     assert st.headline(checks)[0] == st.WARN and any(c.name == "Status check" for c in checks)
 
