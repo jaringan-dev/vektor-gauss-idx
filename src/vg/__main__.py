@@ -168,6 +168,11 @@ def build_parser() -> argparse.ArgumentParser:
     gm.add_argument("--backfill", nargs=2, metavar=("START", "END"), help="inclusive range")
 
     sub.add_parser("backfill-outcomes", help="fill forward returns on resolved signal_log rows")
+    b2 = sub.add_parser("backfill-outcomes2",
+                        help="outcome v2: VWAP(t+1) entry, IDX-reference-price + dividend adjusted returns -> signal_log.ret2_*, market_breadth2")
+    b2.add_argument("--all", action="store_true", help="recompute every resolved row (default: only rows not done yet)")
+    ec = sub.add_parser("eval-compare", help="per tag, v1 vs v2 edge at 5 sessions (same signals in both columns)")
+    ec.add_argument("--since", type=date.fromisoformat, default=None, help="only signals on/after this date (e.g. VG_FORWARD_SINCE)")
     bw = sub.add_parser(
         "backfill-wash",
         help="IN-SAMPLE history of AKUM-NETRAL-WASH from the stored broker scores; only sessions before VG_FORWARD_SINCE",
@@ -590,6 +595,31 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "backfill-outcomes":
         print(f"signal_log rows updated: {engine.backfill_outcomes()}")
+        return 0
+
+    if args.cmd == "backfill-outcomes2":
+        from . import outcomes2
+
+        r = outcomes2.backfill(full=args.all)
+        print(f"ret2 rows written: {r['updated']}  benchmark days: {r['breadth_days']}  "
+              f"resolved: {r['done']} (with an entry: {r['with_entry']})")
+        return 0
+
+    if args.cmd == "eval-compare":
+        from . import outcomes2
+
+        def pct(x):
+            return "     n/a" if x is None else f"{x * 100:+7.2f}%"
+
+        rows = outcomes2.compare(args.since)
+        print(f"{'tag':<26}{'n':>8}  {'edge v1':>8}  {'edge v2':>8}  {'v2 close':>8}  {'v2 liq':>8}  {'hit v1':>6} {'hit v2':>6}  moved>5pp")
+        for r in rows:
+            print(f"{r['tag']:<26}{r['n']:>8}  {pct(r['edge1_h5'])}  {pct(r['edge2_h5'])}  {pct(r['edge2c_h5'])}  "
+                  f"{pct(r['edge2_h5_liquid'])}  {r['hit1'] * 100:5.1f}% {r['hit2'] * 100:5.1f}%  {r['n_moved']:>8}")
+        print("\nedge = avg(tag return - equal-weight universe return, same day) at 5 sessions. v1: entry at the signal-day close, "
+              "split-only adjustment. v2: entry at the VWAP of t+1, total return (IDX reference-price resets + cash dividends). "
+              "v2 close: v2 basis entered at the signal-day close. moved>5pp: rows whose v1 and v2-close 5-day returns differ by "
+              "more than 5 points (adjustment errors).")
         return 0
 
     if args.cmd == "digest":

@@ -13,11 +13,11 @@ LIVE = {
     "broker_days_30d": 5633, "broker_copies_30d": 41,
     "adj_computed": "2026-11-02", "adj_last_div": "2026-10-29", "ca_last_div": "2026-11-06",
     "ret_rows_120d": 40000, "ret_extreme_120d": 42, "bars_30d": 21186, "bars_bad_30d": 0,
-    "akum_90d": 5410, "dist_90d": 19,
+    "akum_90d": 5410, "dist_90d": 19, "fallback_bars": 2886, "fallback_ref_jumps": 17,
 }
 CLEAN = {**LIVE, "ref_days_unknown": 0, "ref_days_shares_lag": 0, "splits_not_priced": 0, "tradable_eq_listed": 100,
          "scripless_jumps": 0, "broker_copies_30d": 0, "adj_computed": "2026-11-06", "adj_last_div": "2026-11-06",
-         "ret_extreme_120d": 0, "akum_90d": 300, "dist_90d": 200}
+         "ret_extreme_120d": 0, "akum_90d": 300, "dist_90d": 200, "fallback_ref_jumps": 0}
 TODAY = date(2026, 11, 7)
 
 
@@ -29,7 +29,8 @@ def test_the_live_state_of_2026_11_07_is_bad_for_the_numbers_that_feed_returns()
     f = _by_name(audit.build_findings(LIVE, today=TODAY))
     for name in ("Corporate-action days", "Splits not priced by IDX", "Broker table copies", "Extreme 5-day returns"):
         assert f[name].level == BAD, name
-    for name in ("Share count lag", "Free float column", "KSEI scripless base", "Adjustment factors", "One-sided broker measure"):
+    for name in ("Share count lag", "Free float column", "KSEI scripless base", "Adjustment factors", "One-sided broker measure",
+                 "Fallback price bars"):
         assert f[name].level == WARN, name
     assert f["Price bar sanity"].level == OK
     assert "39 have no split/bonus factor" in f["Corporate-action days"].text

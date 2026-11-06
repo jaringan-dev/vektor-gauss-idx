@@ -140,6 +140,7 @@ stock-day disimpan di sana hanya bila lengkap (beli dan jual cocok dalam 1%).
 | Quality gate | `quality.py` | `quality-gate` | memblokir `compute` bila input hari itu rusak |
 | Komponen, tag, skor | `engine/__init__.py`, `engine/scoring.py`, `broker_bounds.py` | `compute`, `backfill-wash` | `signal_components`, `signal_log` |
 | Outcome forward | `engine/__init__.py` | `backfill-outcomes` | return 1/3/5/10 hari, `market_breadth` |
+| Outcome v2 | `outcomes2.py` | `backfill-outcomes2`, `eval-compare` | masuk di VWAP t+1, total return dari harga acuan `prev` IDX (split/bonus/rights, hanya bar tier 0) + dividen; `signal_log.ret2_*`, `market_breadth2` (rumus sama). v1 tidak disentuh |
 | Evaluasi per tag | `engine/__init__.py`, `web/edge.py` | `eval` | edge terhadap universe, hit rate |
 | Paper trading | `paper.py` | `paper-update`, `paper-report` | `paper_trades` |
 | Uji stop/target | `risk.py`, `risk_eval.py` | `risk-eval` | `analysis_snapshot` |
@@ -165,7 +166,7 @@ flowchart LR
 | Kelompok | Tabel |
 |---|---|
 | Kalender dan daftar | `trading_calendar`, `tickers` |
-| Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth` |
+| Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth`, `market_breadth2` |
 | Kepemilikan dan filing | `ownership_monthly`, `corp_actions`, `disclosure_filings`, `disclosure_holdings`, `trading_halts` |
 | Broker | `broker_flows`, `broker_levels`, `broker_flows_full`, `broker_inventory`, `done_by_price`, `broker_affiliation_groups` |
 | Aliran trade | `trade_flow_1m` |

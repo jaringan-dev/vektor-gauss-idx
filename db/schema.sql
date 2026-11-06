@@ -389,6 +389,33 @@ CREATE TABLE IF NOT EXISTS market_breadth (
     computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Outcome v2 (audit 2026-11-07, src/vg/outcomes2.py): entry at the VWAP of t+1 (the signal only exists after the close),
+-- total-return basis from IDX's own reference-price resets (splits, bonus, rights) + cash-dividend factors. ret2c_h5 = the
+-- same basis entered at the signal-day close, for comparison with v1. ret2_at = when the row was resolved (also when it got
+-- no entry because nobody traded on t+1). v1 columns above are never touched by v2.
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2_h1  NUMERIC;
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2_h3  NUMERIC;
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2_h5  NUMERIC;
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2_h10 NUMERIC;
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2c_h5 NUMERIC;
+ALTER TABLE signal_log ADD COLUMN IF NOT EXISTS ret2_at  TIMESTAMPTZ;
+
+-- The v2 benchmark: equal-weight universe (every stock that traded on the signal day), SAME formula as signal_log.ret2_*.
+CREATE TABLE IF NOT EXISTS market_breadth2 (
+    session_date    DATE PRIMARY KEY,
+    n_all           INT,
+    ret2_h1_all     NUMERIC,
+    ret2_h3_all     NUMERIC,
+    ret2_h5_all     NUMERIC,
+    ret2_h10_all    NUMERIC,
+    hit2_h5_all     NUMERIC,
+    ret2c_h5_all    NUMERIC,
+    n_liquid        INT,
+    ret2_h5_liquid  NUMERIC,
+    hit2_h5_liquid  NUMERIC,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ---------------------------------------------------------------------------
 -- Operational
 -- ---------------------------------------------------------------------------

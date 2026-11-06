@@ -42,11 +42,12 @@ def _facts(cur, since: date) -> dict:
     # Corporate-action days as IDX sees them, and whether our adjustment tables know about them.
     f["ref_days"], f["ref_days_unknown"], f["ref_days_shares_lag"] = _q(cur, """
         WITH b AS (
-          SELECT ticker, session_date, prev, listed_shares,
+          SELECT ticker, session_date, prev, listed_shares, source_tier,
                  lag(close)         OVER (PARTITION BY ticker ORDER BY session_date) AS pc,
                  lag(listed_shares) OVER (PARTITION BY ticker ORDER BY session_date) AS pls
           FROM price_bars WHERE session_date >= %(since)s::date - 10),
-        d AS (SELECT * FROM b WHERE session_date >= %(since)s AND pc > 0 AND prev > 0 AND abs(prev / pc - 1) > %(ref)s)
+        d AS (SELECT * FROM b WHERE session_date >= %(since)s AND source_tier = 0
+                                AND pc > 0 AND prev > 0 AND abs(prev / pc - 1) > %(ref)s)
         SELECT count(*),
                count(*) FILTER (WHERE NOT EXISTS (
                    SELECT 1 FROM adj_factor a WHERE a.ticker = d.ticker AND a.kind IN ('split', 'bonus')
@@ -64,6 +65,12 @@ def _facts(cur, since: date) -> dict:
                       WHERE b.session_date = s.ex_date) AS f
               FROM s)
         SELECT count(*), count(*) FILTER (WHERE f IS NOT NULL AND abs(f - 1) <= %(ref)s) FROM r""", p)
+
+    # Fallback (non-IDX) bars whose reference price jumps: the feed's `prev` is adjusted for LATER corporate actions.
+    f["fallback_bars"], f["fallback_ref_jumps"] = _q(cur, """
+        WITH b AS (SELECT source_tier, prev, lag(close) OVER (PARTITION BY ticker ORDER BY session_date) AS pc FROM price_bars)
+        SELECT count(*) FILTER (WHERE source_tier > 0),
+               count(*) FILTER (WHERE source_tier > 0 AND pc > 0 AND prev > 0 AND abs(prev / pc - 1) > %(ref)s) FROM b""", p)
 
     f["bars_latest"], f["tradable_eq_listed"] = _q(cur, """
         SELECT count(*), count(*) FILTER (WHERE tradable_shares = listed_shares) FROM price_bars
@@ -142,6 +149,12 @@ def build_findings(f: dict, errors: list[str] | None = None, today: date | None 
         out.append(Check(BAD if n else OK, "Splits not priced by IDX",
                          f"{n} of {f['splits']} 'split' records have an unchanged IDX reference price: they are placements or conversions, "
                          "and a split factor applied to them makes a return wrong by the share-count change"))
+
+    if f.get("fallback_bars"):
+        j = f["fallback_ref_jumps"]
+        out.append(Check(WARN if j else OK, "Fallback price bars",
+                         f"{f['fallback_bars']} bars come from the Tier-3 fallback feed; {j} of them carry a reference price adjusted for a "
+                         "LATER corporate action (ignored by outcome v2; never use their prev as a factor)"))
 
     if f.get("bars_latest"):
         eq, n = f["tradable_eq_listed"], f["bars_latest"]
