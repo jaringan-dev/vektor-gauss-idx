@@ -95,6 +95,41 @@ def test_the_october_broker_coverage_drop_shows_as_bad():
     assert low == {d for d in days if d >= date(2026, 10, 16)}
 
 
+def _broker_month(stored, liquid):
+    days = _weekdays(30)
+    counts = {"price": {d: 962 for d in days}, "broker": {d: stored(d) for d in days}, "liquid": {d: liquid(d) for d in days}}
+    return days, counts
+
+
+def test_a_quiet_day_with_every_liquid_name_stored_is_normal_not_partial():
+    """5 Nov 2026: only 151 names traded > Rp5B, the pass stored 173 (liquid + watchlist + radar), the normal level was ~260.
+    Nothing the pass is supposed to fetch was missing, so the cell must not say 'partial'."""
+    days, counts = _broker_month(lambda d: 260, lambda d: 220)
+    quiet = days[-1]
+    counts["broker"][quiet], counts["liquid"][quiet] = 173, 151
+    cell = next(r for r in cov.build_grid(days, counts)["rows"] if r["date"] == quiet)["cells"]["broker"]
+    assert cell.level == cov.OK and cell.count == 173 and cell.as_dict()["pct"] == 115
+
+
+def test_a_day_that_is_short_of_its_own_liquid_names_is_still_flagged():
+    days, counts = _broker_month(lambda d: 260, lambda d: 220)
+    short, empty = days[-1], days[-2]
+    counts["broker"][short], counts["liquid"][short] = 150, 220                           # 68% of the names it should have
+    counts["broker"][empty] = 60                                                           # the G3 radar-only drop: 27%
+    rows = {r["date"]: r["cells"]["broker"].level for r in cov.build_grid(days, counts)["rows"]}
+    assert rows[short] == cov.WARN and rows[empty] == cov.BAD
+
+
+def test_without_liquid_counts_broker_falls_back_to_the_normal_level_and_other_sources_ignore_them():
+    days, counts = _broker_month(lambda d: 260, lambda d: 0)
+    counts["broker"][days[-1]] = 173                                                       # no liquid figure for the day -> median 260
+    counts["price"][days[-2]] = 480
+    grid = cov.build_grid(days, counts)
+    rows = {r["date"]: r["cells"] for r in grid["rows"]}
+    assert rows[days[-1]]["broker"].level == cov.WARN                                       # 173 / 260 = 67%
+    assert rows[days[-2]]["price"].level == cov.BAD                                         # price still judged by its own median
+
+
 # ---- classify boundaries ----------------------------------------------------------------
 
 @pytest.mark.parametrize("count,expected", [

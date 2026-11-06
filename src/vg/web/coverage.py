@@ -16,6 +16,7 @@ from datetime import date
 from statistics import median
 
 from .freshness import GAP_RATIO, PARTIAL_RATIO, fmt_date
+from .listing import LIQUID_VALUE_IDR
 
 OK, WARN, BAD, NA = "ok", "warn", "bad", "na"
 REFERENCE_MAX_RATIO = 1.5      # a day above 1.5x the normal count is a one-off, not a reference
@@ -61,8 +62,23 @@ class Cell:
                 "pct": None if self.ratio is None else round(self.ratio * 100)}
 
 
+def _expected(key: str, d: date, baseline: float | None, counts: dict) -> float | None:
+    """What count counts as 'complete' for `key` on day `d`. Most sources: the source's normal level. Broker: the full EOD
+    pass fetches every name that traded above the liquidity line THAT day (plus the watchlist and radar names, so the
+    stored count is never lower), and how many names that is changes with the market — 229 on a busy day, 151 on a quiet
+    one. A fixed median would call a quiet day 'partial' although nothing the pass is supposed to fetch is missing.
+    `counts['liquid'][d]` (names above the line, from the price table) is that day's own bar; a day with no entry falls
+    back to the normal level."""
+    if key == "broker":
+        liquid = counts.get("liquid", {}).get(d)
+        if liquid:
+            return float(liquid)
+    return baseline
+
+
 def build_grid(days: list[date], counts: dict) -> dict:
-    """counts[source][date] -> n. Returns {'rows': newest-first [{date, cells}], 'summary': {...}}.
+    """counts[source][date] -> n (and optionally counts['liquid'][date], see `_expected`).
+    Returns {'rows': newest-first [{date, cells}], 'summary': {...}}.
 
     Per source: `start` = first day with any data (earlier days are 'na', not red — e.g. broker
     history begins 3 Jun 2026); `baseline` = median count from `start` on (robust to a few gaps).
@@ -84,8 +100,9 @@ def build_grid(days: list[date], counts: dict) -> dict:
             if m["start"] is None or d < m["start"]:
                 cells[key] = Cell(NA, None, None)
                 continue
-            level = classify(n, m["baseline"])
-            ratio = (n / m["baseline"]) if m["baseline"] else None
+            ref = _expected(key, d, m["baseline"], counts)
+            level = classify(n, ref)
+            ratio = (n / ref) if ref else None
             cells[key] = Cell(level, n, ratio)
             if level in (WARN, BAD):
                 m[level] += 1
@@ -173,6 +190,9 @@ def load_counts(n_days: int = 60) -> tuple[list[date], dict]:
             agg = "count(*)" if key in ("price", "signal") else f"count(DISTINCT {col})"
             cur.execute(f"SELECT session_date, {agg} FROM {table} WHERE session_date >= %s GROUP BY 1", (lo,))
             counts[key] = {d: int(n) for d, n in cur.fetchall()}
+        cur.execute("SELECT session_date, count(*) FROM price_bars WHERE session_date >= %s AND value > %s GROUP BY 1",
+                    (lo, LIQUID_VALUE_IDR))
+        counts["liquid"] = {d: int(n) for d, n in cur.fetchall()}
     return days, counts
 
 
