@@ -63,6 +63,15 @@ Syarat E: verifikasi dulu bahwa field `c` recorder = sisi agresor, dibandingkan 
 - [ ] 18. Setelah verdict: kalau "recorder can replace done-details" → matikan done-details di eod.sh (EOD ≈ 750 call, muat 1k/hari),
       ganti sumber Aggressor Ratio ke recorder. Kalau tidak → pilih opsi D/C/perpanjang paket. Kembalikan `--max-pages` ke default.
 
+### Sedang dikerjakan: dashboard "keputusan 3 detik" — versi JUJUR (rencana disetujui user 7 Nov)
+Rencana lengkap: `~/.claude/plans/http-localhost-8787-bisakah-diperkaya-ta-bubbly-castle.md` (Windows: C:\Users\NUC 11ATKC4\.claude\plans\).
+User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server (BUKAN TradingView CDN).
+- [x] 19. `src/vg/web/evidence.py` (5 tanda akumulasi + 3 peringatan + TESTED_NOTE) + tes
+- [x] 20. `/`: kolom Evidence, klaster "Most agreement" & "Warnings", view=agree/warn, sort=evidence. Data 6 Nov: 33 agree, 38 warning.
+- [ ] 21. `/stock`: `charts.bpi_bars` sejajar candles (BPI 90 sesi dari broker_levels) + tes
+- [ ] 22. `/stock`: Executive Summary = perluas `narrative.stock_summary` (+ verdict riset), lolos FORBIDDEN
+- [ ] 23. Verifikasi (pytest, curl, Chrome), ARCHITECTURE.md, commit
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.

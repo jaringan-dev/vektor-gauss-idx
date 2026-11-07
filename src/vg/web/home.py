@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from . import bpi_window, fmt, glossary, listing, live_scores, patterns
+from . import bpi_window, evidence, fmt, glossary, listing, live_scores, patterns
 
 WASH_TAG = "AKUM-NETRAL-WASH"
 # "Accumulation" = any pattern named *-AKUM / AKUM-*. The wash flag is excluded on purpose: its own description says
@@ -31,17 +31,20 @@ ACCUMULATION_TAGS = frozenset(
 
 # The broker-scoring columns this screen reads. They are created by `vg init-db`; until it has run, each one is
 # selected as NULL so the page still renders (everything shows N/A) instead of failing.
-SCORE_COLS = ("bpi3", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage")
+SCORE_COLS = ("bpi3", "bpi_overlap3", "aggr_haka_share", "aggr_ratio", "aggr_coverage", "retail_div_state")
+CLUSTER_MAX = 8           # cards in each of the two clusters above the table
 NA = "N/A"
 BAR_FULL = 0.5            # a BPI of +/-50 points fills the little bar; larger values are clipped
 
 PER_PAGE = listing.PER_PAGE
 # sort key -> (row field, natural first direction)
 SORTS = {"ticker": ("ticker", "asc"), "price": ("price_raw", "desc"), "change": ("chg_raw", "desc"), "bpi": ("bpi_raw", "desc"),
-         "bpi5d": ("bpi5d_raw", "desc"), "overlap": ("overlap_raw", "desc"), "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
+         "bpi5d": ("bpi5d_raw", "desc"), "evidence": ("evidence_raw", "desc"), "overlap": ("overlap_raw", "desc"),
+         "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
 # The quick pills, in the order they are drawn. `acc` stays a valid address (the Total-accumulation card links to it) but has no pill.
-VIEWS = (("acc", "Accumulation"), ("top", "Top Accumulation"), ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
-PILL_VIEWS = ("top", "haka", "wash")
+VIEWS = (("acc", "Accumulation"), ("agree", "Most agreement"), ("warn", "Warnings"), ("top", "Top Accumulation"),
+         ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
+PILL_VIEWS = ("agree", "warn", "top", "haka", "wash")
 HAKA_DOMINANT = 0.55      # buyers lifted the offer on at least 55% of the volume whose aggressor is known
 AGGR_MIN_SHARE = 0.10     # show the Aggressor-ratio column only when at least 10% of the session's rows have order-flow data
 DEFAULTS = {"q": "", "view": "", "liquid": 0, "wl": 0, "sort": "bpi", "dir": "desc", "page": 1}
@@ -139,8 +142,13 @@ def _row(r: dict, wl: set, held: set) -> dict:
     bpi, overlap, ratio, cov = r.get("bpi3"), r.get("bpi_overlap3"), r.get("aggr_ratio"), r.get("aggr_coverage")
     haka = r.get("aggr_haka_share")
     win = win_cell(r.get("win"))
+    pat = r.get("pat") or {}
+    ev = evidence.read(r.get("win"), pat.get("net"), haka=haka, retail_div=r.get("retail_div_state"), tags=tags,
+                       crossing=pat.get("cross"))
     return {
         "win": win, "bpi5d_raw": win["raw"], "badges": patterns.badges(r.get("pat")),
+        # sort: warnings last among the known, unknown always last (None); within a state more agreeing signs first
+        "ev": ev, "evidence_raw": None if ev["state"] == "unknown" else (-1.0 if ev["warnings"] else ev["agree"] + ev["agree"] / 10 / max(ev["known"], 1)),
         "ticker": r["ticker"], "in_wl": r["ticker"] in wl, "held": r["ticker"] in held,
         "price": fmt.price(close), "chg": fmt.cell(chg, 1),
         "bpi_live": bool(r.get("bpi_live")),
@@ -182,6 +190,16 @@ def eod_card(raw: dict, scored_today: bool) -> dict:
     return {"state": "none", "t": NA, "word": "No scores yet", "c": "", "sub": f"EOD session {sd}; no session has a broker score yet."}
 
 
+def clusters(rows: list[dict], n: int = CLUSTER_MAX) -> dict:
+    """The two short lists above the table. Most agreement: more agreeing signs first, then the stronger five-session BPI.
+    Warnings: the strongest five-session SELLING first, then by traded value (a big stock's crossing matters more)."""
+    agree = sorted((r for r in rows if r["ev"]["state"] == "agree"),
+                   key=lambda r: (-r["ev"]["agree"], -(r["bpi5d_raw"] or 0), r["ticker"]))
+    warn = sorted((r for r in rows if r["ev"]["state"] == "warning"),
+                  key=lambda r: (r["bpi5d_raw"] if r["bpi5d_raw"] is not None else 0, -(r["value_raw"] or 0), r["ticker"]))
+    return {"agree": agree[:n], "warn": warn[:n], "n_agree": len(agree), "n_warn": len(warn)}
+
+
 def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
     """Rows + the three header cards + an honest notice when the scores are missing for this session."""
     wl, held = set(watchlist), set(holdings)
@@ -210,6 +228,7 @@ def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
     n_aggr = sum(r["haka_raw"] is not None for r in rows)
     return {
         "session_date": raw["session_date"], "rows": rows, "n_rows": len(rows), "notice": notice,
+        "clusters": clusters(rows), "tested_note": evidence.TESTED_NOTE,
         # A column that is N/A on (nearly) every row is noise: hide it and say why in the note under the table instead.
         "n_aggr": n_aggr, "show_aggr": bool(rows) and n_aggr / len(rows) >= AGGR_MIN_SHARE,
         "cards": {
@@ -247,6 +266,10 @@ def apply(rows: list[dict], p: dict) -> list[dict]:
         out = [r for r in out if r["acc"]]
     elif p["view"] == "top":                                      # accumulation pattern, and not a negative BPI (an unscored stock stays, last)
         out = [r for r in out if r["acc"] and (r["bpi_raw"] is None or r["bpi_raw"] > 0)]
+    elif p["view"] == "agree":
+        out = [r for r in out if r["ev"]["state"] == "agree"]
+    elif p["view"] == "warn":
+        out = [r for r in out if r["ev"]["state"] == "warning"]
     elif p["view"] == "haka":
         out = [r for r in out if r["haka_raw"] is not None and r["haka_raw"] >= HAKA_DOMINANT]
     elif p["view"] == "wash":
@@ -287,6 +310,8 @@ def sort_link(p: dict, key: str) -> dict:
 PILL_TITLES = {
     "All": "Every stock with a pattern or a score; clears the filters.",
     "Liquid Only": "Stocks that traded more than Rp5 billion on the day (about 200).",
+    "Most agreement": "At least 3 accumulation signs agree and nothing warns against them. Not a tested signal.",
+    "Warnings": "Wash, a crossing day, or selling concentrated over 5 sessions: read the broker numbers with care.",
     "Top Accumulation": "Stocks with an accumulation pattern and no negative BPI; stocks without a score come last.",
     "Haka Dominant": "Buyers lifted the offer on at least 55% of the volume whose aggressor is known (needs order-flow data).",
     "Wash Alert": "Concentrated buying, but the same houses also sell (AKUM-NETRAL-WASH).",

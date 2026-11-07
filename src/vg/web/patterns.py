@@ -205,7 +205,7 @@ def badges(p: dict | None) -> list[dict]:
     if not p:
         return []
     out = []
-    c, n, s = p["comp"], p["net"], p.get("surge")
+    c, n, s = p.get("comp"), p.get("net"), p.get("surge")
     x = p.get("cross")
     if x is not None and x >= CROSSING_SHARE:
         # First, because it changes how every other broker number on the row should be read.
@@ -217,11 +217,11 @@ def badges(p: dict | None) -> list[dict]:
         out.append({"key": "surge", "icon": "📊", "text": f"Volume {s.x:.1f}x usual",
                     "title": f"Regular-market value today {_bn(s.value)} = {s.x:.1f}x its median over the previous {BASE} sessions "
                              f"(negotiated-market trades left out). {TESTED['surge']}"})
-    if is_compression(c):
+    if c is not None and is_compression(c):
         out.append({"key": "comp", "icon": "⚡", "text": "Vol/price compression",
                     "title": f"Last {WINDOW} sessions: high-low range {c.range_pct * 100:.1f}% of the close, close moved {c.move_pct * 100:+.1f}%, "
                              f"volume {c.vol_x:.1f}x its {BASE}-session average. {TESTED['comp']}"})
-    if is_persistent(n):
+    if n is not None and is_persistent(n):
         out.append({"key": "net", "icon": "🏦", "text": f"{n.broker} net buy {n.days} days",
                     "title": f"{n.broker} was a net buyer on {n.days} of the {n.days_ok} sessions with broker data (window {n.n_window}), "
                              f"{_bn(n.net_val)} net in all = {n.share * 100:.0f}% of the stock's traded value on those sessions. "

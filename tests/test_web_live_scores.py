@@ -166,7 +166,7 @@ def test_loading_the_home_screen_only_reads(monkeypatch):
             if "information_schema" in self.sql:
                 return [(c,) for c in home.SCORE_COLS]
             if "FROM price_bars pb" in self.sql:
-                return [("AAAA", 1000.0, 990.0, 100.0, "AKUMULASI", None, None, None, None, None, "AKUM-ASING")]
+                return [("AAAA", 1000.0, 990.0, 100.0, "AKUMULASI", *([None] * len(home.SCORE_COLS)), "AKUM-ASING")]
             if "broker_levels" in self.sql:
                 return [("AAAA", "B", "AK", 40.0), ("AAAA", "S", "CC", 15.0)]
             return []

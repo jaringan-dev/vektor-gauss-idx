@@ -216,6 +216,17 @@
     td.bpi .bar.neg i { background:var(--neg); }
     td.bpi5d .sub { display:block; font-size:.78em; color:var(--muted); white-space:nowrap; }
     td.bpi5d .sub.muted { font-style:italic; }
+    /* evidence reading + quick-scan clusters: blue / amber / grey, never the green of a tested signal */
+    .ev { display:inline-block; font-size:.8em; padding:1px 8px; border-radius:9px; white-space:nowrap; border:1px solid var(--border); }
+    .ev-agree { color:var(--link); border-color:var(--link); background:color-mix(in srgb, var(--link) 10%, transparent); }
+    .ev-warning { color:var(--warn-fg); background:var(--warn-bg); border-color:transparent; }
+    .ev-mixed, .ev-unknown { color:var(--muted); background:var(--prob-bg); }
+    .clusters { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:12px; margin-bottom:12px; }
+    .clusters > .wide-note { grid-column:1 / -1; margin:0; }
+    .cluster h2 { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+    .ccards { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
+    .ccard { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; padding:6px 8px; border-radius:10px; background:var(--prob-bg); }
+    .ccard .sub { flex-basis:100%; font-size:.78em; color:var(--muted); }
     /* descriptive pattern badges: neutral on purpose (green/red are for tested signals and money) */
     .pbadges { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
     .pbadge { font-size:.74em; line-height:1.5; padding:0 6px; border-radius:9px; border:1px solid var(--border);

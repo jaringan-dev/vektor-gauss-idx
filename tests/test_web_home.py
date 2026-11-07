@@ -139,7 +139,9 @@ def test_query_strings_keep_state_and_drop_defaults():
 
 def test_chips_toggle_and_views_are_a_single_choice_group():
     pills = home.chips(home.clean({"view": "wash"}))
-    assert [c["label"] for c in pills] == ["All", "Liquid Only", "Top Accumulation", "Haka Dominant", "Wash Alert", "My Watchlist"]
+    assert [c["label"] for c in pills] == ["All", "Liquid Only", "Most agreement", "Warnings", "Top Accumulation", "Haka Dominant",
+                                          "Wash Alert", "My Watchlist"]
+    assert {c["label"]: c for c in pills}["Most agreement"]["href"] == "?view=agree"
     chips = {c["label"]: c for c in pills}
     assert chips["Wash Alert"]["on"] and chips["Wash Alert"]["href"] == "?" and not chips["All"]["on"]
     assert not chips["Top Accumulation"]["on"] and chips["Top Accumulation"]["href"] == "?view=top"
