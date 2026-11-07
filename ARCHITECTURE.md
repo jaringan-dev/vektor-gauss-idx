@@ -213,6 +213,7 @@ dibuka ke jaringan (`auth.py`); formulir mengecek Origin sebagai pertahanan CSRF
 - `status.py` dan `watch.py`: pemeriksaan "apakah sistem benar-benar berjalan": kesegaran data, kegagalan koleksi, tiap koleksi harian
   sudah jalan, recorder per sesi, kuota feed, K7, backup, disk. Dikirim ke Telegram dan tampil di System health.
 - `reminder.py` (`vg remind-verify`): pengingat verifikasi satu kali setelah compute pertama yang sehat.
+- `checkpoint_reminder.py` (`vg remind-checkpoint`): Telegram harian di akhir EOD, sekali per sesi — cek otomatis (cakupan broker, `trade_lots_daily`, `signal_snapshot`, tag v2) + item terbuka dari `CHECKPOINT.md`.
 - `audit.py` (`vg audit-data`): audit integritas data (read-only, dari audit 2026-11-07): hari aksi korporasi yang belum disesuaikan
   (dideteksi dari harga acuan `prev` IDX), "split" yang tidak dihargai BEI, kolom free float, lompatan basis scripless KSEI, salinan tabel
   broker, kesegaran `adj_factor`, return 5 hari ekstrem, kewajaran bar harga, ukuran broker sepihak. Exit 1 bila ada temuan BAD.

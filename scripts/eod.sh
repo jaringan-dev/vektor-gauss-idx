@@ -117,6 +117,10 @@ vg status --telegram --kind evening || true
 # it cannot change what `vg digest` or the status report above did.
 vg remind-verify || true
 
+# Daily: tonight's automatic checks (broker coverage, iceberg-proxy counts, frozen signals, v2 tags) + the open items of
+# CHECKPOINT.md, once per session, so nothing waiting is forgotten when a work session ended suddenly. Always `|| true`.
+vg remind-checkpoint || true
+
 if [ -n "${VG_HEALTHCHECK_URL:-}" ]; then
   # Dead-man's-switch: tells an OUTSIDE service the machine/cron is still alive.
   # Catches "PC/WSL/internet died entirely" (Task Scheduler never even fires this

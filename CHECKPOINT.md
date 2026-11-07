@@ -23,6 +23,10 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - [ ] 6. **Senin 9 Nov setelah 16:05**: cek `trade_lots_daily` terisi + ukurannya (baris/hari) dan ringkasan recorder di `run_log`
       (`size-count rows ...`). Kalau terlalu besar → naikkan `LOT_MIN` di `src/vg/tradeflow.py`.
 
+### Reminder Telegram
+`vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
+"Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.
+
 ### Sudah selesai hari ini (commit)
 - `2eb817c` eod.sh exec bit permanen di git (record_trades.sh juga dipulihkan) — **pushed**
 - `d5abaa1` universe broker "sticky": liquid di salah satu dari 20 sesi terakhir (`VG_BROKER_LIQUID_LOOKBACK`), 173 → ~367 saham/hari — **pushed**

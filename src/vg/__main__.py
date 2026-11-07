@@ -259,6 +259,12 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("--force", action="store_true", help="send now regardless of readiness; does not count as the one-off send")
     rm.add_argument("--dry-run", action="store_true", help="print the message, send nothing, touch no database")
 
+    rc2 = sub.add_parser(
+        "remind-checkpoint",
+        help="send tonight's automatic checks + the open CHECKPOINT.md items to Telegram, once per session (end of eod.sh)")
+    rc2.add_argument("--force", action="store_true", help="send again even if already sent for this session")
+    rc2.add_argument("--dry-run", action="store_true", help="print the message, send nothing, write nothing")
+
     bd = sub.add_parser("broker-deep", help="K7: fill broker history newest->oldest inside a feed-call budget (resumable; run nightly)")
     bd.add_argument("--start", type=date.fromisoformat, default=date(2023, 1, 2))
     bd.add_argument("--end", type=date.fromisoformat, default=date(2026, 6, 2))
@@ -866,6 +872,11 @@ def main(argv: list[str] | None = None) -> int:
         from . import reminder as _reminder
 
         return _reminder.run(force=args.force, dry_run=args.dry_run)
+
+    if args.cmd == "remind-checkpoint":
+        from . import checkpoint_reminder as _cpr
+
+        return _cpr.run(force=args.force, dry_run=args.dry_run)
 
     if args.cmd == "collect-free-float":
         from datetime import timedelta as _td
