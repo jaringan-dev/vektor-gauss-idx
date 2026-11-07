@@ -183,7 +183,7 @@ def test_newest_day_keeps_the_original_undated_call(rig):
 def test_a_past_day_requests_that_exact_date(rig):
     rig.todo, rig.latest, rig.newest = ["BBCA", "BBRI"], OLDER, LATEST
     collect.collect_broker_summary_full(session_date=OLDER)
-    assert rig.plan_args == {"session_date": OLDER, "have_table": "broker_flows"}
+    assert rig.plan_args == {"session_date": OLDER, "have_table": "broker_flows", "core_only": False}
     assert rig.kwargs == [{"use_date": True}, {"use_date": True}]
 
 
@@ -537,7 +537,7 @@ def _deep_rig(monkeypatch, todo_by_day, fail_on=None):
     monkeypatch.setattr(collect, "plan_broker_full",
                         lambda *, session_date=None, have_table="broker_flows", **k: {"todo": ["T"] * todo_by_day[session_date]})
 
-    def fake_full(*, delay=None, session_date=None, have_table="broker_flows"):
+    def fake_full(*, delay=None, session_date=None, have_table="broker_flows", core_only=False):
         fetched.append(session_date)
         return [CollectOutcome(session_date, "error" if session_date == fail_on else "ok", 10, "x")]
 
@@ -575,8 +575,47 @@ def test_deep_backfill_stops_at_the_first_failing_day_and_reports_why(monkeypatc
     assert res["pending_days"] == 2 and res["pending_calls"] == 200
 
 
+def _liquid_first_rig(monkeypatch, core_todo, full_todo):
+    days = sorted(full_todo)
+    monkeypatch.setattr(collect, "connect", _fake_connect(_Cur(rows=[(d,) for d in reversed(days)])))
+    fetched = []
+    monkeypatch.setattr(collect, "plan_broker_full",
+                        lambda *, session_date=None, core_only=False, **k:
+                        {"todo": ["T"] * (core_todo if core_only else full_todo)[session_date]})
+
+    def fake_full(*, delay=None, session_date=None, have_table="broker_flows", core_only=False):
+        fetched.append((session_date, core_only))
+        return [CollectOutcome(session_date, "ok", 10, "x")]
+
+    monkeypatch.setattr(collect, "collect_broker_summary_full", fake_full)
+    return fetched
+
+
+def test_deep_backfill_liquid_first_fills_core_names_on_every_day_before_any_extras(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28), date(2026, 5, 27)]
+    # the newest day already has its core names; the older two do not — and every day still misses sticky extras
+    fetched = _liquid_first_rig(monkeypatch, {d[0]: 0, d[1]: 150, d[2]: 150}, {x: 400 for x in d})
+    res = collect.backfill_broker_deep(d[2], d[0], budget=10_000, liquid_first=True)
+    assert res["phase"] == "liquid" and fetched == [(d[1], True), (d[2], True)] and res["calls"] == 300
+
+
+def test_deep_backfill_liquid_first_falls_through_to_the_full_universe_when_core_is_done(monkeypatch):
+    d = [date(2026, 5, 29), date(2026, 5, 28)]
+    fetched = _liquid_first_rig(monkeypatch, {x: 0 for x in d}, {d[0]: 220, d[1]: 0})
+    res = collect.backfill_broker_deep(d[1], d[0], budget=10_000, liquid_first=True)
+    assert res["phase"] == "full" and fetched == [(d[0], False)] and res["pending_days"] == 0
+
+
+def test_deep_backfill_default_stays_full_universe(monkeypatch):
+    d = [date(2026, 5, 29)]
+    fetched = _liquid_first_rig(monkeypatch, {d[0]: 50}, {d[0]: 300})
+    res = collect.backfill_broker_deep(d[0], d[0], budget=10_000)
+    assert res["phase"] == "full" and fetched == [(d[0], False)] and res["calls"] == 300
+
+
 def test_deep_script_runs_the_budgeted_command_and_logs():
     from pathlib import Path
 
     text = (Path(__file__).resolve().parent.parent / "scripts" / "deep_backfill.sh").read_text(encoding="utf-8")
     assert "vg broker-deep" in text and "--compute" in text and "VG_DEEP_BUDGET" in text and "deep_backfill.log" in text
+    assert "--liquid-first" in text      # liquid names on every day before the sticky/radar extras (falls through by itself)

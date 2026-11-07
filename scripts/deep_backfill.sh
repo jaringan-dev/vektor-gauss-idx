@@ -17,8 +17,10 @@ DOW="$(date +%u)"                                    # 1 = Monday ... 7 = Sunday
 if [ "$DOW" -ge 6 ]; then BUDGET="${VG_DEEP_BUDGET_WEEKEND:-${VG_DEEP_BUDGET:-15000}}"; else BUDGET="${VG_DEEP_BUDGET:-15000}"; fi
 {
   echo "===== deep backfill $(date -Is) (day $DOW, budget $BUDGET, workers $VG_FEED_WORKERS) ====="
-  vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --budget "$BUDGET" --compute
+  # --liquid-first: liquid-on-the-day names for EVERY day before the sticky/radar extras (longer history first, for the
+  # liquid-scope backtests); once those are done the same command moves on to the extras by itself.
+  vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --budget "$BUDGET" --compute --liquid-first
   echo "rc=$?  $(date -Is)"
-  vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --plan
+  vg broker-deep --start "${VG_DEEP_START:-2023-01-02}" --end "${VG_DEEP_END:-2026-06-02}" --plan --liquid-first
   vg status --telegram --kind backfill   # progress after every night; loud only when something is wrong
 } >> "$LOG" 2>&1

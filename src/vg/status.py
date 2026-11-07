@@ -276,8 +276,10 @@ def _quota_fact() -> dict | None:
 def _deep_plan() -> dict:
     from . import collect
 
-    res = collect.backfill_broker_deep(DEEP_START, DEEP_END, budget=0, plan_only=True)
-    return {"total_days": res["days_total"], "pending_days": res["pending_days"], "pending_calls": res["pending_calls"]}
+    # Same order as the nightly script: the liquid phase first, then the sticky/radar extras (`phase` says which).
+    res = collect.backfill_broker_deep(DEEP_START, DEEP_END, budget=0, plan_only=True, liquid_first=True)
+    return {"total_days": res["days_total"], "pending_days": res["pending_days"], "pending_calls": res["pending_calls"],
+            "phase": res["phase"]}
 
 
 def gather(now: datetime | None = None, *, full: bool = True) -> dict:

@@ -12,6 +12,20 @@ Badge (⚡ 📊 🏦), BPI 5 sesi, recorder iceberg-proxy, dan reminder Telegram
 Audit `value` mentah SELESAI (catatan 🔀 crossing). Berikutnya (pilihan user): keputusan kuota arjum (≈ 6 Des) ·
 `is_confirmed()` · Senin 9 Nov cek otomatis via Telegram.
 
+### K7 liquid-first (malam 7 Nov, SEDANG DIKERJAKAN)
+Fakta: K7 sebenarnya 375/805 hari LENGKAP untuk saham likuid-hari-itu (2024-10-23..2026-06-02); `--plan` bilang 805 karena
+commit `d5abaa1` (sticky universe 20 sesi) menambah ~220 nama/hari. Keputusan user: isi saham likuid dulu (≈ 67.8k call,
+≈ 2 malam), sticky/radar belakangan → prioritas = uji 🏦/BPI sebelum keputusan kuota arjum ≈ 6 Des.
+- [x] a. `--liquid-first` di `backfill_broker_deep` / `plan_broker_full(core_only)` / CLI / `scripts/deep_backfill.sh` /
+      `status._deep_plan` + 3 tes baru; 1335 tes lolos. Plan liquid: 430 hari, 67.833 call. Setelah fase liquid habis,
+      perintah yang sama otomatis pindah ke sticky/radar (`phase` = "full"). BELUM di-commit.
+- [ ] b. Run manual 22:48 (budget 14.000, workers 8; `.env` menimpa VG_DEEP_BUDGET kalau lewat skrip → jalankan `vg` langsung)
+      → log `~/deep_backfill.log` "MANUAL liquid-first chunk"
+      HASIL: fetch selesai (430 → 342 hari, ≈ 13.97k call, ~35 menit), lalu proses DIHENTIKAN Claude Code karena RAM host
+      menipis (saat fase `--compute`). Belum di-compute: ±88 hari yang baru terisi (≈ 2024-06..2024-10). Perlu
+      `engine.compute_day` untuk hari-hari itu + `backfill_outcomes` (tanpa kuota) — tunggu perintah user.
+- [ ] c. Commit + laporkan; run malam 00:10 otomatis lanjut liquid-first
+
 ### Langkah
 - [x] 1. `src/vg/web/patterns.py`: `compression()` (price_bars) + `persistent_net_buyer()` (broker_flows), pure + `load()` read-only
 - [x] 2. Badge di `/` (di bawah ticker, warna netral, tooltip berisi angka bukti) + tes — commit di bawah.

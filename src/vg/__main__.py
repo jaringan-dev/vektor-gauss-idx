@@ -271,6 +271,8 @@ def build_parser() -> argparse.ArgumentParser:
     bd.add_argument("--budget", type=int, default=15000, help="max feed calls this run (the API allows ~21k/day, EOD needs ~1k)")
     bd.add_argument("--plan", action="store_true", help="show what is left, fetch nothing")
     bd.add_argument("--compute", action="store_true", help="after fetching, compute signals for the filled days and refresh outcomes")
+    bd.add_argument("--liquid-first", action="store_true",
+                    help="fill watchlist/holdings + liquid-on-the-day names for every day first; then the sticky/radar extras")
 
     rc = sub.add_parser("research", help="is a pattern's edge real? dependence-aware CIs, FDR, size/liquidity-neutral edge, walk-forward, cost model")
     rc.add_argument("--scope", choices=("all", "liquid"), default="all")
@@ -935,8 +937,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if level == _status.BAD else 0
 
     if args.cmd == "broker-deep":
-        res = collect.backfill_broker_deep(args.start, args.end, budget=args.budget, plan_only=args.plan)
-        print(f"range {args.start}..{args.end}: {res['days_total']} trading days; left to fetch: {res['pending_days']} days, "
+        res = collect.backfill_broker_deep(args.start, args.end, budget=args.budget, plan_only=args.plan,
+                                           liquid_first=args.liquid_first)
+        print(f"range {args.start}..{args.end} [{res['phase']} names]: {res['days_total']} trading days; "
+              f"left to fetch: {res['pending_days']} days, "
               f"~{res['pending_calls']:,} calls (~{res['pending_calls'] / max(args.budget, 1):.1f} nights at {args.budget:,}/night)")
         if args.plan:
             return 0

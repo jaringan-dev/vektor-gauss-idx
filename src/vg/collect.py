@@ -1188,8 +1188,9 @@ _HAVE_TABLES = ("broker_flows", "broker_levels", "broker_flows_full")      # whi
 
 def plan_broker_full(
     *, skip_existing: bool = True, session_date: date | None = None, have_table: str = "broker_flows",
+    core_only: bool = False,
 ) -> dict:
-    """What the full broker pass WOULD fetch (read-only). `session_date` None = the newest trading
+    """What the full broker pass WOULD fetch (read-only). `core_only`: watchlist/holdings + liquid-on-the-day only (K7 liquid-first). `session_date` None = the newest trading
     day; a past date plans a historical fill. `latest` is None (with a `reason`) when there is no
     such trading day. `have_table="broker_levels"` counts a name as stored only if it has the gross ladder —
     used to re-fetch history that was collected before the sell side was parsed (K6)."""
@@ -1219,7 +1220,13 @@ def plan_broker_full(
             {"d": latest, "n": CONFIG.broker_liquid_lookback},
         )
         liquid, n_today = sticky_liquid(cur.fetchall())
-        universe = select_broker_universe(base, liquid, _radar_names(cur, latest))
+        if core_only:
+            # K7 liquid-first: only watchlist/holdings + names liquid ON THE DAY (no sticky extras, no radar) — the names a
+            # liquid-scope backtest actually uses, so history gets LONGER before it gets wider.
+            liquid = liquid[:n_today]
+            universe = select_broker_universe(base, liquid, [])
+        else:
+            universe = select_broker_universe(base, liquid, _radar_names(cur, latest))
         have = _have_for_date(cur, have_table, universe, latest) if skip_existing else set()
     return {
         "latest": latest, "newest": newest, "universe": universe, "have": have, "n_liquid": n_today,
@@ -1247,13 +1254,14 @@ def _feed_day_stale(session_date: date, ticker: str) -> bool:
 
 def collect_broker_summary_full(
     *, delay: float | None = None, session_date: date | None = None, have_table: str = "broker_flows",
+    core_only: bool = False,
 ) -> list[CollectOutcome]:
     """Broker summary for watchlist + holdings + EVERY liquid name + radar extras. Default = the
     newest trading day (the EOD pass); `session_date` fills a PAST day (the feed serves history).
     Idempotent (skips names already stored), paced by CONFIG.feed_delay_seconds, aborts after
     _FEED_ABORT_AFTER_ERRORS consecutive hard errors (a streak of 5xx / network errors is first waited out, see `_feed_loop`). Returns the failures plus one summary line
     (not 190 lines of noise). For the EOD pass run it AFTER the first `compute` so radar names exist."""
-    plan = plan_broker_full(session_date=session_date, have_table=have_table)
+    plan = plan_broker_full(session_date=session_date, have_table=have_table, core_only=core_only)
     latest = plan["latest"]
     if latest is None:
         return [CollectOutcome(
@@ -1314,31 +1322,44 @@ def backfill_broker_full(
 
 def backfill_broker_deep(
     start: date, end: date, *, budget: int, delay: float | None = None, have_table: str = "broker_flows",
-    plan_only: bool = False,
+    plan_only: bool = False, liquid_first: bool = False,
 ) -> dict:
     """Fill broker history NEWEST -> OLDEST inside a feed-call budget (K7). Resumable: names already stored are skipped, so a nightly
     run just continues where the last one stopped. A day is only started if its whole planned call count fits in what is left of the
-    budget, and the run stops at the first day that fails outright (quota/ban). Returns a summary dict; `outcomes` are the failures."""
+    budget, and the run stops at the first day that fails outright (quota/ban). Returns a summary dict; `outcomes` are the failures.
+
+    `liquid_first`: phase 1 fetches only the core names (watchlist/holdings + liquid on the day) for every day, so the history a
+    liquid backtest needs gets longer first; once phase 1 has nothing left, the same call falls through to the full universe
+    (sticky extras + radar). `summary["phase"]` says which one ran: "liquid" or "full"."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT session_date FROM trading_calendar WHERE session_date BETWEEN %s AND %s ORDER BY session_date DESC",
             (start, end),
         )
         days = [r[0] for r in cur.fetchall()]
-    pending = []
-    for d in days:
-        n = len(plan_broker_full(session_date=d, have_table=have_table)["todo"])
-        if n:
-            pending.append((d, n))
+
+    def _pending(core: bool) -> list[tuple[date, int]]:
+        out = []
+        for d in days:
+            n = len(plan_broker_full(session_date=d, have_table=have_table, core_only=core)["todo"])
+            if n:
+                out.append((d, n))
+        return out
+
+    core = liquid_first
+    pending = _pending(core)
+    if core and not pending:
+        core = False
+        pending = _pending(False)
     total = sum(n for _d, n in pending)
     summary = {"days_total": len(days), "pending_days": len(pending), "pending_calls": total, "calls": 0,
-               "filled": [], "outcomes": [], "error": None}
+               "filled": [], "outcomes": [], "error": None, "phase": "liquid" if core else "full"}
     if plan_only or not pending:
         return summary
     for d, n in pending:
         if summary["calls"] + n > budget:
             break
-        res = collect_broker_summary_full(delay=delay, session_date=d, have_table=have_table)
+        res = collect_broker_summary_full(delay=delay, session_date=d, have_table=have_table, core_only=core)
         summary["outcomes"].extend(o for o in res if o.status == "error")
         if res[-1].status == "error":
             summary["error"] = res[-1].detail
