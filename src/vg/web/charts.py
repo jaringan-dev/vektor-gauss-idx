@@ -173,6 +173,44 @@ def flow_bars(days: list[date], values: list[float | None], *, height: int = 170
     return _svg(uid, height, "Daily net foreign flow", desc, "".join(body), width)
 
 
+BPI_BAND = 10.0              # points; the engine's BPI_HIGH line, same as GAUGE_BANDS
+
+
+def bpi_bars(days: list[date], points: list[float | None], *, height: int = 130, width: int = W, uid: str = "bpi") -> str | None:
+    """Daily Bandar Power Index (points) under the candles. `days` must be the CANDLE days in candle order, so each bar sits under
+    its candle (same `_x_positions`); a day without a BPI simply has no bar. Green above +BPI_BAND, red below -BPI_BAND, grey between,
+    as on the gauge. None when fewer than 5 days have a value."""
+    known = [p for p in points if p is not None]
+    if len(days) != len(points) or len(known) < 5:
+        return None
+    xs, step = _x_positions(len(days), width)
+    top, bottom = PAD_T, height - PAD_B
+    amp = max(max(abs(p) for p in known), BPI_BAND * 2)
+    y = _scale(-amp, amp, top, bottom)
+    cw = max(1.5, min(9.0, step * 0.62))
+    body = [f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{y(0):.1f}" y2="{y(0):.1f}" stroke="var(--muted)"/>']
+    for band in (BPI_BAND, -BPI_BAND):
+        body.append(f'<line x1="{PAD_L}" x2="{width - PAD_R}" y1="{y(band):.1f}" y2="{y(band):.1f}" stroke="var(--muted)" '
+                    f'stroke-dasharray="3 3" opacity=".6"/>')
+    body += [f'<text x="{width - PAD_R + 4}" y="{y(amp) + 8:.1f}" fill="var(--muted)">+{amp:.0f}</text>',
+             f'<text x="{width - PAD_R + 4}" y="{y(BPI_BAND) + 4:.1f}" fill="var(--muted)">+{BPI_BAND:.0f}</text>',
+             f'<text x="{width - PAD_R + 4}" y="{y(-BPI_BAND) + 4:.1f}" fill="var(--muted)">-{BPI_BAND:.0f}</text>',
+             f'<text x="{width - PAD_R + 4}" y="{y(-amp):.1f}" fill="var(--muted)">-{amp:.0f}</text>']
+    up = down = 0
+    for d, p, x in zip(days, points, xs):
+        if p is None:
+            continue
+        col = "var(--pos)" if p > BPI_BAND else "var(--neg)" if p < -BPI_BAND else "var(--muted)"
+        up, down = up + (p > BPI_BAND), down + (p < -BPI_BAND)
+        y0, y1 = sorted((y(0), y(p)))
+        body.append(f'<rect x="{x - cw / 2:.1f}" y="{y0:.1f}" width="{cw:.1f}" height="{max(0.8, y1 - y0):.1f}" fill="{col}" opacity=".8">'
+                    f'<title>{d.isoformat()}: BPI {p:+.1f} pts</title></rect>')
+    body.append(_axis_x(days, xs, top, bottom, width))
+    desc = (f"Bandar Power Index per day on {len(known)} of {len(days)} sessions, {days[0].isoformat()} to {days[-1].isoformat()}: "
+            f"above +{BPI_BAND:.0f} points on {up} days, below -{BPI_BAND:.0f} on {down}. Days without broker data have no bar.")
+    return _svg(uid, height, "Bandar Power Index per day", desc, "".join(body), width)
+
+
 def _kind(a: float, b: float) -> str:
     """What a day's guaranteed range [a, b] settles: buying (the whole range is above zero), selling (below), or nothing."""
     return "buy" if a > 0 else ("sell" if b < 0 else "unclear")

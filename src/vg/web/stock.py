@@ -14,7 +14,7 @@ from .. import broker_bounds, risk
 from ..engine import BPI_HIGH, WASH_OVERLAP_MIN
 from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
-from . import charts, edge, fmt, live_scores
+from . import bpi_window, charts, edge, fmt, live_scores
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import stock_summary
 
@@ -83,6 +83,14 @@ def load(ticker: str) -> dict | None:
             "WHERE b.ticker = %s AND b.close > 0 AND b.high > 0 AND b.low > 0 ORDER BY b.session_date DESC LIMIT %s",
             (ticker, CHART_SESSIONS))
         chart_bars = cur.fetchall()[::-1]
+        bpi_levels, bpi_values = [], []
+        if chart_bars:                                   # the daily BPI under the candles: same ladders, same formula as everywhere
+            cur.execute("SELECT session_date, side, broker_code, val FROM broker_levels WHERE ticker = %s AND session_date >= %s",
+                        (ticker, chart_bars[0][0]))
+            bpi_levels = cur.fetchall()
+            cur.execute("SELECT session_date, value FROM price_bars WHERE ticker = %s AND session_date >= %s",
+                        (ticker, chart_bars[0][0]))
+            bpi_values = cur.fetchall()
         cur.execute(
             "SELECT sc.session_date, sc.nff_d0, sc.bkr_foreign_net_lo, sc.bkr_foreign_net_hi, pb.value "
             "FROM signal_components sc JOIN price_bars pb ON pb.session_date = sc.session_date AND pb.ticker = sc.ticker "
@@ -135,6 +143,7 @@ def load(ticker: str) -> dict | None:
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
+            "bpi_levels": bpi_levels, "bpi_values": bpi_values,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
             "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "scoring_live": scoring_live, "edge": edge_rows,
             "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
@@ -437,6 +446,10 @@ def _build_charts(raw: dict, plan, g: dict | None = None) -> dict:
     hi = [(_f(r[3]) / _f(r[4])) if (r[3] is not None and r[4]) else None for r in flow]
     flows = [_f(r[1]) for r in flow]
     m = charts.W_MOBILE                                   # a narrower variant keeps the text legible on phones (CSS swaps them)
+    # BPI under the candles: the candle days exactly (candles drops bars without a high/low; so do we), points per day or None
+    bpi = bpi_window.daily_bpi(raw.get("bpi_levels") or [], raw.get("bpi_values") or [])
+    cdays = [b["d"] for b in bars if b["h"] and b["l"]]
+    cpts = [None if bpi.get(d) is None else round(bpi[d] * 100, 1) for d in cdays]
     def group_chart(width: int, uid: str):
         if not g:
             return None
@@ -448,6 +461,8 @@ def _build_charts(raw: dict, plan, g: dict | None = None) -> dict:
         "groups_m": group_chart(m, "groups-m"),
         "price": charts.candles(bars, levels=levels, tag_counts=counts),
         "price_m": charts.candles(bars, levels=levels, tag_counts=counts, width=m, uid="price-m"),
+        "bpi": charts.bpi_bars(cdays, cpts),
+        "bpi_m": charts.bpi_bars(cdays, cpts, width=m, uid="bpi-m"),
         "flow": charts.flow_bars(days, flows),
         "flow_m": charts.flow_bars(days, flows, width=m, uid="flow-m"),
         "band": charts.bounds_band(days, lo, hi),

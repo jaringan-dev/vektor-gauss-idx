@@ -78,6 +78,22 @@ def window_score(days: dict[date, tuple[list, list, float | None]], n_window: in
                        sum(d in crossing for d in daily))
 
 
+def daily_bpi(levels: list[tuple], values: list[tuple]) -> dict[date, float]:
+    """{session: BPI top 3} for one stock, from (session, side, broker, gross value) ladder rows and (session, traded value) rows.
+    The engine's own `bandar_power`, so a day reads the same whether the engine stored it or not. Days without a usable ladder are
+    left out (the chart then draws no bar for them)."""
+    lad: dict[date, tuple[list, list]] = defaultdict(lambda: ([], []))
+    for d, side, code, val in levels:
+        lad[d][0 if side == "B" else 1].append((code, _f(val)))
+    vals = {d: _f(v) for d, v in values}
+    out = {}
+    for d, (b, s) in lad.items():
+        bp = bandar_power(b, s, vals.get(d))
+        if bp is not None:
+            out[d] = bp.bpi3
+    return out
+
+
 def is_confirmed(w: WindowScore) -> bool | None:
     """Does this window read as accumulation by the same hands, not one lucky day? None = no rule decided yet (no badge drawn).
 

@@ -68,7 +68,7 @@ Rencana lengkap: `~/.claude/plans/http-localhost-8787-bisakah-diperkaya-ta-bubbl
 User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server (BUKAN TradingView CDN).
 - [x] 19. `src/vg/web/evidence.py` (5 tanda akumulasi + 3 peringatan + TESTED_NOTE) + tes
 - [x] 20. `/`: kolom Evidence, klaster "Most agreement" & "Warnings", view=agree/warn, sort=evidence. Data 6 Nov: 33 agree, 38 warning.
-- [ ] 21. `/stock`: `charts.bpi_bars` sejajar candles (BPI 90 sesi dari broker_levels) + tes
+- [x] 21. `/stock`: `charts.bpi_bars` sejajar candles (BPI 90 sesi dari broker_levels via `bpi_window.daily_bpi`) + tes
 - [ ] 22. `/stock`: Executive Summary = perluas `narrative.stock_summary` (+ verdict riset), lolos FORBIDDEN
 - [ ] 23. Verifikasi (pytest, curl, Chrome), ARCHITECTURE.md, commit
 

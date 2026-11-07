@@ -254,7 +254,8 @@ def test_view_builds_the_three_charts_and_draws_the_risk_levels_on_the_price_cha
 
 def test_view_without_chart_data_has_no_charts_instead_of_empty_frames():
     v = stockmod.build_view(_raw(), TRACK)
-    assert set(v["charts"]) == {"price", "price_m", "flow", "flow_m", "band", "band_m", "groups", "groups_m"} and not any(v["charts"].values())
+    assert set(v["charts"]) == {"price", "price_m", "bpi", "bpi_m", "flow", "flow_m", "band", "band_m", "groups", "groups_m"} \
+        and not any(v["charts"].values())
 
 
 def test_stock_page_embeds_the_charts_with_their_explanations(client, monkeypatch):

@@ -72,6 +72,13 @@
          {{ term('r_target', 'targets') }} (green) of the risk plan below. Bars underneath are volume, then (grey) how many {{ term('pattern', 'patterns') }} were flagged each day.
          Hover a candle for its numbers. Prices are adjusted for splits and bonus issues.</p>
       {{ chart(v.charts.price, v.charts.price_m) }}
+      {% if v.charts.bpi %}
+      <h3 class="subhead">{{ term('bpi', 'Bandar Power Index') }} per day, under the same candles</h3>
+      <p class="note">One bar per session, lined up with the candle above it: green above +10 points (a few houses did the buying),
+         red below -10 (the selling was the concentrated side), grey between. No bar = no broker table that day.
+         Read it as a description: a run of green under a rising price is buying concentration, not a forecast.</p>
+      {{ chart(v.charts.bpi, v.charts.bpi_m) }}
+      {% endif %}
     </div>
     {% endif %}
     {% if v.charts.flow %}
