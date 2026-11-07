@@ -82,7 +82,10 @@ User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server
 - [x] 25. `src/vg/web/brokermap.py`: % F/R/L beli & jual, top 5 net buyer/seller (+avg), clean buyer/seller (sisi lawan ≤ 5%),
       tektokan (dua sisi dalam 20%), semua butuh ≥ 1% nilai. HANYA `broker_flows_full` (lengkap); tanpa itu panel bilang terus terang.
 - [x] 26. Panel "Broker map" di /stock setelah Executive summary; dicek Chrome (ASII: foreign 89% beli, retail 30% jual, clean buyer KZ).
-      Data 6 Nov: clean buyer di 134/164 saham, clean seller 133, tektokan 137 (BBCA HD 18,68 M beli = 18,68 M jual). Belum push.
+      Data 6 Nov: clean buyer di 134/164 saham, clean seller 133, tektokan 137 (BBCA HD 18,68 M beli = 18,68 M jual). Pushed 33c5556.
+- [x] 27. Sinkron 7 Nov: GitHub = WSL = clone Windows (33c5556). Clone Windows punya 1 commit lama yang tak pernah masuk GitHub
+      (f0e9b34, 18 Okt: CLI exit codes, eod.sh failure summary, ruff sebagai gerbang CI) → disimpan di branch `windows-f0e9b34`
+      (lokal + GitHub), main Windows disamakan. TODO nanti: tinjau isinya; gerbang ruff baru bisa setelah ~171 error lint lama dibereskan.
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
