@@ -129,5 +129,15 @@ def test_small_stocks_and_short_history_get_no_surge():
     assert P.volume_surge(vbars([2 * B] * 5)).x is None
 
 
+def test_every_badge_tooltip_says_what_the_test_found():
+    """A badge must never read as a buy signal: each tooltip carries the retrospective result (or says it is untested)."""
+    p = {"comp": P.Compression(0.03, 0.0, 2.0),
+         "net": P.persistent_net_buyer({d: {"YP": 10.0} for d in DAYS}, values={d: 50.0 for d in DAYS}),
+         "surge": P.Surge(3.0, 5 * B)}
+    got = {b["key"]: b["title"] for b in P.badges(p)}
+    assert set(got) == {"surge", "comp", "net"}
+    assert "no edge after costs" in got["surge"] and "no edge" in got["comp"] and "Not tested yet" in got["net"]
+
+
 def test_no_data_no_badges():
     assert P.badges(None) == []

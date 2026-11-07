@@ -9,7 +9,7 @@ Clone yang hidup = **WSL `/home/vg/vektor-gauss`** (bukan clone Windows). Buka: 
 
 ### ▶ Mulai dari sini
 Badge (⚡ 📊 🏦), BPI 5 sesi, recorder iceberg-proxy, dan reminder Telegram SELESAI. Uji ke belakang ⚡+📊 SELESAI: tidak ada edge.
-Berikutnya (pilihan user): #11 tulis hasil riset di tooltip badge · audit `value` mentah · keputusan kuota arjum (≈ 6 Des) ·
+Berikutnya (pilihan user): audit `value` mentah · keputusan kuota arjum (≈ 6 Des) ·
 `is_confirmed()` · Senin 9 Nov cek otomatis via Telegram.
 
 ### Langkah
@@ -37,8 +37,8 @@ P-COMPRESSION 30k: netral −0,02%, net −5,41% (kebanyakan saham tidak likuid)
       ukuran×likuiditas, fold setengah tahun, regime, biaya per sinyal). `research.py` kini menerima `source`.
 - [x] 9. `src/vg/pattern_research.py` + `vg research-patterns` + tabel `pattern_events` — commit `1779041`. Run 2 menit, exit 0.
 - [x] 10. Dilaporkan ke user.
-- [ ] 11. Usulan (tunggu user): tulis hasil riset ini di tooltip badge ("2020–2026: tidak ada edge setelah biaya"), supaya badge
-      tidak dibaca sebagai sinyal beli. Uji 🏦 net buy + BPI 5 sesi menyusul setelah riwayat broker K7 cukup.
+- [x] 11. Hasil riset ditulis di tooltip tiap badge (`TESTED` di `patterns.py`; perbarui kalau riset diulang). 🏦: "belum diuji".
+- [ ] 12. Uji 🏦 net buy + BPI 5 sesi setelah riwayat broker K7 cukup (cek `vg broker-deep --plan`).
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian

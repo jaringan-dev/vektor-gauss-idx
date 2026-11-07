@@ -179,6 +179,16 @@ def _bn(x: float) -> str:
     return f"Rp{x / 1e9:,.1f}B"
 
 
+# What the retrospective test (`vg research-patterns`, 2020-01-02..2026-10-23, 5-day outcome v2, entry at the next session's VWAP)
+# found, shown in every tooltip so a badge is never read as a buy signal. Update these lines when the test is re-run.
+TESTED = {
+    "surge": "Tested 2020-2026 (122k cases): no edge after costs; vs similar stocks +0.08% in 5 days, not significant.",
+    "comp": "Tested 2020-2026 (30k cases): no edge; vs similar stocks -0.02% in 5 days. "
+            "With a volume surge on the same day: +0.42% vs similar stocks, still below costs and not steady over time.",
+    "net": "Not tested yet: the broker history needed for the test is still being filled.",
+}
+
+
 def badges(p: dict | None) -> list[dict]:
     """The badges for one row: [{"icon", "text", "title"}], in a fixed order. Empty when nothing qualifies."""
     if not p:
@@ -188,13 +198,14 @@ def badges(p: dict | None) -> list[dict]:
     if s is not None and is_surge(s):
         out.append({"key": "surge", "icon": "📊", "text": f"Volume {s.x:.1f}x usual",
                     "title": f"Regular-market value today {_bn(s.value)} = {s.x:.1f}x its median over the previous {BASE} sessions "
-                             "(negotiated-market trades left out). Descriptive, not a tested signal."})
+                             f"(negotiated-market trades left out). {TESTED['surge']}"})
     if is_compression(c):
         out.append({"key": "comp", "icon": "⚡", "text": "Vol/price compression",
                     "title": f"Last {WINDOW} sessions: high-low range {c.range_pct * 100:.1f}% of the close, close moved {c.move_pct * 100:+.1f}%, "
-                             f"volume {c.vol_x:.1f}x its {BASE}-session average. Descriptive, not a tested signal."})
+                             f"volume {c.vol_x:.1f}x its {BASE}-session average. {TESTED['comp']}"})
     if is_persistent(n):
         out.append({"key": "net", "icon": "🏦", "text": f"{n.broker} net buy {n.days} days",
                     "title": f"{n.broker} was a net buyer on {n.days} of the {n.days_ok} sessions with broker data (window {n.n_window}), "
-                             f"{_bn(n.net_val)} net in all = {n.share * 100:.0f}% of the stock's traded value on those sessions. Days it was not in the top-10 lists are not counted. Descriptive, not a tested signal."})
+                             f"{_bn(n.net_val)} net in all = {n.share * 100:.0f}% of the stock's traded value on those sessions. "
+                             f"Days it was not in the top-10 lists are not counted. {TESTED['net']}"})
     return out
