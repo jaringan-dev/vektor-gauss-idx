@@ -72,7 +72,8 @@ User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server
 - [x] 22. `/stock`: Executive summary = `narrative.broker_summary` (+ verdict riset dari snapshot + win rate H+5 mentah), lolos FORBIDDEN.
       `stock.broker_reading` membangun jendela 5 sesi, net buyer, HAKA, divergensi, wash, crossing dari baris yang sudah dimuat.
 - [x] 23a. pytest 1325 lulus, curl /stock/BTPS·NATO·ASII·ABDA(tanpa broker) & / & /?view=agree → 200, ARCHITECTURE.md.
-- [ ] 23b. Cek visual di Chrome (desktop + lebar HP).
+- [x] 23b. Cek visual di Chrome (desktop + lebar HP): klaster, chip, chart BPI sejajar candles (ASII: BPI merah Agu–Sep, hijau sejak Okt).
+      Ditambah: kalau > 2 pola, baris riset digabung jadi 1 kalimat (ASII 5 pola → 1 baris). SELESAI — tunggu user untuk push.
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian

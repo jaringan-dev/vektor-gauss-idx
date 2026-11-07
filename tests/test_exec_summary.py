@@ -33,6 +33,19 @@ def test_a_full_reading_names_the_numbers_and_never_advises():
     assert not any(w in text for w in narrative.FORBIDDEN)
 
 
+def test_many_patterns_collapse_into_one_research_sentence():
+    """ASII 7 Nov 2026 had 5 patterns: five 'Research on ...' lines buried the summary."""
+    tags = ["A", "B", "C", "D", "E"]
+    verdicts = {"A": "Real but too small to pay the costs", "B": "Real but too small to pay the costs",
+                "C": "Real but too small to pay the costs", "D": "No evidence of an edge"}
+    edge5 = {t: {"n": 100, "win": "46%", "win_raw": w} for t, w in zip(tags, (0.46, 0.47, 0.46, 0.46, 0.47), strict=True)}
+    lines = narrative.broker_summary(_r(), tags, verdicts, edge5)
+    research = [x for x in lines if x.startswith("Research")]
+    assert len(research) == 1
+    assert ("today's 5 patterns" in research[0] and "3 real but too small to pay the costs" in research[0]
+            and "1 no evidence of an edge" in research[0] and "1 not researched yet" in research[0] and "46-47%" in research[0])
+
+
 def test_without_stored_research_it_says_so_instead_of_failing():
     text = _all_text(narrative.broker_summary(_r(), ["AKUM-ASING"], None, {}))
     assert "not researched yet" in text

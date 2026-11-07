@@ -112,7 +112,21 @@ def broker_summary(r: dict, tags: list[str], verdicts: dict | None, edge_h5: dic
     ev = r.get("evidence")
     if ev and ev["state"] != "unknown":
         out.append(f"Evidence reading: {ev['text']} ({ev['agree']} of {ev['known']} accumulation signs that can be read today).")
-    for t in tags:
+    if len(tags) > 2:
+        # Many patterns: one sentence, so the summary stays a 3-second read; the per-pattern table is further down the page.
+        counts: dict[str, int] = {}
+        for t in tags:
+            v = ((verdicts or {}).get(t) or "not researched yet").lower()
+            counts[v] = counts.get(v, 0) + 1
+        wins = [c["win_raw"] for t in tags if (c := edge_h5.get(t)) and c.get("n") and c.get("win_raw") is not None]
+        s = (f"Research on today's {len(tags)} patterns (all stocks, 2020-2026, after costs): "
+             + ", ".join(f"{n} {v}" for v, n in sorted(counts.items(), key=lambda kv: -kv[1])))
+        if wins:
+            lo, hi = min(wins) * 100, max(wins) * 100
+            span = f"{lo:.0f}%" if round(lo) == round(hi) else f"{lo:.0f}-{hi:.0f}%"
+            s += f"; their past signals were up after 5 sessions in {span} of cases (raw, before costs)"
+        out.append(s + ". Per pattern: Signal Historical Edge, below.")
+    for t in (tags if len(tags) <= 2 else []):
         v = (verdicts or {}).get(t)
         cell = edge_h5.get(t)
         part = f"Research on {plain(t)} (all stocks, 2020-2026, after costs): {v.lower() if v else 'not researched yet'}"
