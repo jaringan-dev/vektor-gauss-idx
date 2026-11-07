@@ -127,7 +127,7 @@ Windows Task Scheduler. `ci.yml` menjalankan tes dan lint.
 | Feed: broker summary lengkap (`all_data=true`) | `brokerfull.py` | `collect-broker-full` | `broker_flows_full` |
 | Feed: inventori broker | `collect.py` | `collect-broker-inventory` | `broker_inventory` |
 | Feed: done details (HAKA/HAKI) | `collect.py` | `collect-done-details` | `done_by_price` |
-| Feed: running trade (WebSocket) | `tradeflow.py` | `record-trades` | `trade_flow_1m` |
+| Feed: running trade (WebSocket) | `tradeflow.py` | `record-trades` | `trade_flow_1m`, `trade_lots_daily` (hitungan fill ≥ 50 lot per harga/ukuran/sisi untuk proxy iceberg; forward-only sejak 2026-11-07) |
 | Koreksi harga | `repair.py`, `adjust.py` | `repair-prices`, `compute-adj`, `adj-report` | `adj_factor`, `price_adj` |
 
 Dua tabel broker sengaja terpisah. `broker_flows` hanya memuat 20 broker dengan net beli terbesar per saham per hari (bawaan feed, tanpa
@@ -172,7 +172,7 @@ flowchart LR
 | Pasar | `price_bars`, `index_bars`, `adj_factor`, `price_adj`, `market_breadth`, `market_breadth2`, `ret2_daily` |
 | Kepemilikan dan filing | `ownership_monthly`, `free_float_monthly`, `corp_actions`, `disclosure_filings`, `disclosure_holdings`, `trading_halts` |
 | Broker | `broker_flows`, `broker_levels`, `broker_flows_full`, `broker_inventory`, `done_by_price`, `broker_affiliation_groups` |
-| Aliran trade | `trade_flow_1m` |
+| Aliran trade | `trade_flow_1m`, `trade_lots_daily` |
 | Sinyal | `signal_components`, `signal_log`, `signal_snapshot`, `signal_flags`, `paper_trades` |
 | Operasional | `run_log`, `raw_artifacts`, `analysis_snapshot`, `user_watchlist` |
 

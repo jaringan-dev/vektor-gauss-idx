@@ -160,12 +160,19 @@ class Counts:
     snapshots: int = 0
 
 
+# Fills of at least this many lots are also counted per (stock, side, price, size) for the iceberg proxy (`trade_lots_daily`).
+# Smaller fills are retail-sized and would only multiply the table.
+LOT_MIN = 50
+
+
 class MinuteBook:
-    """Trades in, minute buckets out. A trade number seen before is dropped (the stream may repeat one after a reconnect)."""
+    """Trades in, minute buckets out. A trade number seen before is dropped (the stream may repeat one after a reconnect).
+    Fills of LOT_MIN+ lots are also counted in `lots` per (session, ticker, side, price, lots): [n, first minute, last minute]."""
 
     def __init__(self, today: date, seen_keep: int = SEEN_KEEP) -> None:
         self.today = today
         self.buckets: dict[tuple[date, str, int], Bucket] = {}
+        self.lots: dict[tuple[date, str, str, float, float], list[int]] = {}
         self.counts = Counts()
         self._seen: set[str] = set()
         self._order: deque[str] = deque()
@@ -187,8 +194,26 @@ class MinuteBook:
         if len(self._order) > self._keep:
             self._seen.discard(self._order.popleft())
         self.buckets.setdefault((t.session, t.ticker, t.minute), Bucket()).add(t)
+        if t.lots >= LOT_MIN:
+            k = (t.session, t.ticker, "B" if t.side == "buy" else "S", t.price, t.lots)
+            c = self.lots.get(k)
+            if c is None:
+                self.lots[k] = [1, t.minute, t.minute]
+            else:
+                c[0], c[1], c[2] = c[0] + 1, min(c[1], t.minute), max(c[2], t.minute)
         self.counts.accepted += 1
         return True
+
+    def drain_lots(self) -> list[tuple]:
+        """The size counts as database rows, and emptied. `restore_lots` puts them back when the write failed."""
+        rows = [(*k, n, lo, hi) for k, (n, lo, hi) in self.lots.items()]
+        self.lots = {}
+        return rows
+
+    def restore_lots(self, rows: list[tuple]) -> None:
+        for s, tk, side, px, lots, n, lo, hi in rows:
+            c = self.lots.setdefault((s, tk, side, px, lots), [0, lo, hi])
+            c[0], c[1], c[2] = c[0] + n, min(c[1], lo), max(c[2], hi)
 
     def drain(self) -> list[tuple]:
         """Every bucket as a database row, and the book emptied. Call `restore` with the rows when writing them failed."""
@@ -229,6 +254,24 @@ def write_rows(rows: list[tuple]) -> int:
     return len(rows)
 
 
+_UPSERT_LOTS = (
+    "INSERT INTO trade_lots_daily (session_date, ticker, side, price, lots, n, first_minute, last_minute) "
+    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+    "ON CONFLICT (session_date, ticker, side, price, lots) DO UPDATE SET n = trade_lots_daily.n + EXCLUDED.n, "
+    "first_minute = LEAST(trade_lots_daily.first_minute, EXCLUDED.first_minute), "
+    "last_minute = GREATEST(trade_lots_daily.last_minute, EXCLUDED.last_minute), updated_at = now()"
+)
+
+
+def write_lot_rows(rows: list[tuple]) -> int:
+    """Add the size counts to `trade_lots_daily` (additive, like write_rows). One transaction."""
+    if not rows:
+        return 0
+    with connect() as conn, conn.cursor() as cur:
+        cur.executemany(_UPSERT_LOTS, rows)
+    return len(rows)
+
+
 def log_run(today: date, status: str, accepted: int, detail: str) -> None:
     """One `run_log` row per recorder run, so the system page can show that it ran and how it ended. Never raises."""
     with contextlib.suppress(Exception), connect() as conn, conn.cursor() as cur:       # a failed log line must not crash a good recording
@@ -262,6 +305,8 @@ class Stats:
     flushes: int = 0
     rows_written: int = 0
     write_errors: int = 0
+    lot_rows_written: int = 0
+    lot_write_errors: int = 0
     last_error: str = ""
     gaps: int = 0               # reconnects after a drop
     blind_seconds: float = 0.0  # time from each drop to the first message of the next connection (an upper bound on what was missed)
@@ -275,6 +320,9 @@ class Recorder:
     """Run one recording day. Everything that touches the world is injected, so the loop can be driven by a script in tests."""
     connect_ws: Any = None                       # () -> a context manager yielding an object with recv(timeout=...) ; default: the real feed
     writer: Any = write_rows
+    # The iceberg-proxy size counts; a failure there never touches the minute rows. None = the real table only when `writer` is the real
+    # one too, otherwise discard: a test or a dry run that injects its own writer must never write size counts into the live database.
+    lot_writer: Any = None
     clock: Any = field(default=lambda: datetime.now(WIB))
     sleep: Any = _time.sleep
     mono: Any = _time.monotonic
@@ -289,6 +337,8 @@ class Recorder:
     def __post_init__(self) -> None:
         self.today = self.clock().date()
         self.book = MinuteBook(self.today)
+        if self.lot_writer is None:
+            self.lot_writer = write_lot_rows if self.writer is write_rows else (lambda rows: 0)
         self._started = self.mono()
         self._last_flush = self._started
         self._last_msg = self._started
@@ -324,6 +374,14 @@ class Recorder:
         if not force and self.mono() - self._last_flush < self.flush_seconds:
             return
         self._last_flush = self.mono()
+        lot_rows = self.book.drain_lots()
+        if lot_rows:
+            try:
+                self.stats.lot_rows_written += self.lot_writer(lot_rows)
+            except Exception as exc:  # noqa: BLE001 - same rule as the minute rows: keep them for the next try
+                self.book.restore_lots(lot_rows)
+                self.stats.lot_write_errors += 1
+                self.stats.last_error = f"lots: {type(exc).__name__}: {exc}"[:200]
         rows = self.book.drain()
         if not rows:
             return
@@ -423,7 +481,9 @@ class Recorder:
         c, s = self.book.counts, self.stats
         out = (f"trades {c.accepted:,} (duplicates {c.duplicates:,}, rejected {c.rejected:,}); connections {s.connections}; "
                f"blind {s.blind_seconds:.1f} s over {s.gaps} drops, {s.recovered} trades won back from snapshots; "
-               f"rows written {s.rows_written:,} in {s.flushes} flushes; stopped: {s.stopped or 'end of run'}")
+               f"rows written {s.rows_written:,} in {s.flushes} flushes; size-count rows {s.lot_rows_written:,}"
+               + (f" ({s.lot_write_errors} failed writes)" if s.lot_write_errors else "")
+               + f"; stopped: {s.stopped or 'end of run'}")
         return out + (f"; write errors {s.write_errors} (last: {s.last_error})" if s.write_errors else "") + \
             (f"; last connection error: {s.last_error}" if s.last_error and not s.write_errors else "") + \
             (f"; note: {s.note}" if s.note else "")

@@ -659,6 +659,23 @@ CREATE TABLE IF NOT EXISTS trade_flow_1m (
 );
 CREATE INDEX IF NOT EXISTS idx_trade_flow_1m_day ON trade_flow_1m (session_date, minute);
 
+-- Same stream, a second view for the iceberg PROXY: how many fills of exactly `lots` lots went through at `price` on `side` during the
+-- day, for fills of at least tradeflow.LOT_MIN lots (retail-size fills are not kept; they would multiply the table for nothing). An
+-- iceberg is a LIMIT order that refills; we only see FILLS, with no broker code, so this can at most show "the same size kept trading at
+-- the same price" - a proxy, never proof. Forward-only: started 2026-11-07, nothing before that can be rebuilt.
+CREATE TABLE IF NOT EXISTS trade_lots_daily (
+    session_date DATE NOT NULL,
+    ticker       TEXT NOT NULL,
+    side         CHAR(1) NOT NULL CHECK (side IN ('B', 'S')),
+    price        NUMERIC NOT NULL,
+    lots         NUMERIC NOT NULL,
+    n            INTEGER NOT NULL,
+    first_minute SMALLINT NOT NULL,
+    last_minute  SMALLINT NOT NULL,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_date, ticker, side, price, lots)
+);
+
 -- The user's own watchlist, kept from the dashboard (/today). It starts EMPTY and is only ever filled by the user: nothing is added from
 -- configuration. VG_WATCHLIST in .env is a different thing (which stocks the nightly collection pulls tick data for).
 CREATE TABLE IF NOT EXISTS user_watchlist (

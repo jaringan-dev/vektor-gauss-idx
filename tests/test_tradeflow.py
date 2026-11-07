@@ -101,6 +101,54 @@ def test_draining_empties_the_book_and_restoring_merges_with_what_arrived_meanwh
     assert (b.n_buy, b.buy_lot, b.buy_val, b.max_val, b.px_high, b.px_low) == (2, 17.0, 800.0, 700.0, 120.0, 100.0)
 
 
+# ---- size counts for the iceberg proxy --------------------------------------------------------------------------------------------
+
+def test_big_fills_are_counted_per_side_price_and_size_and_small_ones_are_not():
+    book = MinuteBook(date(2026, 11, 6))
+    book.add(trade(l=500, a="09:15:00", tn="20261106001"))
+    book.add(trade(l=500, a="10:02:00", tn="20261106002"))                 # same side, price, size: one key, n=2, minutes span
+    book.add(trade(l=500, c="sell", a="09:20:00", tn="20261106003"))       # other side: another key
+    book.add(trade(l=10, a="09:16:00", tn="20261106004"))                  # retail size: minute bucket only
+    book.add(trade(l=500, a="09:30:00", tn="20261106002"))                 # repeated trade number: not counted twice
+    rows = sorted(book.drain_lots())
+    assert rows == [(date(2026, 11, 6), "BBCA", "B", 10250.0, 500.0, 2, 555, 602),
+                    (date(2026, 11, 6), "BBCA", "S", 10250.0, 500.0, 1, 560, 560)]
+    assert book.lots == {}
+    book.add(trade(l=500, a="11:00:00", tn="20261106005"))
+    book.restore_lots(rows)                                                 # a failed write merges back with what came meanwhile
+    k = (date(2026, 11, 6), "BBCA", "B", 10250.0, 500.0)
+    assert book.lots[k] == [3, 555, 660]
+
+
+def test_the_size_upsert_matches_its_table_and_adds():
+    ddl = (ROOT / "db" / "schema.sql").read_text(encoding="utf-8")
+    table = re.search(r"CREATE TABLE IF NOT EXISTS trade_lots_daily \((.*?)\n\);", ddl, re.DOTALL).group(1)
+    cols = re.findall(r"^\s{4}([a-z_0-9]+)\s", table, re.MULTILINE)
+    insert_cols = [c.strip() for c in re.search(r"INSERT INTO trade_lots_daily \((.*?)\) VALUES", tradeflow._UPSERT_LOTS).group(1).split(",")]
+    assert insert_cols == cols[:len(insert_cols)] and tradeflow._UPSERT_LOTS.count("%s") == len(insert_cols) == 8
+    assert "PRIMARY KEY (session_date, ticker, side, price, lots)" in table
+    assert "n = trade_lots_daily.n + EXCLUDED.n" in tradeflow._UPSERT_LOTS
+
+
+def test_an_injected_writer_never_writes_size_counts_to_the_real_table():
+    rec = Recorder(writer=lambda rows: len(rows), clock=lambda: datetime(2026, 11, 6, 9, 0, tzinfo=WIB))
+    assert rec.lot_writer is not tradeflow.write_lot_rows
+    assert Recorder(clock=lambda: datetime(2026, 11, 6, 9, 0, tzinfo=WIB)).lot_writer is tradeflow.write_lot_rows
+
+
+def test_a_failed_size_write_keeps_the_counts_and_the_minute_rows_still_go_out():
+    wrote = []
+
+    def bad_lots(rows):
+        raise RuntimeError("disk full")
+
+    rec = Recorder(writer=lambda rows: wrote.append(rows) or len(rows), lot_writer=bad_lots,
+                   clock=lambda: datetime(2026, 11, 6, 9, 0, tzinfo=WIB))
+    rec.handle(msg(l=500, tn="20261106001"))
+    rec.flush(force=True)
+    assert len(wrote) == 1 and rec.stats.lot_write_errors == 1 and len(rec.book.lots) == 1
+
+
 # ---- the database part ------------------------------------------------------------------------------------------------------------
 
 def test_the_upsert_matches_the_table_and_adds_instead_of_replacing():

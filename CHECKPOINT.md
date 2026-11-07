@@ -17,8 +17,11 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - [x] 2. Badge di `/` (di bawah ticker, warna netral, tooltip berisi angka bukti) + tes — commit di bawah.
       Data 6 Nov: ⚡ 1 dari 169 saham; 🏦 37 dari 173 (setelah syarat net ≥ 10% nilai transaksi 5 sesi; tanpa itu 121 = noise).
 - [ ] 3. Ambang (konstanta `COMP_*`, `NET_MIN_*` di `patterns.py`, sementara/PROVISIONAL) → **keputusan user**
-- [ ] 4. Recorder: histogram per (harga, lot, sisi) per hari untuk iceberg proxy (tabel baru, forward-only) + tes
-- [ ] 5. Restart dashboard :8787, cek dengan data asli, commit, update ARCHITECTURE.md
+- [x] 4. Recorder: tabel `trade_lots_daily` (fill ≥ 50 lot per harga/ukuran/sisi per hari), tabel SUDAH dibuat (`vg init-db` 7 Nov),
+      mulai terisi Senin 9 Nov 08:55. Badge 🧊 BELUM dibuat — tunggu beberapa minggu data.
+- [x] 5. Dashboard :8787 di-restart & dicek dengan data asli; ARCHITECTURE.md diperbarui.
+- [ ] 6. **Senin 9 Nov setelah 16:05**: cek `trade_lots_daily` terisi + ukurannya (baris/hari) dan ringkasan recorder di `run_log`
+      (`size-count rows ...`). Kalau terlalu besar → naikkan `LOT_MIN` di `src/vg/tradeflow.py`.
 
 ### Sudah selesai hari ini (commit)
 - `2eb817c` eod.sh exec bit permanen di git (record_trades.sh juga dipulihkan) — **pushed**
@@ -26,8 +29,8 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - `89b94a6` kolom **BPI 5 sessions** di `/` (`src/vg/web/bpi_window.py`) — lokal, **belum push**
 
 ### Sedang berjalan / setengah jadi
-- Background: isi lubang data broker 2026-10-12..11-06 (~3.385 call). Log: `/home/vg/holefill-20261107.log` (baris terakhir `exit=0` = selesai).
-  Sengaja TANPA `vg compute` (look-ahead B13).
+- (tidak ada) — isi lubang data broker 2026-10-12..11-06 SELESAI: 20/20 hari ok, 0 error, ~370 saham/hari;
+  cakupan 5/5 sesi: 333 saham (sebelumnya 104). Log: `/home/vg/holefill-20261107.log`. Sengaja TANPA `vg compute` (B13).
 
 ### Menunggu keputusan user
 - `is_confirmed()` di `src/vg/web/bpi_window.py` — aturan "akumulasi terkonfirmasi" (TODO user).
