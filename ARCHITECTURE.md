@@ -196,7 +196,7 @@ Respons `all_data` tidak diarsipkan (sekitar empat kali lebih besar); baris terp
 | Stop dan target | `/risk-test` | `risk_eval.py` |
 | Apakah edge nyata | `/research` | `research.py` |
 | Halaman pola | `/pattern/{tag}` | `pattern.py` |
-| Halaman saham | `/stock/{ticker}`, `/search` | `stock.py`, `charts.py` (+ `bpi_bars`: BPI harian sejajar candlestick), `narrative.py` (`broker_summary` = Executive summary, membaca verdict `research` snapshot) |
+| Halaman saham | `/stock/{ticker}`, `/search` | `stock.py`, `charts.py` (+ `bpi_bars`: BPI harian sejajar candlestick), `narrative.py` (`broker_summary` = Executive summary, membaca verdict `research` snapshot), `brokermap.py` (Broker map: % F/R/L, top 5 net, clean buyer/seller, tektokan — dari `broker_flows_full` yang lengkap) |
 | Balance position | `/balance` | `balance.py`; `ownership_monthly` |
 | Seasonality | `/seasonality` | `seasonal.py`, `season.py` |
 | Broker stalker | `/stalker` | `stalker.py`; `broker_flows_full` |

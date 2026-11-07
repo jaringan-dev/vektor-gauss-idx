@@ -14,7 +14,7 @@ from .. import broker_bounds, risk
 from ..engine import BPI_HIGH, WASH_OVERLAP_MIN
 from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
-from . import bpi_window, charts, edge, fmt, live_scores
+from . import bpi_window, brokermap, charts, edge, fmt, live_scores
 from .glossary import plain_tag, quad_key, quad_word
 from .narrative import broker_summary, stock_summary
 
@@ -142,8 +142,10 @@ def load(ticker: str) -> dict | None:
             "SELECT ex_date, type, exercise_ratio, proceed_ratio FROM corp_actions WHERE ticker = %s "
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
+        bmap_day, bmap_rows = brokermap.load(cur, ticker)      # the complete broker table (broker_flows_full), newest session
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
             "bpi_levels": bpi_levels, "bpi_values": bpi_values, "research": research_verdicts(flagged_today),
+            "bmap_day": bmap_day, "bmap_rows": bmap_rows,
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
             "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "scoring_live": scoring_live, "edge": edge_rows,
             "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
@@ -610,7 +612,10 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
     reading = broker_reading(raw, tags_today)
     h5 = edge.HORIZONS.index(5)
     edge_h5 = {t: edge.row_view(t, d)["cells"][h5] for t, d in (raw.get("edge") or {}).items()}
+    bm = brokermap.view(brokermap.build(raw.get("bmap_rows") or [], FOREIGN_BROKERS, RETAIL_BROKERS))
     return {
+        "bmap": bm, "bmap_day": raw["bmap_day"].isoformat() if raw.get("bmap_day") else None,
+        "bmap_stale": bool(raw.get("bmap_day") and raw["bmap_day"] != raw["latest"]),
         "exec": broker_summary(reading, tags_today, raw.get("research"), edge_h5, plain_tag), "evidence": reading["evidence"],
         "charts": charts_view, "group_hidden": groups["hidden"] if groups else 0,
         "band_summary": range_summary([(_f(r[2]), _f(r[3])) for r in raw.get("chart_flow") or []]),

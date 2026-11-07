@@ -69,6 +69,50 @@
       <ul class="exec-list">{% for s in v.exec %}<li>{{ s }}</li>{% endfor %}</ul>
     </section>
 
+    {#- Broker map (brokermap.py): the COMPLETE broker table of one session, so "clean" and "round-trip" are facts, not guesses. -#}
+    <div class="panel" id="broker-map">
+      <h2>Broker map{% if v.bmap_day %}, session {{ v.bmap_day }}{% endif %}
+        {% if v.bmap_stale %}<span class="badge warn-pill" title="The complete broker table of the newest session is not collected yet">older session</span>{% endif %}</h2>
+      {% if v.bmap %}{% set b = v.bmap %}
+      <p class="note">Every broker that traded {{ ticker }} that session ({{ b.n_brokers }} houses, {{ b.total_t }} traded). Groups are by broker
+        house (F foreign, R domestic retail, L local institutions &amp; others), not by the end client.</p>
+      <table class="cards bmap-groups" aria-label="Share of buying and selling by broker group">
+        <thead><tr><th scope="col" style="text-align:left">Group</th><th scope="col">Share of buying</th><th scope="col">Share of selling</th><th scope="col">Net</th></tr></thead>
+        <tbody>{% for s in b.shares %}
+          <tr><td class="key" style="text-align:left">{{ s.label }}</td>
+            <td data-label="Share of buying"><span class="sbar" aria-hidden="true"><i class="b" style="width:{{ s.buy_w }}%"></i></span> {{ s.buy_t }}</td>
+            <td data-label="Share of selling"><span class="sbar" aria-hidden="true"><i class="s" style="width:{{ s.sell_w }}%"></i></span> {{ s.sell_t }}</td>
+            <td data-label="Net" class="{{ s.net_c }}">{{ s.net_t }}</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      {% macro blist(title, items, n, note, show) -%}
+        <section class="bmap-list"><h3 class="subhead">{{ title }}{% if n is not none %} <span class="note">{{ n }}</span>{% endif %}</h3>
+          {% if items %}<table class="cards" aria-label="{{ title }}"><tbody>{% for i in items %}
+            <tr><td class="key" style="text-align:left"><b>{{ i.code }}</b> <span class="gtag g-{{ i.group }}" title="{{ i.group }}">{{ i.g }}</span></td>
+              {% if show == 'net' %}<td class="{{ 'pos' if i.net > 0 else 'neg' }}">{{ i.net_t }}</td><td class="note">avg {{ i.avg_t }}</td>
+              {% elif show == 'both' %}<td>buy {{ i.buy_t }}</td><td>sell {{ i.sell_t }}</td>
+              {% else %}<td>{{ i.value_t }}</td><td class="note">{{ 'sold ' ~ i.sell_t if show == 'buy' else 'bought ' ~ i.buy_t }}</td>{% endif %}</tr>
+          {% endfor %}</tbody></table>{% else %}<p class="note">{{ note }}</p>{% endif %}
+        </section>
+      {%- endmacro %}
+      <div class="bmap-grid two">
+        {{ blist('Top 5 net buyers', b.top_buy, none, 'No net buyer.', 'net') }}
+        {{ blist('Top 5 net sellers', b.top_sell, none, 'No net seller.', 'net') }}
+      </div>
+      <div class="bmap-grid three">
+        {{ blist('Clean buyers', b.clean_buy, b.n_clean_buy, 'No house bought 1%+ of the value while selling (almost) nothing.', 'buy') }}
+        {{ blist('Clean sellers', b.clean_sell, b.n_clean_sell, 'No house sold 1%+ of the value while buying (almost) nothing.', 'sell') }}
+        {{ blist('Round-trip (tektokan)', b.roundtrip, b.n_roundtrip, 'No house traded both sides in similar size.', 'both') }}
+      </div>
+      <p class="note">Clean = the other side at most 5% of this one. Round-trip = buying and selling within 20% of each other: a lot of stock moved,
+        little position changed (day trading, market making, or crossing between accounts). Each list needs 1%+ of the session's value.
+        A description of one session, not a signal.</p>
+      {% else %}
+      <p class="note">No complete broker table for {{ ticker }} yet. It is collected for the liquid stocks each evening (<code>vg collect-broker-full</code>);
+        the top-broker list further down uses the partial table.</p>
+      {% endif %}
+    </div>
+
     {# Filled by the script at the end of this page from the sections that are actually shown; without JS it stays hidden. #}
     <nav id="toc" class="toc" aria-label="On this page" hidden></nav>
 

@@ -78,6 +78,12 @@ User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server
       `#stocks` (+ scroll-margin), kotak aktif diberi garis + "clear". Klaster jadi 4 kotak di grid KPI (4 kolom, 2 di ≤760px):
       + 📊 Volume surge (35) & 🏦 Broker net buy (86), view=surge/net. Dicek di Chrome. Belum push.
 
+### Sedang dikerjakan: panel "Broker map" di /stock (permintaan user 7 Nov, poin dari /btw)
+- [x] 25. `src/vg/web/brokermap.py`: % F/R/L beli & jual, top 5 net buyer/seller (+avg), clean buyer/seller (sisi lawan ≤ 5%),
+      tektokan (dua sisi dalam 20%), semua butuh ≥ 1% nilai. HANYA `broker_flows_full` (lengkap); tanpa itu panel bilang terus terang.
+- [x] 26. Panel "Broker map" di /stock setelah Executive summary; dicek Chrome (ASII: foreign 89% beli, retail 30% jual, clean buyer KZ).
+      Data 6 Nov: clean buyer di 134/164 saham, clean seller 133, tektokan 137 (BBCA HD 18,68 M beli = 18,68 M jual). Belum push.
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.

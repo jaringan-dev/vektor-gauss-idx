@@ -228,7 +228,20 @@
     .cluster { padding:10px 12px; margin:0; min-width:0; }
     .cluster h2 { font-size:14px; margin:0 0 8px; }
     .cluster.on { outline:2px solid var(--link); outline-offset:-2px; }
-    #stocks { scroll-margin-top:120px; }    /* "see all" jumps here: keep the panel title and filter pills clear of the sticky header */
+    #stocks { scroll-margin-top:120px; }
+    /* broker map (stock page) */
+    .bmap-grid { display:grid; gap:12px; margin-top:10px; }
+    .bmap-grid.two { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .bmap-grid.three { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+    @media (max-width:760px) { .bmap-grid.two, .bmap-grid.three { grid-template-columns:minmax(0, 1fr); } }
+    .bmap-list h3 { margin:0 0 6px; font-size:13px; }
+    .bmap-list table td { padding:3px 6px; font-size:13px; }
+    .sbar { display:inline-block; width:70px; height:7px; border-radius:4px; background:var(--prob-bg); overflow:hidden; vertical-align:middle; }
+    .sbar i { display:block; height:100%; }
+    .sbar i.b { background:var(--link); } .sbar i.s { background:var(--warn-fg); }
+    .gtag { font-size:10px; padding:0 5px; border-radius:6px; border:1px solid var(--border); color:var(--muted); }
+    .gtag.g-foreign { color:var(--link); border-color:var(--link); }
+    .gtag.g-retail { color:var(--warn-fg); border-color:var(--warn-fg); }    /* "see all" jumps here: keep the panel title and filter pills clear of the sticky header */
     .ccard { font-size:13px; }
     .clusters > .wide-note { grid-column:1 / -1; margin:0; }
     .cluster h2 { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
