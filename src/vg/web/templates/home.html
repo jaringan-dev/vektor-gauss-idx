@@ -95,28 +95,41 @@
     {% if v.notice %}<div class="answer notice" role="status"><span class="q">Scores for this session</span>{{ v.notice }}</div>{% endif %}
 
     {#- The 3-second scan. Neutral/accent colours on purpose: green is for patterns that passed the forward test, and none has. -#}
+    {#- One box per KPI tile above, same grid. "see all" opens the box's full list in the table below and jumps to it (#stocks). -#}
+    {% set empties = {'agree': 'No stock has 3 or more agreeing signs without a warning today.',
+                      'warn': 'Nothing warns against the broker numbers today.',
+                      'surge': 'No stock traded at least 2x its usual regular-market value today.',
+                      'net': 'No broker net bought on 4+ of 5 sessions for 10%+ of a stock\'s value.'} %}
     <section class="clusters" aria-label="Quick scan">
-      {% for key, title, empty in (('agree', 'Most agreement', 'No stock has 3 or more agreeing signs without a warning today.'),
-                                   ('warn', 'Warnings', 'Nothing warns against the broker numbers today.')) %}
+      {% for key, title in v.clusters.order %}
       {% set items = v.clusters[key] %}
-      <div class="panel cluster cluster-{{ key }}">
+      {% set on = p.view == key %}
+      <div class="panel cluster cluster-{{ key }}{{ ' on' if on else '' }}">
         <h2>{{ title }} <span class="note">{{ v.clusters['n_' ~ key] }}</span>
-          {% if v.clusters['n_' ~ key] > items|length %}<a class="note" href="?view={{ key }}">see all</a>{% endif %}</h2>
+          {% if on %}<a class="note" href="{{ clear }}#stocks">clear</a> <span class="note">· full list below ↓</span>
+          {% elif v.clusters['n_' ~ key] %}<a class="note" href="?view={{ key }}#stocks">see all</a>{% endif %}</h2>
         {% if items %}
         <ul class="ccards">
           {% for r in items %}
           <li class="ccard" title="{{ r.ev.title }}"><a href="/stock/{{ r.ticker }}"><b>{{ r.ticker }}</b></a>
-            <span class="ev ev-{{ r.ev.state }}">{{ r.ev.text }}</span>
-            <span class="sub">BPI 5s {{ r.win.bpi.t }}{% for b in r.badges %} · <span aria-hidden="true">{{ b.icon }}</span> {{ b.text }}{% endfor %}</span></li>
+            {%- if key == 'surge' %} <span class="ev ev-mixed"><span aria-hidden="true">📊</span> {{ '%.1f'|format(r.surge_x) }}x usual</span>
+            {%- elif key == 'net' %} <span class="ev ev-mixed"><span aria-hidden="true">🏦</span> {{ r.net.broker }} {{ r.net.days }}/{{ r.net.days_ok }} days</span>
+            {%- else %} <span class="ev ev-{{ r.ev.state }}">{{ r.ev.text }}</span>{% endif %}
+            <span class="sub">
+              {%- if key in ('agree', 'warn') -%}
+                BPI 5s {{ r.win.bpi.t }}{% for b in r.badges %} · <span aria-hidden="true">{{ b.icon }}</span> {{ b.text }}{% endfor %}
+              {%- else -%}
+                {% if key == 'net' %}{{ '%.0f'|format(r.net_share * 100) }}% of value · {% endif %}BPI 5s {{ r.win.bpi.t }} · evidence: {{ r.ev.text }}
+              {%- endif %}</span></li>
           {% endfor %}
         </ul>
-        {% else %}<p class="note">{{ empty }}</p>{% endif %}
+        {% else %}<p class="note">{{ empties[key] }}</p>{% endif %}
       </div>
       {% endfor %}
       <p class="wide-note">{{ v.tested_note }}</p>
     </section>
 
-    <div class="panel home-panel">
+    <div class="panel home-panel" id="stocks">
       <h2>Stocks — session {{ session_date }}</h2>
       <div class="home-toolbar">
       <form method="get" action="/" class="filterbar" role="search">

@@ -66,6 +66,28 @@ def test_clusters_split_agreement_and_warnings_and_views_filter():
     assert ordered[0] == "AAAA" and ordered[-1] == "DDDD"            # unknown always last
 
 
+def test_four_boxes_and_their_views():
+    from vg.web.patterns import Surge
+
+    surge_row = home._row({"ticker": "SSSS", "close": 1.0, "prev": 1.0, "value": 1e9, "tags": "", "win": WEAK,
+                           "pat": {"net": None, "comp": None, "surge": Surge(3.4, 5e9), "cross": None}}, set(), set())
+    rows = [_row("AAAA", STRONG, NET_OK), surge_row, _row("CCCC", SELLING)]
+    c = home.clusters(rows)
+    assert [k for k, _t in c["order"]] == ["agree", "warn", "surge", "net"]
+    assert [r["ticker"] for r in c["surge"]] == ["SSSS"] and [r["ticker"] for r in c["net"]] == ["AAAA"]
+    assert (c["n_surge"], c["n_net"]) == (1, 1)
+    assert [r["ticker"] for r in home.apply(rows, home.clean({"view": "surge"}))] == ["SSSS"]
+    assert [r["ticker"] for r in home.apply(rows, home.clean({"view": "net"}))] == ["AAAA"]
+
+
+def test_see_all_jumps_to_the_filtered_table():
+    """7 Nov 2026: '?view=agree' did filter the table, but the top of the page looked the same, so it seemed nothing opened."""
+    from pathlib import Path
+
+    tpl = (Path(home.__file__).parent / "templates" / "home.html").read_text(encoding="utf-8")
+    assert 'href="?view={{ key }}#stocks"' in tpl and 'id="stocks"' in tpl and "full list below" in tpl
+
+
 def test_haka_line_matches_the_home_screen():
     assert E.HAKA_MIN == home.HAKA_DOMINANT
 

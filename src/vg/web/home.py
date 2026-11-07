@@ -42,8 +42,8 @@ SORTS = {"ticker": ("ticker", "asc"), "price": ("price_raw", "desc"), "change": 
          "bpi5d": ("bpi5d_raw", "desc"), "evidence": ("evidence_raw", "desc"), "overlap": ("overlap_raw", "desc"),
          "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
 # The quick pills, in the order they are drawn. `acc` stays a valid address (the Total-accumulation card links to it) but has no pill.
-VIEWS = (("acc", "Accumulation"), ("agree", "Most agreement"), ("warn", "Warnings"), ("top", "Top Accumulation"),
-         ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
+VIEWS = (("acc", "Accumulation"), ("agree", "Most agreement"), ("warn", "Warnings"), ("surge", "Volume surge"),
+         ("net", "Broker net buy"), ("top", "Top Accumulation"), ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
 PILL_VIEWS = ("agree", "warn", "top", "haka", "wash")
 HAKA_DOMINANT = 0.55      # buyers lifted the offer on at least 55% of the volume whose aggressor is known
 AGGR_MIN_SHARE = 0.10     # show the Aggressor-ratio column only when at least 10% of the session's rows have order-flow data
@@ -147,6 +147,10 @@ def _row(r: dict, wl: set, held: set) -> dict:
                        crossing=pat.get("cross"))
     return {
         "win": win, "bpi5d_raw": win["raw"], "badges": patterns.badges(r.get("pat")),
+        # the badge facts as numbers (None when the badge is not drawn), for the Volume surge / Broker net buy boxes and views
+        "surge_x": pat["surge"].x if pat.get("surge") is not None and patterns.is_surge(pat["surge"]) else None,
+        "net": pat["net"] if pat.get("net") is not None and patterns.is_persistent(pat["net"]) else None,
+        "net_share": pat["net"].share if pat.get("net") is not None and patterns.is_persistent(pat["net"]) else None,
         # sort: warnings last among the known, unknown always last (None); within a state more agreeing signs first
         "ev": ev, "evidence_raw": None if ev["state"] == "unknown" else (-1.0 if ev["warnings"] else ev["agree"] + ev["agree"] / 10 / max(ev["known"], 1)),
         "ticker": r["ticker"], "in_wl": r["ticker"] in wl, "held": r["ticker"] in held,
@@ -190,14 +194,27 @@ def eod_card(raw: dict, scored_today: bool) -> dict:
     return {"state": "none", "t": NA, "word": "No scores yet", "c": "", "sub": f"EOD session {sd}; no session has a broker score yet."}
 
 
+# The four boxes above the table, in the order drawn (one per KPI tile above them): key, title, what the line under a ticker shows.
+CLUSTERS = (("agree", "Most agreement"), ("warn", "Warnings"), ("surge", "Volume surge"), ("net", "Broker net buy"))
+
+
 def clusters(rows: list[dict], n: int = CLUSTER_MAX) -> dict:
-    """The two short lists above the table. Most agreement: more agreeing signs first, then the stronger five-session BPI.
-    Warnings: the strongest five-session SELLING first, then by traded value (a big stock's crossing matters more)."""
-    agree = sorted((r for r in rows if r["ev"]["state"] == "agree"),
-                   key=lambda r: (-r["ev"]["agree"], -(r["bpi5d_raw"] or 0), r["ticker"]))
-    warn = sorted((r for r in rows if r["ev"]["state"] == "warning"),
-                  key=lambda r: (r["bpi5d_raw"] if r["bpi5d_raw"] is not None else 0, -(r["value_raw"] or 0), r["ticker"]))
-    return {"agree": agree[:n], "warn": warn[:n], "n_agree": len(agree), "n_warn": len(warn)}
+    """The four short lists above the table, each the top `n` of a filter the table can show in full (?view=<key>).
+    Most agreement: more agreeing signs first, then the stronger five-session BPI. Warnings: the strongest five-session SELLING
+    first, then by traded value. Volume surge: the biggest multiple of the usual value first. Broker net buy: the biggest net as a
+    share of the stock's traded value first."""
+    picks = {
+        "agree": sorted((r for r in rows if r["ev"]["state"] == "agree"),
+                        key=lambda r: (-r["ev"]["agree"], -(r["bpi5d_raw"] or 0), r["ticker"])),
+        "warn": sorted((r for r in rows if r["ev"]["state"] == "warning"),
+                       key=lambda r: (r["bpi5d_raw"] if r["bpi5d_raw"] is not None else 0, -(r["value_raw"] or 0), r["ticker"])),
+        "surge": sorted((r for r in rows if r["surge_x"] is not None), key=lambda r: (-r["surge_x"], r["ticker"])),
+        "net": sorted((r for r in rows if r["net_share"] is not None), key=lambda r: (-r["net_share"], r["ticker"])),
+    }
+    out: dict = {"order": CLUSTERS}
+    for key, items in picks.items():
+        out[key], out["n_" + key] = items[:n], len(items)
+    return out
 
 
 def build_view(raw: dict, watchlist=(), holdings=()) -> dict:
@@ -270,6 +287,10 @@ def apply(rows: list[dict], p: dict) -> list[dict]:
         out = [r for r in out if r["ev"]["state"] == "agree"]
     elif p["view"] == "warn":
         out = [r for r in out if r["ev"]["state"] == "warning"]
+    elif p["view"] == "surge":
+        out = [r for r in out if r["surge_x"] is not None]
+    elif p["view"] == "net":
+        out = [r for r in out if r["net_share"] is not None]
     elif p["view"] == "haka":
         out = [r for r in out if r["haka_raw"] is not None and r["haka_raw"] >= HAKA_DOMINANT]
     elif p["view"] == "wash":
