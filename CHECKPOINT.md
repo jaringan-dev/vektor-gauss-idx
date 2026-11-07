@@ -9,7 +9,7 @@ Clone yang hidup = **WSL `/home/vg/vektor-gauss`** (bukan clone Windows). Buka: 
 
 ### ▶ Mulai dari sini
 Badge (⚡ 📊 🏦), BPI 5 sesi, recorder iceberg-proxy, dan reminder Telegram SELESAI. Uji ke belakang ⚡+📊 SELESAI: tidak ada edge.
-Berikutnya (pilihan user): audit `value` mentah · keputusan kuota arjum (≈ 6 Des) ·
+Audit `value` mentah SELESAI (catatan 🔀 crossing). Berikutnya (pilihan user): keputusan kuota arjum (≈ 6 Des) ·
 `is_confirmed()` · Senin 9 Nov cek otomatis via Telegram.
 
 ### Langkah
