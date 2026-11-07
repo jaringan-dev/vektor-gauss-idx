@@ -187,7 +187,7 @@ Respons `all_data` tidak diarsipkan (sekitar empat kali lebih besar); baris terp
 
 | Halaman | Rute | Modul / tabel utama |
 |---|---|---|
-| Screener | `/`, `/screener` | `home.py`, `listing.py`, `live_scores.py`, `bpi_window.py` (BPI 5 sesi dari ladder `broker_levels` yang dijumlahkan, read-only, bukan tag); sinyal dan harga |
+| Screener | `/`, `/screener` | `home.py`, `listing.py`, `live_scores.py`, `bpi_window.py` (BPI 5 sesi dari ladder `broker_levels` yang dijumlahkan, read-only, bukan tag), `patterns.py` (badge), `evidence.py` (kolom Evidence + klaster "Most agreement"/"Warnings": tanda akumulasi yang sepakat + peringatan, deskriptif, bukan sinyal); sinyal dan harga |
 | Today | `/today`, `/watchlist/add`, `/watchlist/remove` | `today.py`, `watchlist.py`; `user_watchlist` |
 | Top movers | `/movers` | `movers.py`; `price_bars` |
 | Top rankings | `/ranking` | `listing.py` |
@@ -196,7 +196,7 @@ Respons `all_data` tidak diarsipkan (sekitar empat kali lebih besar); baris terp
 | Stop dan target | `/risk-test` | `risk_eval.py` |
 | Apakah edge nyata | `/research` | `research.py` |
 | Halaman pola | `/pattern/{tag}` | `pattern.py` |
-| Halaman saham | `/stock/{ticker}`, `/search` | `stock.py`, `charts.py` |
+| Halaman saham | `/stock/{ticker}`, `/search` | `stock.py`, `charts.py` (+ `bpi_bars`: BPI harian sejajar candlestick), `narrative.py` (`broker_summary` = Executive summary, membaca verdict `research` snapshot) |
 | Balance position | `/balance` | `balance.py`; `ownership_monthly` |
 | Seasonality | `/seasonality` | `seasonal.py`, `season.py` |
 | Broker stalker | `/stalker` | `stalker.py`; `broker_flows_full` |

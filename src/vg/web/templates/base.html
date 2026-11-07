@@ -227,6 +227,11 @@
     .ccards { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:6px; }
     .ccard { display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center; padding:6px 8px; border-radius:10px; background:var(--prob-bg); }
     .ccard .sub { flex-basis:100%; font-size:.78em; color:var(--muted); }
+    .exec { backdrop-filter:saturate(1.4) blur(10px); -webkit-backdrop-filter:saturate(1.4) blur(10px);
+            background:color-mix(in srgb, var(--panel) 78%, transparent); }
+    .exec h2 { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    .exec-list { margin:0; padding-left:18px; display:flex; flex-direction:column; gap:4px; line-height:1.5; }
+    .exec-list li:last-child { list-style:none; margin-left:-18px; color:var(--muted); font-size:.9em; }
     /* descriptive pattern badges: neutral on purpose (green/red are for tested signals and money) */
     .pbadges { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
     .pbadge { font-size:.74em; line-height:1.5; padding:0 6px; border-radius:9px; border:1px solid var(--border);

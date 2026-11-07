@@ -16,7 +16,7 @@ from ..engine.scoring import SCORING_COLUMNS
 from ..sources.vektorgauss import FOREIGN_BROKERS, RETAIL_BROKERS
 from . import bpi_window, charts, edge, fmt, live_scores
 from .glossary import plain_tag, quad_key, quad_word
-from .narrative import stock_summary
+from .narrative import broker_summary, stock_summary
 
 TICKER_RE = re.compile(r"^[A-Z0-9]{3,6}$")
 HISTORY_DAYS = 190
@@ -88,7 +88,7 @@ def load(ticker: str) -> dict | None:
             cur.execute("SELECT session_date, side, broker_code, val FROM broker_levels WHERE ticker = %s AND session_date >= %s",
                         (ticker, chart_bars[0][0]))
             bpi_levels = cur.fetchall()
-            cur.execute("SELECT session_date, value FROM price_bars WHERE ticker = %s AND session_date >= %s",
+            cur.execute("SELECT session_date, value, nonreg_value FROM price_bars WHERE ticker = %s AND session_date >= %s",
                         (ticker, chart_bars[0][0]))
             bpi_values = cur.fetchall()
         cur.execute(
@@ -143,10 +143,61 @@ def load(ticker: str) -> dict | None:
             "ORDER BY ex_date DESC LIMIT 5", (ticker,))
         corp = cur.fetchall()
     return {"chart_bars": chart_bars, "chart_flow": chart_flow, "chart_brokers": chart_brokers,
-            "bpi_levels": bpi_levels, "bpi_values": bpi_values,
+            "bpi_levels": bpi_levels, "bpi_values": bpi_values, "research": research_verdicts(flagged_today),
             "ticker": ticker, "meta": meta, "bars": bars, "comps": comps, "tags": tags, "levels": levels,
             "levels_day": lvl_day, "ownership": own, "corp": corp, "latest": latest, "scoring": scoring, "scoring_live": scoring_live, "edge": edge_rows,
             "own_series": own_series, "disclosures": {"rows": disc_rows, "total": disc_total, "filings": disc_filings}}
+
+
+def research_verdicts(tags: list[str]) -> dict[str, str] | None:
+    """{tag: verdict} from the stored `vg research --save` result (all stocks, full sample) for today's patterns. None = no stored
+    research (or it cannot be read): the summary then says the patterns are not researched yet. READ-ONLY, never raises."""
+    if not tags:
+        return {}
+    try:
+        from ..research import load_snapshot
+
+        snap = load_snapshot()
+    except Exception:  # noqa: BLE001 - a missing table or a DB hiccup must not take the stock page down
+        return None
+    if not snap:
+        return None
+    res = ((snap[0] or {}).get("results") or {}).get("all", {}).get("full", {})
+    return {t: res[t]["strength"] for t in tags if t in res and res[t].get("strength")}
+
+
+def broker_reading(raw: dict, tags_today: list[str]) -> dict:
+    """The inputs of the Executive Summary: the five-session BPI window, the persistent net buyer, today's HAKA / divergence / wash /
+    crossing, and the evidence reading, all from rows already loaded for this page. Pure."""
+    from . import evidence, patterns
+
+    latest = raw["latest"]
+    days = [r[0] for r in raw.get("chart_bars") or []][-bpi_window.WINDOW:]
+    vals = {r[0]: (_f(r[1]), _f(r[2]) if len(r) > 2 else None) for r in raw.get("bpi_values") or []}
+    lad: dict = {}
+    for d, side, code, val in raw.get("bpi_levels") or []:
+        if d in days:
+            lad.setdefault(d, ([], []))[0 if side == "B" else 1].append((code, _f(val)))
+    crossing = frozenset(d for d in days if (s := patterns.crossing_share(*vals.get(d, (None, None)))) is not None
+                         and s >= patterns.CROSSING_SHARE)
+    win = bpi_window.window_score({d: (b, s, vals.get(d, (None, None))[0]) for d, (b, s) in lad.items()},
+                                  n_window=len(days) or bpi_window.WINDOW, crossing=crossing) if lad else None
+    net = None
+    flows = (raw.get("chart_brokers") or {}).get("flows") or []
+    if flows:
+        per: dict = {}
+        for d, code, bv, sv in flows:
+            if d in days:
+                per.setdefault(d, {})[code] = (_f(bv) or 0.0) - (_f(sv) or 0.0)
+        net = patterns.persistent_net_buyer(per, len(days), {d: v[0] for d, v in vals.items()})
+    sc = raw.get("scoring") or []
+    today = dict(zip(SCORING_COLUMNS, sc[0][1:], strict=True)) if sc and sc[0][0] == latest else {}
+    haka = _f(today.get("aggr_haka_share"))
+    cross_today = patterns.crossing_share(*vals.get(latest, (None, None)))
+    ev = evidence.read(win, net, haka=haka, retail_div=today.get("retail_div_state"), tags=tags_today, crossing=cross_today)
+    return {"win": win, "net": net if net is not None and patterns.is_persistent(net) else None, "haka": haka,
+            "overlap": today.get("bpi_overlap3"), "wash": "AKUM-NETRAL-WASH" in tags_today, "crossing": cross_today,
+            "retail_div": _DIV_WORDS.get(today.get("retail_div_state") or ""), "evidence": ev}
 
 
 # retail_div_state (engine/scoring.py) -> words for the page. Descriptive only.
@@ -556,7 +607,11 @@ def build_view(raw: dict, track: dict | None = None, *, balance: float | None = 
 
     groups = group_series(raw)
     charts_view = _build_charts(raw, plan, groups)
+    reading = broker_reading(raw, tags_today)
+    h5 = edge.HORIZONS.index(5)
+    edge_h5 = {t: edge.row_view(t, d)["cells"][h5] for t, d in (raw.get("edge") or {}).items()}
     return {
+        "exec": broker_summary(reading, tags_today, raw.get("research"), edge_h5, plain_tag), "evidence": reading["evidence"],
         "charts": charts_view, "group_hidden": groups["hidden"] if groups else 0,
         "band_summary": range_summary([(_f(r[2]), _f(r[3])) for r in raw.get("chart_flow") or []]),
         "group_summary": group_summary(groups),

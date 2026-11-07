@@ -62,6 +62,13 @@
       {% endif %}
     </div>
 
+    {#- Executive summary: fixed templates over numbers already on this page (narrative.broker_summary), checked against FORBIDDEN. -#}
+    <section class="panel exec" id="summary" aria-labelledby="exec-h">
+      <h2 id="exec-h">Executive summary
+        <span class="ev ev-{{ v.evidence.state }}" title="{{ v.evidence.title }}">{{ v.evidence.text }}</span></h2>
+      <ul class="exec-list">{% for s in v.exec %}<li>{{ s }}</li>{% endfor %}</ul>
+    </section>
+
     {# Filled by the script at the end of this page from the sections that are actually shown; without JS it stays hidden. #}
     <nav id="toc" class="toc" aria-label="On this page" hidden></nav>
 

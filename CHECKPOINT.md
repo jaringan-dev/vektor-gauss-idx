@@ -69,8 +69,10 @@ User memilih: label deskriptif (BUKAN "High Conviction/Avoid"), chart SVG server
 - [x] 19. `src/vg/web/evidence.py` (5 tanda akumulasi + 3 peringatan + TESTED_NOTE) + tes
 - [x] 20. `/`: kolom Evidence, klaster "Most agreement" & "Warnings", view=agree/warn, sort=evidence. Data 6 Nov: 33 agree, 38 warning.
 - [x] 21. `/stock`: `charts.bpi_bars` sejajar candles (BPI 90 sesi dari broker_levels via `bpi_window.daily_bpi`) + tes
-- [ ] 22. `/stock`: Executive Summary = perluas `narrative.stock_summary` (+ verdict riset), lolos FORBIDDEN
-- [ ] 23. Verifikasi (pytest, curl, Chrome), ARCHITECTURE.md, commit
+- [x] 22. `/stock`: Executive summary = `narrative.broker_summary` (+ verdict riset dari snapshot + win rate H+5 mentah), lolos FORBIDDEN.
+      `stock.broker_reading` membangun jendela 5 sesi, net buyer, HAKA, divergensi, wash, crossing dari baris yang sudah dimuat.
+- [x] 23a. pytest 1325 lulus, curl /stock/BTPS·NATO·ASII·ABDA(tanpa broker) & / & /?view=agree → 200, ARCHITECTURE.md.
+- [ ] 23b. Cek visual di Chrome (desktop + lebar HP).
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian

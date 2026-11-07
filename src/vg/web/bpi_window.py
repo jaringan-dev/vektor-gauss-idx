@@ -85,7 +85,7 @@ def daily_bpi(levels: list[tuple], values: list[tuple]) -> dict[date, float]:
     lad: dict[date, tuple[list, list]] = defaultdict(lambda: ([], []))
     for d, side, code, val in levels:
         lad[d][0 if side == "B" else 1].append((code, _f(val)))
-    vals = {d: _f(v) for d, v in values}
+    vals = {row[0]: _f(row[1]) for row in values}          # (session, value[, nonreg_value]): extra columns are ignored here
     out = {}
     for d, (b, s) in lad.items():
         bp = bandar_power(b, s, vals.get(d))
