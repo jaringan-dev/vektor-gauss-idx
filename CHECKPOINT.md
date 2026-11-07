@@ -48,6 +48,14 @@ P-COMPRESSION 30k: netral −0,02%, net −5,41% (kebanyakan saham tidak likuid)
 - [x] 15. Solusi = UNGKAPKAN, bukan buang: catatan 🔀 "Crossing X% of value" (≥ 50% nilai = negosiasi) di baris saham, dan
       "· N crossing day" di sel BPI 5 sesi. Data 6 Nov: NATO 99%, SMGR 88%, 4 saham lain punya 1 hari crossing di jendela.
 
+### Hitungan kuota arjum (7 Nov) — bahan keputusan sebelum ≈ 6 Des (kuota 41k → 1k/hari)
+EOD per hari sekarang ≈ **1.750 call**: broker summary 367 + tabel broker lengkap 367 + done-details ≈ 1.000 (5 saham watchlist,
+cap 200 halaman/saham) + inventory/price-history/status ≈ 15. Universe per lookback: 1 → 164, 5 → 238, 10 → 295, 20 → 367.
+K7 backlog 194.575 call @ 37,5k/40,5k per malam → selesai ≈ 12–13 Nov (aman sebelum 6 Des). Sisa kuota 7 Nov siang: 15.185/41.000.
+Opsi ≤ 1k/hari: (E) buang done-details, ganti dengan data recorder WebSocket (gratis, sudah merekam HAKA/HAKI 810 saham) ≈ 750 ·
+(D) lookback 5 + tanpa done-details ≈ 490 · (C) tanpa tabel lengkap & done-details ≈ 375 · atau perpanjang paket.
+Syarat E: verifikasi dulu bahwa field `c` recorder = sisi agresor, dibandingkan done-details beberapa hari (selagi kuota masih besar).
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.
