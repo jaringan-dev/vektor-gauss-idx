@@ -32,6 +32,37 @@ def test_liquid_threshold_matches_the_engines_liquid_definition():
     assert collect._BROKER_LIQUID_VALUE_IDR == engine.LIQUID_VALUE_IDR
 
 
+B = 1_000_000_000
+
+
+def test_sticky_liquid_keeps_a_name_that_was_liquid_earlier_in_the_window():
+    """6 Nov 2026: liquid-on-the-day fell 202 -> 136 in two weeks with no fetch failing; names near Rp5B left holes."""
+    rows = [
+        ("BBCA", 900 * B, 1200 * B),   # liquid today
+        ("NEAR", 4 * B, 6 * B),        # below the line today, above it earlier -> kept (sticky)
+        ("TINY", 1 * B, 2 * B),        # never liquid in the window -> out
+        ("HALT", None, 9 * B),         # liquid earlier but did not trade today -> out (the call would only return no_data)
+        ("ZERO", 0, 8 * B),            # traded nothing today -> out
+        ("MID", 30 * B, 30 * B),       # liquid today
+        ("EDGE", 5 * B, 5 * B),        # exactly the threshold is NOT above it -> out (same `>` as the engine)
+    ]
+    names, n_today = collect.sticky_liquid(rows, threshold=5 * B)
+    assert names == ["BBCA", "MID", "NEAR"]      # liquid-today first by value, then the sticky extras
+    assert n_today == 2
+
+
+def test_sticky_liquid_with_a_one_day_window_is_the_old_rule():
+    rows = [("A", 7 * B, 7 * B), ("B", 3 * B, 3 * B)]
+    assert collect.sticky_liquid(rows, threshold=5 * B) == (["A"], 1)
+
+
+def test_broker_liquid_lookback_defaults_to_twenty_sessions(monkeypatch):
+    monkeypatch.delenv("VG_BROKER_LIQUID_LOOKBACK", raising=False)
+    assert Config().broker_liquid_lookback == 20
+    monkeypatch.setenv("VG_BROKER_LIQUID_LOOKBACK", "1")
+    assert Config().broker_liquid_lookback == 1
+
+
 # ---- collect_broker_summary_full -------------------------------------------------------
 
 @pytest.fixture()

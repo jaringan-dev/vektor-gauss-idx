@@ -1064,6 +1064,19 @@ def _is_transient(detail: str | None) -> bool:
     return "Server error '5" in d or any(f"{n}:" in d for n in _TRANSPORT_ERRORS)
 
 
+def sticky_liquid(rows, threshold: float = _BROKER_LIQUID_VALUE_IDR) -> tuple[list[str], int]:
+    """The liquid part of the broker universe, from (ticker, value on the day, max value over the lookback window) rows.
+
+    A name is in when it traded on the day (value > 0) AND cleared `threshold` on ANY session of the window. Why not "liquid on
+    the day" alone: the market's traded value swings, so a stock hovering around Rp5B dropped in and out of the daily pass
+    (liquid names fell 202 -> 136 between 20 Oct and 6 Nov 2026 with no fetch failing). Every name that drops out leaves a hole
+    in its broker history, and any multi-day measure (a 5-day BPI, a top buyer's persistence) is then computed on missing days.
+    Order: liquid on the day first, then the sticky extras, each biggest value on the day first. Returns (names, n_liquid_today)."""
+    keep = [(t, float(v or 0), float(m or 0)) for t, v, m in rows if (v or 0) > 0 and (m or 0) > threshold]
+    keep.sort(key=lambda r: (r[1] <= threshold, -r[1], r[0]))
+    return [t for t, _v, _m in keep], sum(v > threshold for _t, v, _m in keep)
+
+
 def select_broker_universe(base, liquid, radar) -> list[str]:
     """Order-preserving union: watchlist + holdings first, then liquid names (biggest value
     first, as given), then radar extras (illiquid names the radar tags flagged)."""
@@ -1194,15 +1207,23 @@ def plan_broker_full(
             cur.execute("SELECT 1 FROM trading_calendar WHERE session_date = %s", (session_date,))
             if cur.fetchone() is None:
                 return {**empty, "reason": f"{session_date} is not a trading day in trading_calendar"}
+        # Liquid on ANY of the last `broker_liquid_lookback` sessions up to `latest` (see sticky_liquid): a stable universe.
         cur.execute(
-            "SELECT ticker FROM price_bars WHERE session_date = %s AND value > %s ORDER BY value DESC",
-            (latest, _BROKER_LIQUID_VALUE_IDR),
+            """
+            SELECT ticker, max(value) FILTER (WHERE session_date = %(d)s), max(value)
+            FROM price_bars
+            WHERE session_date IN (SELECT session_date FROM trading_calendar WHERE session_date <= %(d)s
+                                   ORDER BY session_date DESC LIMIT %(n)s)
+            GROUP BY ticker
+            """,
+            {"d": latest, "n": CONFIG.broker_liquid_lookback},
         )
-        liquid = [r[0] for r in cur.fetchall()]
+        liquid, n_today = sticky_liquid(cur.fetchall())
         universe = select_broker_universe(base, liquid, _radar_names(cur, latest))
         have = _have_for_date(cur, have_table, universe, latest) if skip_existing else set()
     return {
-        "latest": latest, "newest": newest, "universe": universe, "have": have, "n_liquid": len(liquid),
+        "latest": latest, "newest": newest, "universe": universe, "have": have, "n_liquid": n_today,
+        "n_sticky": len(liquid) - n_today,
         "todo": [t for t in universe if t not in have],
     }
 
@@ -1258,7 +1279,9 @@ def collect_broker_summary_full(
             waited += _FEED_WAIT_STEP_S
     run = _feed_loop(plan["todo"], lambda t: collect_broker_summary_ticker(latest, t, use_date=dated), pause)
     detail = (
-        f"{len(plan['universe'])} names ({plan['n_liquid']} liquid): fetched {run.ok}, no_data {run.no_data}, "
+        f"{len(plan['universe'])} names ({plan['n_liquid']} liquid"
+        + (f" + {plan['n_sticky']} liquid earlier in the window" if plan.get("n_sticky") else "")
+        + f"): fetched {run.ok}, no_data {run.no_data}, "
         f"errors {run.errors}, skipped {len(plan['have'])} already-have"
     )
     if waited:

@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     # the done-details harvest covers the watchlist only. Order: watchlist first, then these.
     lq45_tickers: _Csv = ()
     radar_tags: _Csv = DEFAULT_RADAR_TAGS
+    # The daily broker pass takes every name that traded > Rp5B on ANY of this many sessions (not only on the day), so a stock
+    # near the line does not drop in and out and leave holes in its broker history. 1 = the old "liquid on the day" rule.
+    # ~20 sessions ~ 350 names (~2 feed calls each: summary + full table). Lower it if the feed quota gets tight.
+    broker_liquid_lookback: int = Field(20, ge=1, le=120)
     forward_since: date | None = None
     digest_trade_calls: bool = True
 
