@@ -23,6 +23,11 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - [ ] 6. **Senin 9 Nov setelah 16:05**: cek `trade_lots_daily` terisi + ukurannya (baris/hari) dan ringkasan recorder di `run_log`
       (`size-count rows ...`). Kalau terlalu besar → naikkan `LOT_MIN` di `src/vg/tradeflow.py`.
 
+### Badge 📊 "volume ramai dari biasanya" (selesai)
+- [x] 7. `volume_surge()` di `src/vg/web/patterns.py`: nilai pasar REGULER hari ini ÷ median 20 sesi sebelumnya, ≥ 2× dan ≥ Rp1 M.
+      Pakai rupiah (bukan lembar → kebal split) dan buang pasar negosiasi (NATO 6 Nov: 1.060× karena 1 crossing → 6,9× reguler).
+      Catatan: kolom `value` IDX kadang termasuk negosiasi, kadang tidak (BYAN 7 Okt) → `regular_value()` menangani keduanya.
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.

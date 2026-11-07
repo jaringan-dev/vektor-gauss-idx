@@ -2,6 +2,8 @@
 
 from datetime import date, timedelta
 
+import pytest
+
 from vg.web import patterns as P
 
 D0 = date(2026, 9, 1)
@@ -86,6 +88,45 @@ def test_net_buy_days_with_a_net_loss_overall_do_not_qualify():
     days = {d: {"YP": 1.0} for d in DAYS[:4]}
     days[DAYS[4]] = {"YP": -100.0}                                    # bought a little 4 days, dumped a lot on the 5th
     assert not P.is_persistent(P.persistent_net_buyer(days))
+
+
+B = 1e9
+
+
+def vbars(values, nonreg=None):
+    nonreg = nonreg or [0.0] * len(values)
+    return [(D0 + timedelta(days=i), v, n) for i, (v, n) in enumerate(zip(values, nonreg, strict=True))]
+
+
+def test_regular_value_handles_both_ways_idx_reports_the_negotiated_market():
+    assert P.regular_value(235.91 * B, 234.37 * B) == pytest.approx(1.54 * B)   # NATO 6 Nov: value includes the negotiated trade
+    assert P.regular_value(87.9 * B, 26097.6 * B) == 87.9 * B                   # BYAN 7 Oct: value is clearly regular only
+    assert P.regular_value(5 * B, 0) == 5 * B and P.regular_value(None, None) == 0.0
+
+
+def test_a_busy_day_is_a_surge_and_says_how_many_times_usual():
+    s = P.volume_surge(vbars([2 * B] * P.BASE + [7 * B]))
+    assert s.x == pytest.approx(3.5) and P.is_surge(s)
+    b = P.badges({"comp": P.Compression(None, None, None, "x"), "net": P.NetBuyer(None, 0, 0, 0.0, 5), "surge": s})
+    assert [x["text"] for x in b] == ["Volume 3.5x usual"]
+
+
+def test_a_negotiated_block_trade_is_not_a_surge():
+    """NATO 6 Nov 2026: 1,060x on total value, all of it one negotiated trade."""
+    vals = [0.2 * B] * P.BASE + [235.9 * B]
+    nonreg = [0.0] * P.BASE + [234.4 * B]
+    s = P.volume_surge(vbars(vals, nonreg))
+    assert s.value == pytest.approx(1.5 * B) and s.x == pytest.approx(7.5)    # the regular part is busier, but not 1,000x
+
+
+def test_one_earlier_busy_day_does_not_hide_todays_surge():
+    base = [2 * B] * (P.BASE - 1) + [100 * B]                                  # the median ignores the outlier
+    assert P.volume_surge(vbars(base + [6 * B])).x == pytest.approx(3.0)
+
+
+def test_small_stocks_and_short_history_get_no_surge():
+    assert not P.is_surge(P.volume_surge(vbars([0.02 * B] * P.BASE + [0.5 * B])))    # 25x but only Rp0.5B
+    assert P.volume_surge(vbars([2 * B] * 5)).x is None
 
 
 def test_no_data_no_badges():

@@ -38,6 +38,9 @@ NET_MIN_DAYS = 4          # a broker net buying on at least 4 sessions of the wi
 # Without it the badge is noise: on 6 Nov 2026, 121 of 173 stocks had SOME broker net buying 4+ of 5 days (one by Rp0.0B);
 # with 10% it is 37.
 NET_MIN_SHARE = 0.10
+# ---- volume surge ---------------------------------------------------------------------------------------------------
+SURGE_MIN_X = 2.0         # regular-market value at least 2x its median over the BASE sessions before (6 Nov 2026: 42 of 374 stocks)
+SURGE_MIN_VALUE = 1e9     # and at least Rp1B on the day: a quiet stock going from Rp20M to Rp60M is not "busy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +88,35 @@ def compression(bars: list[tuple]) -> Compression:
     return Compression(rng, move, vol_x)
 
 
+def regular_value(value: float | None, nonreg: float | None) -> float:
+    """Traded value on the regular board. IDX's `value` sometimes INCLUDES the negotiated market (NATO 6 Nov 2026: Rp235.9B of which
+    Rp234.4B was one negotiated trade) and sometimes clearly does not (BYAN 7 Oct 2026: value Rp88B, negotiated Rp26,098B). So: when the
+    negotiated part fits inside `value`, take it out; when it is bigger, `value` was already the regular part."""
+    v, n = value or 0.0, nonreg or 0.0
+    return v - n if 0 < n <= v else v
+
+
+@dataclass(frozen=True, slots=True)
+class Surge:
+    x: float | None            # regular value on the day / median regular value over the BASE sessions before
+    value: float               # regular value on the day, rupiah
+
+
+def volume_surge(bars: list[tuple]) -> Surge:
+    """`bars`: (session, value, nonreg_value) oldest first, the day LAST. Value in rupiah, not shares, so a split cannot fake a surge.
+    The median (not the mean) of the base, so one earlier busy day does not hide today's."""
+    if len(bars) < BASE + 1:
+        return Surge(None, 0.0)
+    regs = [regular_value(v, n) for _d, v, n in bars[-(BASE + 1):]]
+    base = sorted(regs[:-1])
+    mid = (base[BASE // 2 - 1] + base[BASE // 2]) / 2 if BASE % 2 == 0 else base[BASE // 2]
+    return Surge(regs[-1] / mid if mid > 0 else None, regs[-1])
+
+
+def is_surge(s: Surge) -> bool:
+    return s.x is not None and s.x >= SURGE_MIN_X and s.value >= SURGE_MIN_VALUE
+
+
 def is_compression(c: Compression) -> bool:
     """The ⚡ badge rule. PROVISIONAL thresholds above; the operator decides the final ones (a tighter range, a bigger volume
     multiple, whether the move band should scale with the stock's own volatility)."""
@@ -125,11 +157,11 @@ def load(cur, session_date: date, tickers: list[str]) -> dict[str, dict]:
     if not cal:
         return {}
     window = cal[-WINDOW:]
-    cur.execute("SELECT ticker, session_date, prev, high, low, close, volume, value FROM price_bars "
+    cur.execute("SELECT ticker, session_date, prev, high, low, close, volume, value, nonreg_value FROM price_bars "
                 "WHERE session_date = ANY(%s) AND ticker = ANY(%s) ORDER BY ticker, session_date", (cal, tickers))
     bars: dict[str, list] = defaultdict(list)
-    for t, d, prev, hi, lo, close, vol, value in cur.fetchall():
-        bars[t].append((d, _f(prev), _f(hi), _f(lo), _f(close), _f(vol), _f(value)))
+    for t, d, prev, hi, lo, close, vol, value, nonreg in cur.fetchall():
+        bars[t].append((d, _f(prev), _f(hi), _f(lo), _f(close), _f(vol), _f(value), _f(nonreg)))
     cur.execute("SELECT ticker, session_date, broker_code, sum(net_val) FROM broker_flows "
                 "WHERE session_date = ANY(%s) AND ticker = ANY(%s) GROUP BY 1, 2, 3", (window, tickers))
     flows: dict[str, dict[date, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
@@ -137,6 +169,9 @@ def load(cur, session_date: date, tickers: list[str]) -> dict[str, dict]:
         flows[t][d][code] = _f(net) or 0.0
     values = {t: {b[0]: (b[6] or 0.0) for b in bs} for t, bs in bars.items()}
     return {t: {"comp": compression([b[:6] for b in bars.get(t, [])]),
+                # a surge is about the screen's session: only if the stock has a bar ON that day
+                "surge": (volume_surge([(b[0], b[6], b[7]) for b in bars[t]])
+                          if bars.get(t) and bars[t][-1][0] == session_date else Surge(None, 0.0)),
                 "net": persistent_net_buyer(flows.get(t, {}), len(window), values.get(t))} for t in tickers}
 
 
@@ -149,7 +184,11 @@ def badges(p: dict | None) -> list[dict]:
     if not p:
         return []
     out = []
-    c, n = p["comp"], p["net"]
+    c, n, s = p["comp"], p["net"], p.get("surge")
+    if s is not None and is_surge(s):
+        out.append({"key": "surge", "icon": "📊", "text": f"Volume {s.x:.1f}x usual",
+                    "title": f"Regular-market value today {_bn(s.value)} = {s.x:.1f}x its median over the previous {BASE} sessions "
+                             "(negotiated-market trades left out). Descriptive, not a tested signal."})
     if is_compression(c):
         out.append({"key": "comp", "icon": "⚡", "text": "Vol/price compression",
                     "title": f"Last {WINDOW} sessions: high-low range {c.range_pct * 100:.1f}% of the close, close moved {c.move_pct * 100:+.1f}%, "
