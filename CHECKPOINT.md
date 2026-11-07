@@ -30,7 +30,7 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - `3213199` CHECKPOINT.md ini
 - `0999a36` badge ⚡ compression + 🏦 persistent net buyer (`src/vg/web/patterns.py`)
 - `b2ffac1` recorder → `trade_lots_daily` (proxy iceberg, forward-only)
-- ⚠ 4 commit + commit checkpoint ini **belum di-push** (push hanya kalau user bilang)
+- Semua di atas **sudah di-push** (`d5abaa1..fab254e`, 7 Nov). Push berikutnya tetap hanya kalau user bilang.
 
 ### Sedang berjalan / setengah jadi
 - (tidak ada) — isi lubang data broker 2026-10-12..11-06 SELESAI: 20/20 hari ok, 0 error, ~370 saham/hari;
