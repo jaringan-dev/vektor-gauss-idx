@@ -13,9 +13,10 @@ lalu menyiapkan rekaman histogram lot untuk 🧊 Iceberg proxy (#3, badge-nya me
 Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan dari situ.
 
 ### Langkah
-- [ ] 1. `src/vg/web/patterns.py`: `compression()` (price_bars) + `persistent_net_buy()` (broker_flows), pure + `load()` read-only
-- [ ] 2. Badge di `/` (di bawah ticker, warna netral, tooltip berisi angka bukti) + tes
-- [ ] 3. Ambang compression → **keputusan user** (`TODO(user)` di `patterns.py`)
+- [x] 1. `src/vg/web/patterns.py`: `compression()` (price_bars) + `persistent_net_buyer()` (broker_flows), pure + `load()` read-only
+- [x] 2. Badge di `/` (di bawah ticker, warna netral, tooltip berisi angka bukti) + tes — commit di bawah.
+      Data 6 Nov: ⚡ 1 dari 169 saham; 🏦 37 dari 173 (setelah syarat net ≥ 10% nilai transaksi 5 sesi; tanpa itu 121 = noise).
+- [ ] 3. Ambang (konstanta `COMP_*`, `NET_MIN_*` di `patterns.py`, sementara/PROVISIONAL) → **keputusan user**
 - [ ] 4. Recorder: histogram per (harga, lot, sisi) per hari untuk iceberg proxy (tabel baru, forward-only) + tes
 - [ ] 5. Restart dashboard :8787, cek dengan data asli, commit, update ARCHITECTURE.md
 

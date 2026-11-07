@@ -133,7 +133,8 @@
         <tbody role="rowgroup">
           {% for r in rows %}
           <tr role="row"{% if r.wash %} class="is-wash"{% endif %}>
-            <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}</td>
+            <td role="cell" class="key" style="text-align:left">{{ ticker(r.ticker, r.in_wl, r.held) }}
+              {%- if r.badges %}<span class="pbadges">{% for b in r.badges %}<span class="pbadge" title="{{ b.title }}"><span aria-hidden="true">{{ b.icon }}</span> {{ b.text }}</span>{% endfor %}</span>{% endif %}</td>
             <td role="cell" data-label="Price">{{ r.price }}</td>
             <td role="cell" data-label="Change" class="{{ r.chg.c }}">{{ r.chg.t }}</td>
             <td role="cell" data-label="BPI (top 3)" class="bpi {{ r.bpi.c }}{{ ' heat' if r.bpi.c else '' }}"{% if r.bpi.c %} style="--i:{{ r.bpi_heat }}"{% endif %}>{{ r.bpi.t }}{% if r.bpi_live %} <span class="computed" title="Computed from the stored broker table when this page is opened; the engine has not stored it yet">computed</span>{% endif %}{% if r.bpi.c %}<span class="bar {{ r.bpi.c }}" aria-hidden="true"><i style="width:{{ r.bpi_bar }}%"></i></span>{% endif %}</td>

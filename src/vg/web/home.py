@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from . import bpi_window, fmt, glossary, listing, live_scores
+from . import bpi_window, fmt, glossary, listing, live_scores, patterns
 
 WASH_TAG = "AKUM-NETRAL-WASH"
 # "Accumulation" = any pattern named *-AKUM / AKUM-*. The wash flag is excluded on purpose: its own description says
@@ -88,8 +88,10 @@ def load(session_date: date) -> dict:
             live_n = live_scores.fill_rows(rows, live_scores.load_ladders(cur, session_date))
         # The five-session view of the same index (bpi_window.py): summed ladders, up days, the same top buyer, coverage. Read-only.
         windows = bpi_window.load(cur, session_date, [r["ticker"] for r in rows])
+        pats = patterns.load(cur, session_date, [r["ticker"] for r in rows])      # badges: compression, persistent net buyer
         for r in rows:
             r["win"] = windows.get(r["ticker"])
+            r["pat"] = pats.get(r["ticker"])
     return {"session_date": session_date, "rows": rows, "columns_present": "bpi3" in have, "last_scored": last_scored,
             "stored_n": stored_n, "live_n": live_n}
 
@@ -133,7 +135,7 @@ def _row(r: dict, wl: set, held: set) -> dict:
     haka = r.get("aggr_haka_share")
     win = win_cell(r.get("win"))
     return {
-        "win": win, "bpi5d_raw": win["raw"],
+        "win": win, "bpi5d_raw": win["raw"], "badges": patterns.badges(r.get("pat")),
         "ticker": r["ticker"], "in_wl": r["ticker"] in wl, "held": r["ticker"] in held,
         "price": fmt.price(close), "chg": fmt.cell(chg, 1),
         "bpi_live": bool(r.get("bpi_live")),

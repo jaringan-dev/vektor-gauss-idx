@@ -216,6 +216,10 @@
     td.bpi .bar.neg i { background:var(--neg); }
     td.bpi5d .sub { display:block; font-size:.78em; color:var(--muted); white-space:nowrap; }
     td.bpi5d .sub.muted { font-style:italic; }
+    /* descriptive pattern badges: neutral on purpose (green/red are for tested signals and money) */
+    .pbadges { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+    .pbadge { font-size:.74em; line-height:1.5; padding:0 6px; border-radius:9px; border:1px solid var(--border);
+              color:var(--fg); background:var(--prob-bg); white-space:nowrap; cursor:help; }
     .answer.notice { border-left-color:var(--warn-fg); }
     .quad { color:var(--muted); font-size:12px; }
     .err { background:var(--fail-bg); color:var(--fail-fg); padding:12px; border-radius:8px;
