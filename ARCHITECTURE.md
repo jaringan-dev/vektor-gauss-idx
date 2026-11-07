@@ -148,6 +148,7 @@ stock-day disimpan di sana hanya bila lengkap (beli dan jual cocok dalam 1%).
 | Paper trading | `paper.py` | `paper-update`, `paper-report` | `paper_trades` |
 | Uji stop/target | `risk.py`, `risk_eval.py` | `risk-eval` | `analysis_snapshot` |
 | Apakah edge nyata | `research.py` | `research` | CI sadar-ketergantungan, FDR |
+| Uji badge dashboard | `pattern_research.py` (+ `web/patterns.py`, `research.py`) | `research-patterns` | `pattern_events` (riset saja, dibangun ulang tiap run) |
 | Musiman | `season.py` | `season` | statistik hari dan bulan |
 | Kalkulator posisi | `calc.py` | `calc` | ukuran lot, stop, target |
 

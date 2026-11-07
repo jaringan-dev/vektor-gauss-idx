@@ -676,6 +676,15 @@ CREATE TABLE IF NOT EXISTS trade_lots_daily (
     PRIMARY KEY (session_date, ticker, side, price, lots)
 );
 
+-- Research only (`vg research-patterns`, src/vg/pattern_research.py): every stock-day on which a home-screen badge (web/patterns.py)
+-- WOULD have been drawn, over the whole price history. Rebuilt whole on every run; nothing reads it for signals. Labels are P-*, not tags.
+CREATE UNLOGGED TABLE IF NOT EXISTS pattern_events (
+    session_date DATE NOT NULL,
+    ticker       TEXT NOT NULL,
+    tag          TEXT NOT NULL,
+    PRIMARY KEY (session_date, ticker, tag)
+);
+
 -- The user's own watchlist, kept from the dashboard (/today). It starts EMPTY and is only ever filled by the user: nothing is added from
 -- configuration. VG_WATCHLIST in .env is a different thing (which stocks the nightly collection pulls tick data for).
 CREATE TABLE IF NOT EXISTS user_watchlist (

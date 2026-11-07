@@ -278,6 +278,11 @@ def build_parser() -> argparse.ArgumentParser:
     rc.add_argument("--reps", type=int, default=2000, help="bootstrap replicates")
     rc.add_argument("--save", action="store_true", help="store the result in analysis_snapshot for the dashboard (/research)")
 
+    rp = sub.add_parser("research-patterns",
+                        help="retrospective test of the home-screen badges (compression, volume surge) with the research machinery")
+    rp.add_argument("--reps", type=int, default=2000, help="bootstrap replicates")
+    rp.add_argument("--no-rebuild", action="store_true", help="reuse pattern_events from the last run")
+
     sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
     sv.add_argument("--host", default="127.0.0.1",
                     help="bind host (default: local-only). Any other address REQUIRES VG_WEB_PASSWORD (>= 12 chars) in .env")
@@ -947,6 +952,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"computed {len(res['filled'])} days; refreshing outcomes")
             engine.backfill_outcomes()
         return 1 if res["error"] else 0
+
+    if args.cmd == "research-patterns":
+        from . import pattern_research as _pr
+        from . import research as _research
+
+        result, counts = _pr.run(reps=args.reps, rebuild=not args.no_rebuild)
+        if counts:
+            print("events: " + ", ".join(f"{k} {v:,}" for k, v in counts.items()))
+        for scope in ("all", "liquid"):
+            print()
+            print(_research.format_text(result, scope, "full"))
+        return 0
 
     if args.cmd == "research":
         from . import research

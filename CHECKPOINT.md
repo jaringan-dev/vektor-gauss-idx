@@ -28,6 +28,13 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
       Pakai rupiah (bukan lembar → kebal split) dan buang pasar negosiasi (NATO 6 Nov: 1.060× karena 1 crossing → 6,9× reguler).
       Catatan: kolom `value` IDX kadang termasuk negosiasi, kadang tidak (BYAN 7 Okt) → `regular_value()` menangani keduanya.
 
+### Sedang dikerjakan: uji ke belakang badge ⚡ compression + 📊 volume ramai (#1)
+- [x] 8. Dipakai ulang: `ret2_daily` (return v2 tiap saham-hari sejak 2020) + mesin `research.py` (bootstrap, q-value, netral
+      ukuran×likuiditas, fold setengah tahun, regime, biaya per sinyal). `research.py` kini menerima `source`.
+- [ ] 9. `src/vg/pattern_research.py` + `vg research-patterns` + tabel `pattern_events` (riset saja) — kode & tes SELESAI, di-commit.
+      Run: `vg research-patterns > /home/vg/research-patterns-20261107.log 2>&1` (sedang berjalan; kalau sesi putus, cek log itu)
+- [ ] 10. Laporkan tabel jujur ke user (n, rata-rata, median, hit rate, per tahun) — badge tetap deskriptif apa pun hasilnya
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.

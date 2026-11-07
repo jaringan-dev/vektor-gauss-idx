@@ -262,9 +262,12 @@ def analyze(days: list[date], per_tag: dict, index_close: dict[date, float], *, 
 # market_breadth2; the size x liquidity neutral edge reads every traded stock-day's v2 return from ret2_daily, so a signal and
 # its bucket are measured with one formula. (Before: raw used v1, and the buckets used close-to-close split-only returns, which
 # turned rights issues into -90% "returns".)
-def _sql() -> str:
+def _sql(source: str | None = None) -> str:
+    """`source`: a subquery with columns session_date, ticker, tag, ret2_h5 (default: the tag rows, engine.EVAL_SOURCE). Always a
+    constant from code (pattern_research.SOURCE), never user input."""
     from .engine import EVAL_SOURCE
 
+    src = source or EVAL_SOURCE
     return f"""
 WITH bk AS (
   SELECT r.session_date, r.ticker, r.r5,
@@ -281,7 +284,7 @@ SELECT s.tag, s.session_date, (p.value >= %(liq)s) AS liq, count(*) AS n,
        sum(LEAST(%(cap)s, %(fee)s
              + (CASE WHEN p.close < 200 THEN 1 WHEN p.close < 500 THEN 2 WHEN p.close < 2000 THEN 5 WHEN p.close < 5000 THEN 10 ELSE 25 END) / p.close
              + 2 * %(kappa)s * COALESCE(sc.atr14 / p.close, 0.03) * sqrt(%(qty)s / GREATEST(p.value, 1)))) AS cost
-FROM {EVAL_SOURCE} s
+FROM {src} s
 JOIN market_breadth2 mb ON mb.session_date = s.session_date
 JOIN price_bars p ON p.session_date = s.session_date AND p.ticker = s.ticker
 JOIN bk ON bk.session_date = s.session_date AND bk.ticker = s.ticker
@@ -292,14 +295,14 @@ GROUP BY 1, 2, 3
 """
 
 
-def load_series():
-    """(calendar, rows, index_close). rows: [(tag, day, liquid, n, s_raw, s_neut, cost)]."""
+def load_series(source: str | None = None):
+    """(calendar, rows, index_close). rows: [(tag, day, liquid, n, s_raw, s_neut, cost)]. `source`: see _sql."""
     from .db import connect
 
     with connect() as conn, conn.cursor() as cur:
         cur.execute("SELECT session_date FROM market_breadth2 ORDER BY session_date")
         calendar = [r[0] for r in cur.fetchall()]
-        cur.execute(_sql(), {"liq": LIQUID_VALUE_IDR, "cap": COST_CAP, "fee": FEE, "kappa": KAPPA, "qty": QTY_IDR})
+        cur.execute(_sql(source), {"liq": LIQUID_VALUE_IDR, "cap": COST_CAP, "fee": FEE, "kappa": KAPPA, "qty": QTY_IDR})
         rows = [(t, d, bool(l), int(n), float(a), float(b), float(c)) for t, d, l, n, a, b, c in cur.fetchall()]
         cur.execute("SELECT session_date, close FROM index_bars WHERE index_code = 'COMPOSITE' ORDER BY session_date")
         index_close = {d: float(c) for d, c in cur.fetchall() if c}
@@ -323,8 +326,8 @@ def arrays(calendar: list[date], rows: list[tuple], *, scope: str, since: date |
     return days, per
 
 
-def run(forward_since: date | None, *, reps: int = REPS) -> dict:
-    calendar, rows, index_close = load_series()
+def run(forward_since: date | None, *, reps: int = REPS, source: str | None = None) -> dict:
+    calendar, rows, index_close = load_series(source)
     result: dict = {"window": [calendar[0].isoformat(), calendar[-1].isoformat()] if calendar else None,
                     "forward_since": forward_since.isoformat() if forward_since else None,
                     "params": {"block": BLOCK, "reps": reps, "embargo": EMBARGO, "fold": "half-year", "regime_window": REGIME_WINDOW,
