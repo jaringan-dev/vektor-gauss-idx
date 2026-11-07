@@ -8,9 +8,9 @@ Clone yang hidup = **WSL `/home/vg/vektor-gauss`** (bukan clone Windows). Buka: 
 ## 2026-11-07 (Sabtu)
 
 ### ▶ Mulai dari sini
-Sedang mengerjakan **badge deskriptif di halaman utama**: ⚡ Vol/price compression (#1) dan 🏦 Persistent net buy (#2),
-lalu menyiapkan rekaman histogram lot untuk 🧊 Iceberg proxy (#3, badge-nya menyusul setelah data terkumpul).
-Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan dari situ.
+Badge (⚡ 📊 🏦), BPI 5 sesi, recorder iceberg-proxy, dan reminder Telegram SELESAI. Uji ke belakang ⚡+📊 SELESAI: tidak ada edge.
+Berikutnya (pilihan user): #11 tulis hasil riset di tooltip badge · audit `value` mentah · keputusan kuota arjum (≈ 6 Des) ·
+`is_confirmed()` · Senin 9 Nov cek otomatis via Telegram.
 
 ### Langkah
 - [x] 1. `src/vg/web/patterns.py`: `compression()` (price_bars) + `persistent_net_buyer()` (broker_flows), pure + `load()` read-only
@@ -28,12 +28,17 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
       Pakai rupiah (bukan lembar → kebal split) dan buang pasar negosiasi (NATO 6 Nov: 1.060× karena 1 crossing → 6,9× reguler).
       Catatan: kolom `value` IDX kadang termasuk negosiasi, kadang tidak (BYAN 7 Okt) → `regular_value()` menangani keduanya.
 
-### Sedang dikerjakan: uji ke belakang badge ⚡ compression + 📊 volume ramai (#1)
+### Uji ke belakang badge ⚡ compression + 📊 volume ramai (#1) — SELESAI
+HASIL (2020-01-02..2026-10-23, return 5 hari v2, log `/home/vg/research-patterns-20261107.log`): **tidak ada yang punya edge setelah biaya.**
+P-SURGE 122k event: raw −0,45% vs pasar, netral ukuran×likuiditas +0,08% [−0,01;+0,16], net biaya −1,89%. Naik/turun sama saja.
+P-COMPRESSION 30k: netral −0,02%, net −5,41% (kebanyakan saham tidak likuid). P-COMP+SURGE 3,4k: netral +0,42% [+0,19;+0,67]
+= nyata tapi kecil, net −0,94%, positif hanya di 14% fold setengah tahun → tidak konsisten. Badge tetap DESKRIPTIF.
 - [x] 8. Dipakai ulang: `ret2_daily` (return v2 tiap saham-hari sejak 2020) + mesin `research.py` (bootstrap, q-value, netral
       ukuran×likuiditas, fold setengah tahun, regime, biaya per sinyal). `research.py` kini menerima `source`.
-- [ ] 9. `src/vg/pattern_research.py` + `vg research-patterns` + tabel `pattern_events` (riset saja) — kode & tes SELESAI, di-commit.
-      Run: `vg research-patterns > /home/vg/research-patterns-20261107.log 2>&1` (sedang berjalan; kalau sesi putus, cek log itu)
-- [ ] 10. Laporkan tabel jujur ke user (n, rata-rata, median, hit rate, per tahun) — badge tetap deskriptif apa pun hasilnya
+- [x] 9. `src/vg/pattern_research.py` + `vg research-patterns` + tabel `pattern_events` — commit `1779041`. Run 2 menit, exit 0.
+- [x] 10. Dilaporkan ke user.
+- [ ] 11. Usulan (tunggu user): tulis hasil riset ini di tooltip badge ("2020–2026: tidak ada edge setelah biaya"), supaya badge
+      tidak dibaca sebagai sinyal beli. Uji 🏦 net buy + BPI 5 sesi menyusul setelah riwayat broker K7 cukup.
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
