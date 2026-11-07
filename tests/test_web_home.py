@@ -196,6 +196,8 @@ class _Cur:
         self.log.append(sql)
         if "information_schema" in sql:
             self._rows = [(c,) for c in self.have]
+        elif "FROM broker_levels" in sql:
+            self._rows = []                                    # no ladders: the five-session BPI shows "no broker data"
         elif "FROM price_bars" in sql:
             cols = ["ticker", "close", "prev", "value", "quadrant", *home.SCORE_COLS, "tags"]
             self.description = [(c,) for c in cols]

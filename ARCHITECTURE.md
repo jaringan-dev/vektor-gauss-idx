@@ -185,7 +185,7 @@ Respons `all_data` tidak diarsipkan (sekitar empat kali lebih besar); baris terp
 
 | Halaman | Rute | Modul / tabel utama |
 |---|---|---|
-| Screener | `/`, `/screener` | `home.py`, `listing.py`; sinyal dan harga |
+| Screener | `/`, `/screener` | `home.py`, `listing.py`, `live_scores.py`, `bpi_window.py` (BPI 5 sesi dari ladder `broker_levels` yang dijumlahkan, read-only, bukan tag); sinyal dan harga |
 | Today | `/today`, `/watchlist/add`, `/watchlist/remove` | `today.py`, `watchlist.py`; `user_watchlist` |
 | Top movers | `/movers` | `movers.py`; `price_bars` |
 | Top rankings | `/ranking` | `listing.py` |

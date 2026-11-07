@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 from urllib.parse import urlencode
 
-from . import fmt, glossary, listing, live_scores
+from . import bpi_window, fmt, glossary, listing, live_scores
 
 WASH_TAG = "AKUM-NETRAL-WASH"
 # "Accumulation" = any pattern named *-AKUM / AKUM-*. The wash flag is excluded on purpose: its own description says
@@ -38,7 +38,7 @@ BAR_FULL = 0.5            # a BPI of +/-50 points fills the little bar; larger v
 PER_PAGE = listing.PER_PAGE
 # sort key -> (row field, natural first direction)
 SORTS = {"ticker": ("ticker", "asc"), "price": ("price_raw", "desc"), "change": ("chg_raw", "desc"), "bpi": ("bpi_raw", "desc"),
-         "overlap": ("overlap_raw", "desc"), "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
+         "bpi5d": ("bpi5d_raw", "desc"), "overlap": ("overlap_raw", "desc"), "aggr": ("aggr_raw", "desc"), "signals": ("n_tags", "desc")}
 # The quick pills, in the order they are drawn. `acc` stays a valid address (the Total-accumulation card links to it) but has no pill.
 VIEWS = (("acc", "Accumulation"), ("top", "Top Accumulation"), ("haka", "Haka Dominant"), ("wash", "Wash Alert"))
 PILL_VIEWS = ("top", "haka", "wash")
@@ -86,6 +86,10 @@ def load(session_date: date) -> dict:
             # Sessions the engine has not scored (the forward-test window) get the same numbers computed on the fly from the stored
             # broker ladders. Read-only; marked computed on the page. See live_scores.py for why they are not stored.
             live_n = live_scores.fill_rows(rows, live_scores.load_ladders(cur, session_date))
+        # The five-session view of the same index (bpi_window.py): summed ladders, up days, the same top buyer, coverage. Read-only.
+        windows = bpi_window.load(cur, session_date, [r["ticker"] for r in rows])
+        for r in rows:
+            r["win"] = windows.get(r["ticker"])
     return {"session_date": session_date, "rows": rows, "columns_present": "bpi3" in have, "last_scored": last_scored,
             "stored_n": stored_n, "live_n": live_n}
 
@@ -105,13 +109,31 @@ def split_bar(haka: float | None) -> dict | None:
     return {"haka": round(h * 100), "haki": 100 - round(h * 100), "dominant": h >= HAKA_DOMINANT}
 
 
+def win_cell(w) -> dict:
+    """The five-session BPI cell: the number, then the evidence under it (up days, the same top buyer), or why there is no number."""
+    if w is None:
+        return {"bpi": _pts(None), "raw": None, "sub": f"no broker data in the last {bpi_window.WINDOW} sessions", "short": True,
+                "confirmed": None, "title": ""}
+    if w.bpi3 is None:
+        return {"bpi": _pts(None), "raw": None, "sub": f"data on {w.days_ok} of {w.n_window} sessions", "short": True,
+                "confirmed": None, "title": f"A {w.n_window}-session number needs broker data on at least {bpi_window.MIN_DAYS} of them."}
+    sub = f"up {w.days_up}/{w.days_ok} · {w.top_buyer} top-3 {w.top_buyer_days}/{w.days_ok}"
+    if w.days_ok < w.n_window:
+        sub += f" · {w.days_ok} of {w.n_window} sessions"
+    title = (f"Summed over {w.days_ok} sessions. BPI was positive on {w.days_up} of them; the biggest buyer over the window, "
+             f"{w.top_buyer}, was among the day's top 3 buyers on {w.top_buyer_days}. Same houses on both sides: {w.overlap3} of 3.")
+    return {"bpi": _pts(w.bpi3), "raw": w.bpi3, "sub": sub, "short": False, "confirmed": bpi_window.is_confirmed(w), "title": title}
+
+
 def _row(r: dict, wl: set, held: set) -> dict:
     tags = glossary.split_tags(r.get("tags"))
     close, prev = r.get("close"), r.get("prev")
     chg = (close / prev - 1) if (close and prev) else None
     bpi, overlap, ratio, cov = r.get("bpi3"), r.get("bpi_overlap3"), r.get("aggr_ratio"), r.get("aggr_coverage")
     haka = r.get("aggr_haka_share")
+    win = win_cell(r.get("win"))
     return {
+        "win": win, "bpi5d_raw": win["raw"],
         "ticker": r["ticker"], "in_wl": r["ticker"] in wl, "held": r["ticker"] in held,
         "price": fmt.price(close), "chg": fmt.cell(chg, 1),
         "bpi_live": bool(r.get("bpi_live")),
