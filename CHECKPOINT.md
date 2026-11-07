@@ -49,3 +49,5 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 - `is_confirmed()` di `src/vg/web/bpi_window.py` — aturan "akumulasi terkonfirmasi" (TODO user).
 - Kuota arjum turun ke 1k/hari ≈ 6 Des 2026: perpanjang paket / turunkan `VG_BROKER_LIQUID_LOOKBACK` / matikan `collect-broker-full`.
 - Senin 9 Nov: EOD pertama dengan universe baru + FREEZE_SINCE + tag v2 → cek hasilnya.
+- Kandidat audit: angka lain yang memakai `price_bars.value` MENTAH (ambang liquid Rp5 M universe broker, `LIQUID_VALUE_IDR`
+  di engine/eval, BPI `day_value`) ikut kena crossing pasar negosiasi → pertimbangkan pakai `regular_value()` juga. Belum dikerjakan.
