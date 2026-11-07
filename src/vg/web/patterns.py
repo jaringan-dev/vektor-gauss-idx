@@ -40,7 +40,8 @@ NET_MIN_DAYS = 4          # a broker net buying on at least 4 sessions of the wi
 NET_MIN_SHARE = 0.10
 # ---- volume surge ---------------------------------------------------------------------------------------------------
 SURGE_MIN_X = 2.0         # regular-market value at least 2x its median over the BASE sessions before (6 Nov 2026: 42 of 374 stocks)
-SURGE_MIN_VALUE = 1e9     # and at least Rp1B on the day: a quiet stock going from Rp20M to Rp60M is not "busy"
+CROSSING_SHARE = 0.5      # a day whose value is at least half negotiated-market trades is a "crossing day" (data note, not a pattern)
+SURGE_MIN_VALUE = 1e9    # and at least Rp1B on the day: a quiet stock going from Rp20M to Rp60M is not "busy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +114,14 @@ def volume_surge(bars: list[tuple]) -> Surge:
     return Surge(regs[-1] / mid if mid > 0 else None, regs[-1])
 
 
+def crossing_share(value: float | None, nonreg: float | None) -> float | None:
+    """Share of the day's value that was negotiated-market trades, when IDX's `value` includes them (nonreg <= value); else None.
+    The broker tables INCLUDE those trades (TLKM 2 Oct 2026: brokers' gross buying Rp314.7B vs value Rp327.6B, of which Rp274.5B
+    negotiated), so on such a day the BPI and every broker net figure mostly describe one block trade."""
+    v, n = value or 0.0, nonreg or 0.0
+    return n / v if 0 < n <= v else None
+
+
 def is_surge(s: Surge) -> bool:
     return s.x is not None and s.x >= SURGE_MIN_X and s.value >= SURGE_MIN_VALUE
 
@@ -172,6 +181,8 @@ def load(cur, session_date: date, tickers: list[str]) -> dict[str, dict]:
                 # a surge is about the screen's session: only if the stock has a bar ON that day
                 "surge": (volume_surge([(b[0], b[6], b[7]) for b in bars[t]])
                           if bars.get(t) and bars[t][-1][0] == session_date else Surge(None, 0.0)),
+                "cross": (crossing_share(bars[t][-1][6], bars[t][-1][7])
+                          if bars.get(t) and bars[t][-1][0] == session_date else None),
                 "net": persistent_net_buyer(flows.get(t, {}), len(window), values.get(t))} for t in tickers}
 
 
@@ -195,6 +206,13 @@ def badges(p: dict | None) -> list[dict]:
         return []
     out = []
     c, n, s = p["comp"], p["net"], p.get("surge")
+    x = p.get("cross")
+    if x is not None and x >= CROSSING_SHARE:
+        # First, because it changes how every other broker number on the row should be read.
+        out.append({"key": "cross", "icon": "🔀", "text": f"Crossing {x * 100:.0f}% of value",
+                    "title": f"{x * 100:.0f}% of today's traded value went through the negotiated market (block or crossing trades). The broker "
+                             "tables include those trades, so today's BPI and broker net figures mostly describe them: a block buyer may be "
+                             "accumulating, or it may be a transfer between related accounts. The data cannot tell which. A data note, not a pattern."})
     if s is not None and is_surge(s):
         out.append({"key": "surge", "icon": "📊", "text": f"Volume {s.x:.1f}x usual",
                     "title": f"Regular-market value today {_bn(s.value)} = {s.x:.1f}x its median over the previous {BASE} sessions "

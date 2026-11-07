@@ -51,6 +51,14 @@ def test_a_day_without_traded_value_or_a_ladder_does_not_count():
     assert w.days_ok == 4 and w.bpi3 is not None
 
 
+def test_crossing_days_stay_in_the_sum_but_are_counted_and_said():
+    days = {d: day({"YP": 40.0, "AA": 30.0, "BB": 20.0, "CC": 10.0}, SPREAD_SELL, 100.0) for d in DAYS}
+    w = bpi_window.window_score(days, crossing=frozenset({DAYS[2]}))
+    assert w.n_crossing == 1 and w.bpi3 is not None
+    cell = home.win_cell(w)
+    assert "1 crossing day" in cell["sub"] and "negotiated-market" in cell["title"]
+
+
 def test_no_broker_data_at_all():
     cell = home.win_cell(None)
     assert cell["raw"] is None and "no broker data" in cell["sub"]

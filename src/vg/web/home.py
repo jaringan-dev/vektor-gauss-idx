@@ -122,8 +122,13 @@ def win_cell(w) -> dict:
     sub = f"up {w.days_up}/{w.days_ok} · {w.top_buyer} top-3 {w.top_buyer_days}/{w.days_ok}"
     if w.days_ok < w.n_window:
         sub += f" · {w.days_ok} of {w.n_window} sessions"
+    if w.n_crossing:
+        sub += f" · {w.n_crossing} crossing day{'s' if w.n_crossing > 1 else ''}"
     title = (f"Summed over {w.days_ok} sessions. BPI was positive on {w.days_up} of them; the biggest buyer over the window, "
              f"{w.top_buyer}, was among the day's top 3 buyers on {w.top_buyer_days}. Same houses on both sides: {w.overlap3} of 3.")
+    if w.n_crossing:
+        title += (f" {w.n_crossing} of these sessions were mostly negotiated-market (block/crossing) trades; being large, they weigh "
+                  "heavily in the sum.")
     return {"bpi": _pts(w.bpi3), "raw": w.bpi3, "sub": sub, "short": False, "confirmed": bpi_window.is_confirmed(w), "title": title}
 
 

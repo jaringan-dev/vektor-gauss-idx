@@ -40,6 +40,14 @@ P-COMPRESSION 30k: netral −0,02%, net −5,41% (kebanyakan saham tidak likuid)
 - [x] 11. Hasil riset ditulis di tooltip tiap badge (`TESTED` di `patterns.py`; perbarui kalau riset diulang). 🏦: "belum diuji".
 - [ ] 12. Uji 🏦 net buy + BPI 5 sesi setelah riwayat broker K7 cukup (cek `vg broker-deep --plan`).
 
+### Audit `price_bars.value` mentah (pasar negosiasi) — SELESAI
+- [x] 13. Dampak ke ambang liquid Rp5 M: hanya 1,29% saham-hari liquid (3.477/269.678 sejak 2020) yang liquid karena crossing → DIBIARKAN
+      (mengubahnya menyentuh eval/sinyal v1; manfaatnya kecil).
+- [x] 14. BPI `day_value` HARUS tetap total: ladder broker TERMASUK negosiasi (TLKM 2 Okt: beli broker Rp314,7 M ≈ value Rp327,6 M).
+      Masalah sebenarnya: di hari crossing, BPI & net broker didominasi 1 transaksi blok (0,9% saham-hari, sering di saham besar).
+- [x] 15. Solusi = UNGKAPKAN, bukan buang: catatan 🔀 "Crossing X% of value" (≥ 50% nilai = negosiasi) di baris saham, dan
+      "· N crossing day" di sel BPI 5 sesi. Data 6 Nov: NATO 99%, SMGR 88%, 4 saham lain punya 1 hari crossing di jendela.
+
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian
 "Menunggu keputusan user" dari hari TERBARU di file ini. Jadi: jaga dua bagian itu tetap benar. Kirim ulang manual: `vg remind-checkpoint --force`.

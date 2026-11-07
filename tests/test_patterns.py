@@ -139,5 +139,16 @@ def test_every_badge_tooltip_says_what_the_test_found():
     assert "no edge after costs" in got["surge"] and "no edge" in got["comp"] and "Not tested yet" in got["net"]
 
 
+def test_crossing_share_and_its_note():
+    assert P.crossing_share(235.91 * B, 234.37 * B) == pytest.approx(0.9935, abs=1e-4)     # NATO 6 Nov 2026
+    assert P.crossing_share(87.9 * B, 26097.6 * B) is None                                 # value excludes them: unknown share
+    assert P.crossing_share(5 * B, 0) is None
+    p = {"comp": P.Compression(None, None, None, "x"), "net": P.NetBuyer(None, 0, 0, 0.0, 5), "surge": P.Surge(None, 0.0), "cross": 0.99}
+    b = P.badges(p)
+    assert b[0]["key"] == "cross" and b[0]["text"] == "Crossing 99% of value" and "cannot tell" in b[0]["title"]
+    p["cross"] = 0.3
+    assert P.badges(p) == []                                                               # a small negotiated part is not a note
+
+
 def test_no_data_no_badges():
     assert P.badges(None) == []

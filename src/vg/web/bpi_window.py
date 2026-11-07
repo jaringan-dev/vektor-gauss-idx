@@ -40,14 +40,18 @@ class WindowScore:
     days_up: int                  # sessions whose own BPI was > 0
     top_buyer: str | None         # the summed ladder's biggest buyer
     top_buyer_days: int           # sessions on which that broker was among the day's top 3 buyers
+    n_crossing: int = 0           # sessions in the sum whose value was mostly negotiated-market trades (they dominate the summed ladders)
 
 
 def _f(v):
     return None if v is None else float(v)
 
 
-def window_score(days: dict[date, tuple[list, list, float | None]], n_window: int = WINDOW, min_days: int = MIN_DAYS) -> WindowScore:
-    """`days`: {session: (buy ladder, sell ladder, traded value)} for ONE ticker over the window; ladders are (broker, gross value)."""
+def window_score(days: dict[date, tuple[list, list, float | None]], n_window: int = WINDOW, min_days: int = MIN_DAYS,
+                 crossing: frozenset[date] = frozenset()) -> WindowScore:
+    """`days`: {session: (buy ladder, sell ladder, traded value)} for ONE ticker over the window; ladders are (broker, gross value).
+    `crossing`: sessions that were mostly negotiated-market trades. They stay in the sum (a block buyer may really be accumulating)
+    but are counted, so the cell can say so."""
     usable = {d: (b, s, v) for d, (b, s, v) in days.items() if b and s and v and v > 0}
     daily = {d: bandar_power(b, s, v) for d, (b, s, v) in usable.items()}
     daily = {d: bp for d, bp in daily.items() if bp is not None}
@@ -70,7 +74,8 @@ def window_score(days: dict[date, tuple[list, list, float | None]], n_window: in
         return {c for c, _v in ranked[:3]}
 
     persist = sum(agg.top_buyer in top3_buyers(d) for d in daily)
-    return WindowScore(n_window, len(daily), agg.bpi3, agg.overlap3, days_up, agg.top_buyer, persist)
+    return WindowScore(n_window, len(daily), agg.bpi3, agg.overlap3, days_up, agg.top_buyer, persist,
+                       sum(d in crossing for d in daily))
 
 
 def is_confirmed(w: WindowScore) -> bool | None:
@@ -101,9 +106,16 @@ def load(cur, session_date: date, tickers: list[str], n: int = WINDOW) -> dict[s
         per[t][d][0 if side == "B" else 1].append((code, _f(val)))
     if not per:
         return {}
-    cur.execute("SELECT ticker, session_date, value FROM price_bars WHERE session_date = ANY(%s) AND ticker = ANY(%s)",
+    from .patterns import CROSSING_SHARE, crossing_share
+
+    cur.execute("SELECT ticker, session_date, value, nonreg_value FROM price_bars WHERE session_date = ANY(%s) AND ticker = ANY(%s)",
                 (window, tickers))
-    for t, d, value in cur.fetchall():
+    cross: dict[str, set] = defaultdict(set)
+    for t, d, value, nonreg in cur.fetchall():
         if t in per and d in per[t]:
             per[t][d][2] = _f(value)
-    return {t: window_score({d: tuple(x) for d, x in per[t].items()}, n_window=len(window)) for t in tickers if t in per}
+            share = crossing_share(_f(value), _f(nonreg))
+            if share is not None and share >= CROSSING_SHARE:
+                cross[t].add(d)
+    return {t: window_score({d: tuple(x) for d, x in per[t].items()}, n_window=len(window), crossing=frozenset(cross[t]))
+            for t in tickers if t in per}
