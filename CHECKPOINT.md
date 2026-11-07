@@ -55,6 +55,13 @@ K7 backlog 194.575 call @ 37,5k/40,5k per malam → selesai ≈ 12–13 Nov (ama
 Opsi ≤ 1k/hari: (E) buang done-details, ganti dengan data recorder WebSocket (gratis, sudah merekam HAKA/HAKI 810 saham) ≈ 750 ·
 (D) lookback 5 + tanpa done-details ≈ 490 · (C) tanpa tabel lengkap & done-details ≈ 375 · atau perpanjang paket.
 Syarat E: verifikasi dulu bahwa field `c` recorder = sisi agresor, dibandingkan done-details beberapa hari (selagi kuota masih besar).
+- [x] 16. Alat pembanding SIAP: `vg compare-flow` (`src/vg/flow_check.py`), read-only. Hanya saham-hari LENGKAP yang dinilai
+      (≥ 95% volume reguler DAN ≥ 95% jumlah transaksi; done-details difilter board RG — ia juga memuat NG). Verdict otomatis
+      ikut di Telegram checkpoint setiap malam mulai 9 Nov. Data 6 Nov belum bisa dinilai (recorder baru jalan sore).
+- [x] 17. Selama verifikasi, eod.sh: `collect-done-details --watchlist-only --max-pages 400` (default 200; BBCA/BBRI/TLKM 214–326
+      halaman/hari). +~500 call/hari. Target 10 saham-hari lengkap ≈ 2 hari bursa (≈ 10 Nov).
+- [ ] 18. Setelah verdict: kalau "recorder can replace done-details" → matikan done-details di eod.sh (EOD ≈ 750 call, muat 1k/hari),
+      ganti sumber Aggressor Ratio ke recorder. Kalau tidak → pilih opsi D/C/perpanjang paket. Kembalikan `--max-pages` ke default.
 
 ### Reminder Telegram
 `vg remind-checkpoint` jalan otomatis di akhir setiap EOD (sekali per sesi): cek otomatis + langkah `- [ ]` dan bagian

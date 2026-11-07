@@ -128,6 +128,7 @@ Windows Task Scheduler. `ci.yml` menjalankan tes dan lint.
 | Feed: inventori broker | `collect.py` | `collect-broker-inventory` | `broker_inventory` |
 | Feed: done details (HAKA/HAKI) | `collect.py` | `collect-done-details` | `done_by_price` |
 | Feed: running trade (WebSocket) | `tradeflow.py` | `record-trades` | `trade_flow_1m`, `trade_lots_daily` (hitungan fill ≥ 50 lot per harga/ukuran/sisi untuk proxy iceberg; forward-only sejak 2026-11-07) |
+| Recorder vs done-details | `flow_check.py` | `compare-flow` | baca `trade_flow_1m` + `done_by_price`; hanya saham-hari lengkap (≥ 95% volume reguler) yang dinilai; hasilnya juga di Telegram checkpoint |
 | Koreksi harga | `repair.py`, `adjust.py` | `repair-prices`, `compute-adj`, `adj-report` | `adj_factor`, `price_adj` |
 
 Dua tabel broker sengaja terpisah. `broker_flows` hanya memuat 20 broker dengan net beli terbesar per saham per hari (bawaan feed, tanpa

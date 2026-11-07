@@ -67,7 +67,9 @@ vg collect-broker-full --sessions 1 || true
 # stock-day). Time-boxed by VG_DONE_BUDGET_MINUTES (default 15) so it cannot hold up pass 2 and the digest.
 # Feeds the Aggressor Ratio in pass 2. Best-effort Tier 3; a ticker already stored for the day costs 0 calls.
 T_DONE=$SECONDS
-vg collect-done-details --watchlist-only || true
+# --max-pages 400 (default 200) until the recorder-vs-done-details check (`vg compare-flow`) has its verdict: BBCA/BBRI/TLKM run
+# 214-326 pages a day, and a capped day cannot be compared. ~+500 calls/day; set back to the default once decided (CHECKPOINT.md).
+vg collect-done-details --watchlist-only --max-pages 400 || true
 echo "-- order-flow harvest took $((SECONDS - T_DONE))s (budget ${VG_DONE_BUDGET_MINUTES:-15} min) --"
 [ "$GATE_OK" -eq 1 ] && { vg compute --backfill "$BACK" "$TODAY" || true; }   # pass 2 — broker signals land
 # Broker inventory (~80 td cum net per broker) for watchlist+holdings — historical

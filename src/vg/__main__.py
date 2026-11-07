@@ -283,6 +283,10 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--reps", type=int, default=2000, help="bootstrap replicates")
     rp.add_argument("--no-rebuild", action="store_true", help="reuse pattern_events from the last run")
 
+    cf = sub.add_parser("compare-flow",
+                        help="can the running-trade recorder replace done-details? buy share per stock-day, complete days only (read-only)")
+    cf.add_argument("--since", type=date.fromisoformat, default=None, help="first session (default: 30 days back)")
+
     sv = sub.add_parser("serve", help="local superadmin dashboard — forward-test tracker (needs .[web])")
     sv.add_argument("--host", default="127.0.0.1",
                     help="bind host (default: local-only). Any other address REQUIRES VG_WEB_PASSWORD (>= 12 chars) in .env")
@@ -952,6 +956,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"computed {len(res['filled'])} days; refreshing outcomes")
             engine.backfill_outcomes()
         return 1 if res["error"] else 0
+
+    if args.cmd == "compare-flow":
+        from datetime import timedelta as _td
+
+        from . import flow_check as _fc
+        from .db import connect as _connect
+
+        with _connect() as conn, conn.cursor() as cur:
+            rows = _fc.load(cur, args.since or (date.today() - _td(days=30)))  # noqa: DTZ011 - local date, as elsewhere
+        print(_fc.format_text(rows))
+        return 0
 
     if args.cmd == "research-patterns":
         from . import pattern_research as _pr

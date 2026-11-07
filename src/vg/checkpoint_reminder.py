@@ -73,6 +73,12 @@ def facts(cur, session: date) -> list[tuple[bool, str]]:
     cur.execute("SELECT count(*) FROM signal_snapshot WHERE session_date = %s", (session,))
     snap = cur.fetchone()[0] or 0
     out.append((snap > 0, f"Frozen signals (signal_snapshot): {snap:,}"))
+    # Can the free recorder replace done-details before the quota drops (~6 Dec 2026)? Cumulative since the recorder's first full day.
+    if session >= LOTS_SINCE:
+        from . import flow_check
+
+        v, ev = flow_check.verdict(flow_check.load(cur, LOTS_SINCE, session))
+        out.append((v != "recorder does NOT match done-details", f"Recorder vs done-details: {v} ({ev})"))
     if session < V2_TAGS_SINCE:
         out.append((True, f"v2 tags: their forward clock starts {V2_TAGS_SINCE.isoformat()}"))
     else:
