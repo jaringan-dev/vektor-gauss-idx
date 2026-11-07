@@ -26,7 +26,11 @@ Lihat daftar langkah di bawah; langkah pertama yang belum dicentang = lanjutkan 
 ### Sudah selesai hari ini (commit)
 - `2eb817c` eod.sh exec bit permanen di git (record_trades.sh juga dipulihkan) — **pushed**
 - `d5abaa1` universe broker "sticky": liquid di salah satu dari 20 sesi terakhir (`VG_BROKER_LIQUID_LOOKBACK`), 173 → ~367 saham/hari — **pushed**
-- `89b94a6` kolom **BPI 5 sessions** di `/` (`src/vg/web/bpi_window.py`) — lokal, **belum push**
+- `89b94a6` kolom **BPI 5 sessions** di `/` (`src/vg/web/bpi_window.py`)
+- `3213199` CHECKPOINT.md ini
+- `0999a36` badge ⚡ compression + 🏦 persistent net buyer (`src/vg/web/patterns.py`)
+- `b2ffac1` recorder → `trade_lots_daily` (proxy iceberg, forward-only)
+- ⚠ 4 commit + commit checkpoint ini **belum di-push** (push hanya kalau user bilang)
 
 ### Sedang berjalan / setengah jadi
 - (tidak ada) — isi lubang data broker 2026-10-12..11-06 SELESAI: 20/20 hari ok, 0 error, ~370 saham/hari;
